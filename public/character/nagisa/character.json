@@ -1,0 +1,203 @@
+{
+  "id": "nagisa",
+  "name": "Nagisa",
+  "description": "Nagisa",
+  "version": 1,
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "costume_a",
+    "costume_b"
+  ],
+  "images": [
+    {
+      "file": "nagisaA_a.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_b.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_c.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_d.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_e.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_f.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_g.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_h.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_i.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_j.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaA_k.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_a.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_b.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_c.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_d.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_e.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_f.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_g.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_h.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_i.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_j.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "nagisaB_k.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

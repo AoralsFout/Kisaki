@@ -1,0 +1,492 @@
+{
+  "id": "rio",
+  "name": "Rio",
+  "description": "Rio",
+  "version": 1,
+  "poses": [
+    "standing",
+    "sitting"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "school",
+    "casual"
+  ],
+  "images": [
+    {
+      "file": "rioA_aa.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ab.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ac.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ad.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ae.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_af.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ag.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ah.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ai.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_aj.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ak.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_al.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_am.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_an.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ao.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ap.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_ba.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bb.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bc.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bd.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_be.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bf.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bg.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bh.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bi.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bj.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bk.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bl.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bm.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bn.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bo.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioA_bp.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_aa.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ab.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ac.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ad.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ae.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_af.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ag.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ah.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ai.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_aj.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ak.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_al.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_am.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_ba.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bb.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bc.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bd.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_be.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bf.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bg.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bh.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bi.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bj.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bk.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bl.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "rioB_bm.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

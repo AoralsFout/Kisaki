@@ -1,0 +1,211 @@
+{
+  "id": "misaki",
+  "name": "Misaki",
+  "description": "Misaki",
+  "version": 1,
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "costume_a",
+    "costume_b"
+  ],
+  "images": [
+    {
+      "file": "misakiA_a.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_b.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_c.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_d.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_e.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_f.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_g.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_h.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_i.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_j.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_k.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiA_l.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_a.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_b.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_c.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_d.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_e.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_f.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_g.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_h.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_i.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_j.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "misakiB_k.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

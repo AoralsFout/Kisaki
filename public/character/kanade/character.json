@@ -1,0 +1,211 @@
+{
+  "id": "kanade",
+  "name": "Kanade",
+  "description": "Kanade",
+  "version": 1,
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "costume_a",
+    "costume_b"
+  ],
+  "images": [
+    {
+      "file": "kanadeA_a.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_b.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_c.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_d.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_e.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_f.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_g.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_h.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_i.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_j.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_k.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeA_l.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_a.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_b.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_c.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_d.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_e.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_f.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_g.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_h.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_i.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_j.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanadeB_k.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

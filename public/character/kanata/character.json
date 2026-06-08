@@ -1,0 +1,508 @@
+{
+  "id": "kanata",
+  "name": "Kanata",
+  "description": "Kanata",
+  "version": 1,
+  "poses": [
+    "standing",
+    "sitting"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "school",
+    "casual"
+  ],
+  "images": [
+    {
+      "file": "kanataA_aa.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ab.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ac.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ad.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ae.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_af.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ag.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ah.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ai.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_aj.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ak.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_al.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_am.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_an.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ao.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ap.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_aq.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_ba.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bb.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bc.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bd.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_be.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bf.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bg.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bh.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bi.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bj.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bk.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bl.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bm.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bn.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bo.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bp.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataA_bq.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_aa.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ab.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ac.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ad.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ae.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_af.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ag.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ah.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ai.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_aj.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ak.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_al.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_am.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_ba.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bb.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bc.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bd.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_be.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bf.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bg.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bh.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bi.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bj.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bk.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bl.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "kanataB_bm.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

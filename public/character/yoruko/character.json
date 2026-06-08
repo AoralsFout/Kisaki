@@ -1,0 +1,524 @@
+{
+  "id": "yoruko",
+  "name": "Yoruko",
+  "description": "Yoruko",
+  "version": 1,
+  "poses": [
+    "standing",
+    "sitting"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "school",
+    "casual"
+  ],
+  "images": [
+    {
+      "file": "yorukoA_aa.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ab.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ac.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ad.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ae.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_af.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ag.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ah.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ai.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_aj.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ak.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_al.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_am.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_an.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ao.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ap.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_aq.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ar.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_as.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_ba.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bb.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bc.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bd.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_be.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bf.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bg.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bh.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bi.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bj.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bk.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bl.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bm.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bn.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bo.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bp.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bq.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_br.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoA_bs.png",
+      "pose": "sitting",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_aa.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ab.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ac.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ad.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ae.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_af.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ag.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ah.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ai.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_aj.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ak.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_al.png",
+      "pose": "standing",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_ba.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bb.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bc.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bd.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_be.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bf.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bg.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bh.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bi.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bj.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bk.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yorukoB_bl.png",
+      "pose": "sitting",
+      "costume": "casual",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

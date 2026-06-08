@@ -1,0 +1,529 @@
+{
+  "id": "kisaki",
+  "name": "Kisaki",
+  "description": "Kisaki",
+  "version": 1,
+  "poses": [
+    "侧立",
+    "正立"
+  ],
+  "emotions": [
+    "待机",
+    "不满",
+    "开心",
+    "坏笑",
+    "欣慰",
+    "瞪眼",
+    "叹息",
+    "疑惑",
+    "惊讶",
+    "害羞",
+    "紧张",
+    "无语",
+    "放松",
+    "严肃",
+    "担心",
+    "混乱",
+    "无奈"
+  ],
+  "costumes": [
+    "校服",
+    "常服"
+  ],
+  "images": [
+    {
+      "file": "kisakiA_aa.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiA_ab.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiA_ac.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "坏笑"
+      ]
+    },
+    {
+      "file": "kisakiA_ad.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiA_ae.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "瞪眼"
+      ]
+    },
+    {
+      "file": "kisakiA_af.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "叹息"
+      ]
+    },
+    {
+      "file": "kisakiA_ag.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "疑惑"
+      ]
+    },
+    {
+      "file": "kisakiA_ah.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "惊讶"
+      ]
+    },
+    {
+      "file": "kisakiA_ai.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "开心",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiA_aj.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "害羞",
+        "紧张"
+      ]
+    },
+    {
+      "file": "kisakiA_ak.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "害羞"
+      ]
+    },
+    {
+      "file": "kisakiA_al.png",
+      "pose": "侧立",
+      "costume": "校服",
+      "emotions": [
+        "无语"
+      ]
+    },
+    {
+      "file": "kisakiA_ba.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiA_bb.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiA_bc.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "坏笑"
+      ]
+    },
+    {
+      "file": "kisakiA_bd.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiA_be.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "瞪眼"
+      ]
+    },
+    {
+      "file": "kisakiA_bf.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "叹息"
+      ]
+    },
+    {
+      "file": "kisakiA_bg.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "疑惑"
+      ]
+    },
+    {
+      "file": "kisakiA_bh.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "惊讶"
+      ]
+    },
+    {
+      "file": "kisakiA_bi.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "开心",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiA_bj.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "害羞",
+        "紧张"
+      ]
+    },
+    {
+      "file": "kisakiA_bk.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "害羞"
+      ]
+    },
+    {
+      "file": "kisakiA_bl.png",
+      "pose": "侧立",
+      "costume": "常服",
+      "emotions": [
+        "无语"
+      ]
+    },
+    {
+      "file": "kisakiB_aa.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "待机",
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_ab.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "待机",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiB_ac.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "放松"
+      ]
+    },
+    {
+      "file": "kisakiB_ad.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "开心",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiB_ae.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_af.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiB_ag.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_ah.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_ai.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_aj.png",
+      "pose": "惊讶",
+      "costume": "校服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiB_ak.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "尴尬"
+      ]
+    },
+    {
+      "file": "kisakiB_al.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "无语"
+      ]
+    },
+    {
+      "file": "kisakiB_am.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "害羞"
+      ]
+    },
+    {
+      "file": "kisakiB_an.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "害羞",
+        "欣慰",
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_ao.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_ap.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "担心"
+      ]
+    },
+    {
+      "file": "kisakiB_aq.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "混乱"
+      ]
+    },
+    {
+      "file": "kisakiB_ar.png",
+      "pose": "正立",
+      "costume": "校服",
+      "emotions": [
+        "无奈"
+      ]
+    },
+    {
+      "file": "kisakiB_ba.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "待机",
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_bb.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "待机",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiB_bc.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "放松"
+      ]
+    },
+    {
+      "file": "kisakiB_bd.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "开心",
+        "欣慰"
+      ]
+    },
+    {
+      "file": "kisakiB_be.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_bf.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiB_bg.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_bh.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_bi.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "严肃"
+      ]
+    },
+    {
+      "file": "kisakiB_bj.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "待机"
+      ]
+    },
+    {
+      "file": "kisakiB_bk.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "尴尬"
+      ]
+    },
+    {
+      "file": "kisakiB_bl.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "无语"
+      ]
+    },
+    {
+      "file": "kisakiB_bm.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "害羞"
+      ]
+    },
+    {
+      "file": "kisakiB_bn.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "害羞",
+        "欣慰",
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_bo.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "开心"
+      ]
+    },
+    {
+      "file": "kisakiB_bp.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "担心"
+      ]
+    },
+    {
+      "file": "kisakiB_bq.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "混乱"
+      ]
+    },
+    {
+      "file": "kisakiB_br.png",
+      "pose": "正立",
+      "costume": "常服",
+      "emotions": [
+        "无奈"
+      ]
+    }
+  ]
+}

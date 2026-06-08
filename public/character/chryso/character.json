@@ -1,0 +1,203 @@
+{
+  "id": "chryso",
+  "name": "Chryso",
+  "description": "Chryso",
+  "version": 1,
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "costume_a",
+    "costume_b"
+  ],
+  "images": [
+    {
+      "file": "chrysoA_a.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_b.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_c.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_d.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_e.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_f.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_g.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_h.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_i.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_j.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoA_k.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_a.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_b.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_c.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_d.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_e.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_f.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_g.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_h.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_i.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_j.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "chrysoB_k.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "Epsilon_free.moc3",
+		"Textures": [
+			"Epsilon_free.2048/texture_00.png"
+		],
+		"Physics": "Epsilon_free.physics3.json",
+		"DisplayInfo": "Epsilon_free.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "Angry",
+				"File": "expressions/Angry.exp3.json"
+			},
+			{
+				"Name": "Blushing",
+				"File": "expressions/Blushing.exp3.json"
+			},
+			{
+				"Name": "f01",
+				"File": "expressions/f01.exp3.json"
+			},
+			{
+				"Name": "f02",
+				"File": "expressions/f02.exp3.json"
+			},
+			{
+				"Name": "Normal",
+				"File": "expressions/Normal.exp3.json"
+			},
+			{
+				"Name": "Sad",
+				"File": "expressions/Sad.exp3.json"
+			},
+			{
+				"Name": "Smile",
+				"File": "expressions/Smile.exp3.json"
+			},
+			{
+				"Name": "Surprised",
+				"File": "expressions/Surprised.exp3.json"
+			}
+		],
+		"Motions": {
+			"Idle": [
+				{
+					"File": "motion/Epsilon_idle_01.motion3.json"
+				}
+			],
+			"FlickUp": [
+				{
+					"File": "motion/Epsilon_m_01.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_05.motion3.json"
+				}
+			],
+			"Flick": [
+				{
+					"File": "motion/Epsilon_m_02.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_07.motion3.json"
+				}
+			],
+			"Tap": [
+				{
+					"File": "motion/Epsilon_m_03.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_sp_02.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_sp_03.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_sp_05.motion3.json"
+				}
+			],
+			"Flick3": [
+				{
+					"File": "motion/Epsilon_m_04.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_sp_01.motion3.json"
+				}
+			],
+			"FlickDown": [
+				{
+					"File": "motion/Epsilon_m_06.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_m_08.motion3.json"
+				}
+			],
+			"Shake": [
+				{
+					"File": "motion/Epsilon_m_sp_04.motion3.json"
+				},
+				{
+					"File": "motion/Epsilon_shake_01.motion3.json"
+				}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"PARAM_MOUTH_OPEN_Y"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"PARAM_EYE_L_OPEN",
+				"PARAM_EYE_R_OPEN"
+			]
+		}
+	],
+	"HitAreas": []
+}

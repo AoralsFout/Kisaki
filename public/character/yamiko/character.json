@@ -1,0 +1,203 @@
+{
+  "id": "yamiko",
+  "name": "Yamiko",
+  "description": "Yamiko",
+  "version": 1,
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "happy",
+    "thinking",
+    "sad",
+    "surprised",
+    "doubt",
+    "sigh",
+    "angry",
+    "shy",
+    "sleepy"
+  ],
+  "costumes": [
+    "costume_a",
+    "costume_b"
+  ],
+  "images": [
+    {
+      "file": "yamikoA_a.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_b.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_c.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_d.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_e.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_f.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_g.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_h.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_i.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_j.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoA_k.png",
+      "pose": "standing",
+      "costume": "costume_a",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_a.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_b.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_c.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_d.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_e.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_f.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_g.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_h.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_i.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_j.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "yamikoB_k.png",
+      "pose": "standing",
+      "costume": "costume_b",
+      "emotions": [
+        "idle"
+      ]
+    }
+  ]
+}
