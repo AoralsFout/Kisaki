@@ -7,9 +7,9 @@
     "站立"
   ],
   "emotions": [
-    "idle",
     "待机",
-    "开心"
+    "开心",
+    "idle"
   ],
   "costumes": [
     "魔女服"
@@ -17,10 +17,10 @@
   "images": [
     {
       "file": "chrysoA_a.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
