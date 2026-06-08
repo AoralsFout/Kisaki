@@ -4,23 +4,15 @@
   "description": "Chryso",
   "version": 1,
   "poses": [
-    "standing"
+    "站立"
   ],
   "emotions": [
     "idle",
-    "happy",
-    "thinking",
-    "sad",
-    "surprised",
-    "doubt",
-    "sigh",
-    "angry",
-    "shy",
-    "sleepy"
+    "待机",
+    "开心"
   ],
   "costumes": [
-    "costume_a",
-    "costume_b"
+    "魔女服"
   ],
   "images": [
     {
@@ -33,10 +25,11 @@
     },
     {
       "file": "chrysoA_b.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "待机",
+        "开心"
       ]
     },
     {
