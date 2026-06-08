@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "floatwindow",
+  "productName": "Kisaki",
   "version": "0.1.0",
-  "identifier": "com.tauri-app.floatwindow",
+  "identifier": "com.kisaki.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,12 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Float Window",
+        "title": "Kisaki",
         "decorations": false,
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
-        "width": 800,
+        "width": 400,
         "height": 600
       }
     ],

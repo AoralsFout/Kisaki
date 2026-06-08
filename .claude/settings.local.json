@@ -4,7 +4,8 @@
       "Bash(npm install *)",
       "Bash(npx vue-tsc *)",
       "Bash(npx vite *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(cargo check *)"
     ]
   }
 }

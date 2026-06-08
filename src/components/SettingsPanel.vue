@@ -11,6 +11,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { loadConfig, saveConfig, DEFAULT_CONFIG, isConfigValid } from '../ai'
 import type { AIConfig } from '../ai'
 import DevPanel from '../DevPanel.vue'
+import CharacterManager from './CharacterManager.vue'
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has('settings')
 const selfWindow = ref<WebviewWindow | null>(null)
@@ -20,7 +21,7 @@ const config = ref<AIConfig>({ ...DEFAULT_CONFIG })
 const saved = ref(false)
 
 // ---- 导航 ----
-type Tab = 'api' | 'dev' | 'about'
+type Tab = 'api' | 'character' | 'dev' | 'about'
 const activeTab = ref<Tab>('api')
 
 const PRESETS = [
@@ -48,6 +49,16 @@ function handleSave() {
   setTimeout(() => { saved.value = false }, 1500)
 }
 
+async function minimizeWindow() {
+  try { await selfWindow.value?.minimize() } catch {}
+}
+async function maximizeWindow() {
+  try {
+    const isMax = await selfWindow.value?.isMaximized()
+    if (isMax) await selfWindow.value?.unmaximize()
+    else await selfWindow.value?.maximize()
+  } catch {}
+}
 function closeWindow() {
   selfWindow.value?.close()
 }
@@ -59,7 +70,9 @@ function closeWindow() {
     <header class="topbar" data-tauri-drag-region>
       <span class="topbar-title">⚙️ 设置</span>
       <div v-if="isSettingsWindow" class="window-controls">
-        <button class="win-btn" @click="closeWindow">✕</button>
+        <button class="win-btn" @click="minimizeWindow" title="最小化">─</button>
+        <button class="win-btn" @click="maximizeWindow" title="最大化">□</button>
+        <button class="win-btn win-close" @click="closeWindow" title="关闭">✕</button>
       </div>
     </header>
 
@@ -69,6 +82,10 @@ function closeWindow() {
         <button :class="['nav-item', { active: activeTab === 'api' }]" @click="activeTab = 'api'">
           <span class="nav-icon">🔌</span>
           <span>API 配置</span>
+        </button>
+        <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
+          <span class="nav-icon">🎭</span>
+          <span>角色管理</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <span class="nav-icon">🛠️</span>
@@ -81,7 +98,7 @@ function closeWindow() {
       </nav>
 
       <!-- 右侧内容 -->
-      <main class="content">
+      <main :class="['content', { 'content-flush': activeTab === 'character' }]">
         <!-- ===== API 配置 ===== -->
         <div v-if="activeTab === 'api'" class="content-section">
           <h2 class="section-title">API 配置</h2>
@@ -119,6 +136,11 @@ function closeWindow() {
           </div>
         </div>
 
+        <!-- ===== 角色管理 ===== -->
+        <div v-if="activeTab === 'character'" class="content-section content-wide">
+          <CharacterManager />
+        </div>
+
         <!-- ===== Dev 面板 ===== -->
         <div v-if="activeTab === 'dev'" class="content-section content-dev">
           <h2 class="section-title">🛠️ Dev 面板</h2>
@@ -129,7 +151,7 @@ function closeWindow() {
         <!-- ===== 关于 ===== -->
         <div v-if="activeTab === 'about'" class="content-section">
           <h2 class="section-title">关于</h2>
-          <p class="section-desc">桌面桌宠 v0.1</p>
+          <p class="section-desc">Kisaki v0.1</p>
           <div class="about-card">
             <p>基于 Tauri + Vue 3 构建</p>
             <p>支持 AI 对话、角色切换、工具调用</p>
@@ -190,8 +212,16 @@ function closeWindow() {
   border-radius: 6px;
   transition: background 0.1s;
 }
-.win-btn:hover { background: #e8e8ed; color: #333; }
-.win-btn.close:hover { background: #ff4444; color: white; }
+
+.win-btn:hover {
+  background: #e8e8ed;
+  color: #333;
+}
+
+.win-close:hover {
+  background: #ff4444;
+  color: white;
+}
 
 /* ===== 布局 ===== */
 .layout {
@@ -228,10 +258,20 @@ function closeWindow() {
   width: 100%;
 }
 
-.nav-item:hover { background: #f0f0f2; color: #1d1d1f; }
-.nav-item.active { background: #e8e8ed; color: #1d1d1f; font-weight: 500; }
+.nav-item:hover {
+  background: #f0f0f2;
+  color: #1d1d1f;
+}
 
-.nav-icon { font-size: 15px; }
+.nav-item.active {
+  background: #e8e8ed;
+  color: #1d1d1f;
+  font-weight: 500;
+}
+
+.nav-icon {
+  font-size: 15px;
+}
 
 /* ===== 内容区 ===== */
 .content {
@@ -240,7 +280,19 @@ function closeWindow() {
   padding: 28px 32px;
 }
 
-.content-section { max-width: 500px; }
+.content-flush {
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column;
+}
+
+.content-wide {
+  flex: 1 !important;
+  min-height: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
 
 .section-title {
   font-size: 20px;
@@ -289,7 +341,9 @@ function closeWindow() {
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
-.form-input::placeholder { color: #c0c0c5; }
+.form-input::placeholder {
+  color: #c0c0c5;
+}
 
 /* ===== 预设按钮 ===== */
 .preset-row {
@@ -335,7 +389,9 @@ function closeWindow() {
   transition: opacity 0.15s;
 }
 
-.btn-save:hover { opacity: 0.85; }
+.btn-save:hover {
+  opacity: 0.85;
+}
 
 .status-ok {
   font-size: 12px;

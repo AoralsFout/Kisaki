@@ -31,10 +31,16 @@ export function imageUrl(charId: string, fileName: string): string {
   return `/character/${charId}/images/${fileName}`
 }
 
+/** 加时间戳避免缓存 */
+function uncached(url: string): string {
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}_t=${Date.now()}`
+}
+
 /** 加载角色提示词（优先 prompt.txt，再 fallback JSON 内字段） */
 async function loadPrompt(id: string): Promise<string> {
   try {
-    const res = await fetch(`/character/${id}/prompt.txt`)
+    const res = await fetch(uncached(`/character/${id}/prompt.txt`))
     if (res.ok) return await res.text()
   } catch { /* fallback */ }
   return ''
@@ -42,7 +48,7 @@ async function loadPrompt(id: string): Promise<string> {
 
 /** 加载单个角色配置 */
 export async function loadCharacterJson(id: string): Promise<CharacterData> {
-  const res = await fetch(`/character/${id}/character.json`)
+  const res = await fetch(uncached(`/character/${id}/character.json`))
   if (!res.ok) throw new Error(`加载角色 ${id} 失败: HTTP ${res.status}`)
   const data: CharacterData = await res.json()
 
@@ -52,28 +58,21 @@ export async function loadCharacterJson(id: string): Promise<CharacterData> {
   return data
 }
 
-/** 内置角色 ID 列表 */
-const BUILTIN_CHARACTERS = [
-  'kisaki', 'chryso', 'kanade', 'kanata', 'misaki',
-  'nagisa', 'rio', 'yamiko', 'yoruko',
-]
-
 let cachedList: string[] | null = null
 
-/** 扫描可用角色列表 */
+/** 扫描可用角色列表（通过 Tauri 后端扫描目录） */
 export async function listCharacters(): Promise<string[]> {
   if (cachedList) return cachedList
 
-  const available: string[] = []
-  for (const id of BUILTIN_CHARACTERS) {
-    try {
-      const res = await fetch(`/character/${id}/character.json`)
-      if (res.ok) available.push(id)
-    } catch { /* skip */ }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const list: string[] = await invoke('list_characters')
+    cachedList = list
+    return list
+  } catch {
+    // 非 Tauri 环境回退
+    return []
   }
-
-  cachedList = available
-  return available
 }
 
 /** 清空角色缓存 */

@@ -26,9 +26,9 @@ export const useCharacterStore = defineStore('character', () => {
     return imageUrl(currentId.value, fileName)
   }
 
-  /** 加载指定角色 */
-  async function loadCharacter(id: string) {
-    if (id === currentId.value && data.value) return
+  /** 加载指定角色（force=true 跳过缓存强制重新加载） */
+  async function loadCharacter(id: string, force?: boolean) {
+    if (!force && id === currentId.value && data.value) return
     loading.value = true
     try {
       const charData = await loadCharacterJson(id)
@@ -44,6 +44,8 @@ export const useCharacterStore = defineStore('character', () => {
 
   /** 刷新可用角色列表 */
   async function refreshList() {
+    const { clearCache } = await import('../character/loader')
+    clearCache()
     availableList.value = await listCharacters()
   }
 

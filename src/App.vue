@@ -89,8 +89,8 @@ async function openSettingsWindow() {
     new WebviewWindow('settings', {
       url: '/?settings=1',
       title: '⚙️ 设置',
-      width: 680,
-      height: 520,
+      width: 1000,
+      height: 600,
       decorations: false,
       resizable: true,
       center: true
@@ -181,9 +181,10 @@ async function handleSelectCharacter(charId: string) {
 .drag-region {
   position: fixed;
   top: 0;
-  right: 0;
-  width: 40px;
-  height: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 30px;
   -webkit-app-region: drag;
   cursor: move;
   z-index: 1000;
@@ -194,12 +195,28 @@ async function handleSelectCharacter(charId: string) {
   justify-content: center;
   border-radius: 12px;
   font-size: 12px;
+  opacity: 0;
+
+  transition: opacity 0.25s;
+
+  &:hover {
+    opacity: 1;
+  }
+
+  &::before{
+    position: absolute;
+    content: ' ';
+    width: 150px;
+    height: 1px;
+    background: #999;
+  }
 }
 
 .character-area {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  border: 1px dashed #f00
 }
 
 /* ---- 底部工具栏 ---- */
