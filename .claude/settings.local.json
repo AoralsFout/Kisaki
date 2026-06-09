@@ -5,7 +5,16 @@
       "Bash(npx vue-tsc *)",
       "Bash(npx vite *)",
       "Bash(node *)",
-      "Bash(cargo check *)"
+      "Bash(cargo check *)",
+      "Bash(/e/TestProjects/Window/FloatWindow/voice-service/venv/Scripts/python *)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('server.py', doraise=True\\)\")",
+      "WebSearch",
+      "Bash(python3 *)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/api/files)",
+      "Bash(kill %1)",
+      "Bash(npm run *)",
+      "Bash(git add *)"
     ]
   }
 }

@@ -7,6 +7,8 @@ import { chat, isConfigValid, loadConfig, ChatContext } from '../ai'
 import type { ToolCallData } from '../ai'
 import { getDefinitions, executeToolCall, getTool, initTools } from '../agent'
 import type { ToolCall } from '../agent'
+import { speakText, cancelSpeak } from '../tts'
+import { useCharacterStore } from '../character'
 
 // 初始化注册工具
 initTools()
@@ -112,6 +114,9 @@ export const useChatStore = defineStore('chat', () => {
     const userText = text.trim()
     isProcessing.value = true
 
+    // 用户发送新消息时，取消正在播放的语音
+    cancelSpeak()
+
     if (!isConfigValid(loadConfig())) {
       showBubbleText('请先配置 API~ 右键菜单 → 设置 填写 API 信息', false)
       isProcessing.value = false
@@ -195,6 +200,8 @@ export const useChatStore = defineStore('chat', () => {
           if (finalText) {
             chatContext.addAssistantMessage(finalText)
             addMessage('assistant', finalText, currentThinking.value)
+            // TTS 播报
+            triggerTts(finalText)
           }
           break
         }
@@ -235,12 +242,30 @@ export const useChatStore = defineStore('chat', () => {
     abortController = null
   }
 
+  /** 触发角色 TTS 语音播报 */
+  let lastTtsText = ''
+  async function triggerTts(text: string) {
+    // 去重：连续播报相同文本跳过
+    if (text === lastTtsText) return
+    lastTtsText = text
+
+    try {
+      const charStore = useCharacterStore()
+      const voiceId = charStore.data?.voice
+      if (!voiceId) return
+      await speakText(text, voiceId)
+    } catch {
+      // 静默失败
+    }
+  }
+
   function cancelResponse() {
     abortController?.abort()
     abortController = null
     isProcessing.value = false
     isTyping.value = false
     isUsingTools.value = false
+    cancelSpeak()
   }
 
   function addMessage(role: ChatMessage['role'], text: string, thinking?: string) {

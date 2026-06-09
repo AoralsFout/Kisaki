@@ -1,0 +1,10 @@
+{
+  "name": "voice-upload-server",
+  "version": "1.0.0",
+  "description": "音色克隆音频文件上传服务",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}

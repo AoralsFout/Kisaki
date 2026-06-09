@@ -37,6 +37,10 @@ export interface CharacterData {
   emotions: string[]
   costumes: string[]
   images: CharacterImageData[]
+  /** 语音合成音色 ID（CosyVoice 自定义音色） */
+  voice?: string
+  /** 语音合成模型 */
+  voiceModel?: string
 }
 
 /** 图片完整 URL */
