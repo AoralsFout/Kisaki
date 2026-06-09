@@ -2,9 +2,12 @@
 /**
  * 角色管理 - 角色列表 + 编辑器
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
+import { bustImageCache } from '../character/loader'
+import CharacterList from './CharacterList.vue'
+import CharacterPreview from './CharacterPreview.vue'
 
 const charStore = useCharacterStore()
 
@@ -17,39 +20,85 @@ const editingId = ref('')
 const promptText = ref('')
 const saveMsg = ref('')
 const saveError = ref('')
-const editIndex = ref<number | null>(null)
-const emotionInputs = ref<Record<number, string>>({})
+const editFile = ref<string | null>(null)
 const editableImages = ref<CharacterImageData[]>([])
 const editablePoses = ref<string[]>([])
 const editableCostumes = ref<string[]>([])
 const hasChanges = ref(false)
+
+// ---- 创建角色表单 ----
+const showCreateForm = ref(false)
+const newCharId = ref('')
+const newCharName = ref('')
+const newCharDesc = ref('')
+const createError = ref('')
+
+function resetCreateForm() {
+  newCharId.value = ''
+  newCharName.value = ''
+  newCharDesc.value = ''
+  createError.value = ''
+}
+
+// ---- 行内添加输入 ----
+const addingPose = ref(false)
+const newPoseName = ref('')
+const poseInputRef = ref<HTMLInputElement | null>(null)
+const addingCostume = ref(false)
+const newCostumeName = ref('')
+const costumeInputRef = ref<HTMLInputElement | null>(null)
+
+// 行内输入自动聚焦
+watch(addingPose, (v) => { if (v) setTimeout(() => poseInputRef.value?.focus(), 50) })
+watch(addingCostume, (v) => { if (v) setTimeout(() => costumeInputRef.value?.focus(), 50) })
 
 onMounted(async () => {
   if (!charStore.data) await charStore.init()
 })
 
 const displayList = computed(() => charStore.availableList)
+const editingImage = computed(() =>
+  editableImages.value.find(i => i.file === editFile.value) ?? null
+)
 
-/** 创建新角色 */
-async function createCharacter() {
-  const id = prompt('角色 ID（英文小写，如 "new_char"）:')
-  if (!id || !/^[a-z][a-z0-9_]*$/.test(id)) {
-    saveError.value = 'ID 必须是小写字母开头，仅含字母数字下划线'
-    setTimeout(() => { saveError.value = '' }, 3000)
+/** 当前编辑图片的 URL（带时间戳防缓存） */
+const editingImageUrl = computed(() => {
+  if (!editingImage.value) return ''
+  return charStore.getImageUrl(editingImage.value.file) + `?_t=${Date.now()}`
+})
+
+// ---- 文件操作 ----
+
+/** 打开创建角色表单 */
+function openCreateForm() {
+  resetCreateForm()
+  showCreateForm.value = true
+}
+
+/** 创建新角色（从表单读取数据） */
+async function submitCreateForm() {
+  const id = newCharId.value.trim()
+  const name = newCharName.value.trim() || id
+  createError.value = ''
+
+  if (!id) {
+    createError.value = '请输入角色 ID'
     return
   }
-  const name = prompt('角色显示名称（如 "新角色"）:') || id
+  if (!/^[a-z][a-z0-9_]*$/.test(id)) {
+    createError.value = 'ID 必须是小写字母开头，仅含字母数字下划线'
+    return
+  }
   if (charStore.availableList.includes(id)) {
-    saveError.value = `角色 "${id}" 已存在`
+    createError.value = `角色 "${id}" 已存在`
     return
   }
 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
 
-    // 创建默认 character.json
     const defaultJson = {
-      id, name, description: name, version: 1,
+      id, name, description: newCharDesc.value || name, version: 1,
       prompt: '',
       poses: ['standing'], emotions: ['idle'],
       costumes: ['default'], images: [],
@@ -58,28 +107,26 @@ async function createCharacter() {
       id, filename: 'character.json',
       content: JSON.stringify(defaultJson, null, 2),
     })
-    // 创建默认 prompt.txt
     await invoke('write_character_file', {
       id, filename: 'prompt.txt',
       content: `你是 ${name}，一个可爱的桌面宠物。`,
     })
-    // 创建 images 目录（通过写入一个空标记文件来确保目录存在）
     await invoke('write_character_file', {
       id, filename: 'images/.gitkeep',
       content: '',
     })
 
-    // 刷新列表并进入编辑
     await charStore.refreshList()
+    showCreateForm.value = false
     enterEditor(id)
-    saveMsg.value = `✅ 已创建角色 "${name}"`
+    saveMsg.value = `已创建角色 "${name}"`
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = `❌ 创建失败: ${(e as Error).message}`
+    createError.value = `创建失败: ${(e as Error).message}`
   }
 }
 
-/** 从卡片列表进入角色编辑 */
+/** 进入角色编辑 */
 async function enterEditor(id: string) {
   editingId.value = id
   if (!charStore.availableList.includes(id)) return
@@ -88,10 +135,20 @@ async function enterEditor(id: string) {
   view.value = 'editor'
 }
 
-/** 返回角色列表 */
+/** 返回角色列表（有未保存更改时先提醒，再次点击才确认退出） */
+const pendingExit = ref(false)
+
 function backToList() {
+  if (hasChanges.value && !pendingExit.value) {
+    pendingExit.value = true
+    saveMsg.value = '有未保存的更改，再次点击「← 返回」确认退出'
+    setTimeout(() => { if (!pendingExit.value) return; pendingExit.value = false; saveMsg.value = '' }, 4000)
+    return
+  }
+  pendingExit.value = false
   view.value = 'list'
   editingId.value = ''
+  editFile.value = null
   hasChanges.value = false
 }
 
@@ -102,26 +159,22 @@ function loadData() {
   editableImages.value = JSON.parse(JSON.stringify(data.images))
   editablePoses.value = [...data.poses]
   editableCostumes.value = [...data.costumes]
-  editIndex.value = null
-  emotionInputs.value = {}
+  editFile.value = null
 }
 
 async function loadPrompt() {
   try {
     const res = await fetch(`/character/${editingId.value}/prompt.txt?_t=${Date.now()}`)
     if (res.ok) promptText.value = await res.text()
-  } catch { }
+  } catch { /* ignore */ }
 }
 
-// ---- Tauri 写文件 ----
-async function tauriWrite(filename: string, content: string) {
+// ---- Tauri 文件 IO ----
+
+async function tauriWrite(filename: string, content: string): Promise<boolean> {
   try {
     const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('write_character_file', {
-      id: editingId.value,
-      filename,
-      content,
-    })
+    await invoke('write_character_file', { id: editingId.value, filename, content })
     return true
   } catch (e) {
     console.error('写入失败:', e)
@@ -129,76 +182,113 @@ async function tauriWrite(filename: string, content: string) {
   }
 }
 
+/** 删除整个角色 */
+const showDeleteConfirm = ref(false)
+const isDeleting = ref(false)
+
+async function deleteCharacter() {
+  if (!editingId.value) return
+  isDeleting.value = true
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('delete_character', { id: editingId.value })
+    await charStore.refreshList()
+    // 如果删除的是当前正在使用的角色，刷新 store
+    if (charStore.currentId === editingId.value) {
+      const list = charStore.availableList
+      if (list.length > 0) {
+        await charStore.loadCharacter(list[0], true)
+      }
+    }
+    showDeleteConfirm.value = false
+    backToList()
+    saveMsg.value = `已删除角色`
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  } catch (e) {
+    saveError.value = `删除失败: ${(e as Error).message}`
+  } finally {
+    isDeleting.value = false
+  }
+}
+
 function markChanged() { hasChanges.value = true }
 
-// ---- 编辑姿势列表 ----
-function addPose() {
-  const p = prompt('输入新姿势名称:')
+// ---- 标签编辑 ----
+
+function commitNewPose() {
+  const p = newPoseName.value.trim()
   if (p && !editablePoses.value.includes(p)) {
     editablePoses.value.push(p)
     markChanged()
   }
+  newPoseName.value = ''
+  addingPose.value = false
 }
+
 function removePose(idx: number) {
   editablePoses.value.splice(idx, 1)
   markChanged()
 }
 
-// ---- 编辑服装列表 ----
-function addCostume() {
-  const c = prompt('输入新服装名称:')
+function commitNewCostume() {
+  const c = newCostumeName.value.trim()
   if (c && !editableCostumes.value.includes(c)) {
     editableCostumes.value.push(c)
     markChanged()
   }
+  newCostumeName.value = ''
+  addingCostume.value = false
 }
+
 function removeCostume(idx: number) {
   editableCostumes.value.splice(idx, 1)
   markChanged()
 }
 
-// ---- 编辑图片标签 ----
-function startEdit(idx: number) {
-  editIndex.value = editIndex.value === idx ? null : idx
-}
+// ---- 立绘编辑 ----
 
-function onEmotionKeydown(idx: number, e: KeyboardEvent) {
-  if (e.key === ' ') {
-    e.preventDefault()
-    const val = emotionInputs.value[idx]?.trim()
-    if (!val) return
-    const img = editableImages.value[idx]
-    if (img && !img.emotions.includes(val)) {
-      img.emotions.push(val)
-      markChanged()
-    }
-    emotionInputs.value[idx] = ''
+function addEmotion(file: string, emotion: string) {
+  const img = editableImages.value.find(i => i.file === file)
+  if (img && !img.emotions.includes(emotion)) {
+    img.emotions.push(emotion)
+    markChanged()
   }
 }
 
-function removeEmotion(imgIdx: number, emIdx: number) {
-  editableImages.value[imgIdx].emotions.splice(emIdx, 1)
-  markChanged()
+function removeEmotion(file: string, idx: number) {
+  const img = editableImages.value.find(i => i.file === file)
+  if (img) {
+    img.emotions.splice(idx, 1)
+    markChanged()
+  }
 }
 
-function setImagePose(idx: number, pose: string) {
-  editableImages.value[idx].pose = pose
-  markChanged()
+function setImagePose(file: string, pose: string) {
+  const img = editableImages.value.find(i => i.file === file)
+  if (img) {
+    img.pose = pose
+    markChanged()
+  }
 }
 
-function deleteImage(idx: number) {
-  if (idx < 0 || idx >= editableImages.value.length) return
+function setImageCostume(file: string, costume: string) {
+  const img = editableImages.value.find(i => i.file === file)
+  if (img) {
+    img.costume = costume
+    markChanged()
+  }
+}
+
+function deleteImage(file: string) {
+  const idx = editableImages.value.findIndex(i => i.file === file)
+  if (idx < 0) return
   editableImages.value.splice(idx, 1)
-  editIndex.value = null
+  editFile.value = null
   markChanged()
 }
 
-function setImageCostume(idx: number, costume: string) {
-  editableImages.value[idx].costume = costume
-  markChanged()
-}
+// ---- 上传立绘 ----
 
-// ---- 新增立绘 ----
 const fileInput = ref<HTMLInputElement | null>(null)
 
 function triggerAddImage() {
@@ -222,22 +312,18 @@ async function onFilePicked(event: Event) {
       const ext = file.name.split('.').pop() || 'png'
       const newName = `${editingId.value}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`
       const base64 = await fileToBase64(file)
-
       await invoke('save_character_image', {
         id: editingId.value, filename: newName, dataBase64: base64,
       })
-
       editableImages.value.push({
         file: newName, pose: defaultPose, costume: defaultCostume, emotions: [],
       })
     }
-
     markChanged()
-    const count = images.length
-    saveMsg.value = `✅ 已添加 ${count} 张立绘`
+    saveMsg.value = `已添加 ${images.length} 张立绘`
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = `❌ 添加失败: ${(e as Error).message}`
+    saveError.value = `添加失败: ${(e as Error).message}`
   }
 
   input.value = ''
@@ -256,24 +342,21 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 // ---- 保存 ----
+
 async function saveAll() {
   saveMsg.value = ''
   saveError.value = ''
   const data = charStore.data
   if (!data) return
 
-  // 0. 记录旧图片文件列表（用于清理已删除的）
   const oldFiles = new Set(data.images.map((i: CharacterImageData) => i.file))
   const newFiles = new Set(editableImages.value.map(i => i.file))
   const orphaned = [...oldFiles].filter(f => !newFiles.has(f))
 
-  // 1. 保存 prompt.txt
   const promptOk = await tauriWrite('prompt.txt', promptText.value)
-  if (!promptOk) { saveError.value = '❌ 保存提示词失败'; return }
+  if (!promptOk) { saveError.value = '保存提示词失败'; return }
 
-  // 2. 构建新的 character.json
   const collectedEmotions = [...new Set(editableImages.value.flatMap(img => img.emotions))]
-
   const newData = {
     id: data.id, name: data.name, description: data.description, version: data.version,
     poses: [...editablePoses.value],
@@ -285,102 +368,172 @@ async function saveAll() {
   }
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
-  if (!jsonOk) { saveError.value = '❌ 保存角色配置失败'; return }
+  if (!jsonOk) { saveError.value = '保存角色配置失败'; return }
 
-  // 3. 删除已移除的图片文件
   if (orphaned.length > 0) {
     const { invoke } = await import('@tauri-apps/api/core')
     await Promise.all(orphaned.map(f =>
       invoke('delete_character_image', { id: editingId.value, filename: f })
-        .catch(() => {/* 忽略删除失败 */})
+        .catch(() => { /* ignore */ })
     ))
   }
 
-  // 4. 强制重新加载
   await charStore.loadCharacter(editingId.value, true)
   loadData()
-  saveMsg.value = '✅ 保存成功！文件已更新'
+  bustImageCache()  // 递增缓存版本，下次图片请求使用新 URL
+  saveMsg.value = '保存成功！文件已更新'
   hasChanges.value = false
+  pendingExit.value = false
   setTimeout(() => { saveMsg.value = '' }, 3000)
 }
 </script>
 
 <template>
   <div class="char-mgr">
-
-    <!-- ========== 角色卡片列表 ========== -->
+    <!-- ===== 角色卡片列表 ===== -->
     <div v-if="view === 'list'">
       <div class="mgr-header">
-        <h2 class="section-title">🎭 选择角色</h2>
+        <h2 class="section-title"><i class="fas fa-masks-theater"></i> 选择角色</h2>
       </div>
+      <CharacterList
+        :available-list="displayList"
+        :current-id="charStore.currentId"
+        @select="enterEditor"
+        @create="openCreateForm"
+      />
 
-      <div class="char-grid">
-        <div v-for="id in displayList" :key="id" class="char-card" @click="enterEditor(id)">
-          <div class="card-icon">{{ id === charStore.currentId ? '⭐' : '🎀' }}</div>
-          <div class="card-name">{{ id.charAt(0).toUpperCase() + id.slice(1) }}</div>
-          <div class="card-id">{{ id }}</div>
-          <div v-if="id === charStore.currentId" class="card-badge">当前</div>
+      <!-- 创建角色模态框 -->
+      <Transition name="modal-fade">
+        <div v-if="showCreateForm" class="modal-overlay" @click.self="showCreateForm = false">
+          <div class="modal-card">
+            <div class="modal-header">
+              <h3 class="modal-title"><i class="fas fa-masks-theater"></i> 创建新角色</h3>
+              <button class="modal-close" @click="showCreateForm = false">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">角色 ID <span class="label-note">（英文小写，如 "new_char"）</span></label>
+                <input
+                  v-model="newCharId"
+                  class="form-input"
+                  placeholder="my_character"
+                  autofocus
+                  @keydown.enter="submitCreateForm"
+                  @keydown.esc="showCreateForm = false"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">显示名称</label>
+                <input
+                  v-model="newCharName"
+                  class="form-input"
+                  placeholder="我的角色（留空则使用 ID）"
+                  @keydown.enter="submitCreateForm"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">描述 <span class="label-note">（可选）</span></label>
+                <input
+                  v-model="newCharDesc"
+                  class="form-input"
+                  placeholder="角色的简短描述"
+                />
+              </div>
+              <p v-if="createError" class="form-error">{{ createError }}</p>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-cancel" @click="showCreateForm = false">取消</button>
+              <button class="btn-create" @click="submitCreateForm">确认创建</button>
+            </div>
+          </div>
         </div>
-        <div class="char-card char-card-add" @click="createCharacter">
-          <div class="card-icon" style="font-size:32px;color:#aaa;">+</div>
-          <div class="card-name" style="color:#999;">添加角色</div>
-        </div>
-      </div>
+      </Transition>
     </div>
 
-    <!-- ========== 角色编辑器 ========== -->
+    <!-- ===== 角色编辑器 ===== -->
     <div v-if="view === 'editor'" class="editor-view">
-      <!-- 左栏：固定顶部栏 + 可滚动内容 -->
+      <!-- 左栏 -->
       <div class="editor-left">
         <div class="editor-sticky">
           <div class="editor-topbar">
-            <h2 class="editor-title">🎭 {{ editingId.charAt(0).toUpperCase() + editingId.slice(1) }}</h2>
+            <h2 class="editor-title"><i class="fas fa-masks-theater"></i> {{ editingId.charAt(0).toUpperCase() + editingId.slice(1) }}</h2>
             <div class="editor-actions">
               <button class="btn-back" @click="backToList">← 返回</button>
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
-                {{ hasChanges ? '💾 保存' : '保存' }}
+                <i v-if="hasChanges" class="fas fa-floppy-disk"></i> 保存
               </button>
+              <button class="btn-delete" @click="showDeleteConfirm = true" title="删除角色"><i class="fas fa-trash-can"></i></button>
             </div>
           </div>
           <div class="editor-status">
-            <span class="save-msg">{{ saveMsg }}</span>
-            <span class="save-err">{{ saveError }}</span>
+            <span v-if="saveMsg" class="save-msg">
+              <i class="fas fa-check-circle"></i>
+              {{ saveMsg }}
+            </span>
+            <span v-if="saveError" class="save-err">
+              <i class="fas fa-xmark-circle"></i>
+              {{ saveError }}
+            </span>
           </div>
         </div>
 
         <div class="editor-body">
-          <!-- 📝 提示词 -->
+          <!-- 提示词 -->
           <section class="mgr-section">
-            <h3 class="mgr-label">📝 提示词</h3>
+            <h3 class="mgr-label"><i class="fas fa-pencil"></i> 提示词</h3>
             <textarea v-model="promptText" class="mgr-textarea" rows="8" @input="markChanged"></textarea>
           </section>
 
           <!-- 姿势列表 -->
           <section class="mgr-section">
-            <h3 class="mgr-label">🧍 姿势</h3>
+            <h3 class="mgr-label"><i class="fas fa-person"></i> 姿势</h3>
             <div class="tag-list">
-              <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" title="点击移除">{{ p
-              }} ✕</span>
-              <button class="tag-add" @click="addPose">+ 添加</button>
+              <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" title="点击移除">{{ p }} ✕</span>
+              <template v-if="addingPose">
+                <input
+                  ref="poseInputRef"
+                  v-model="newPoseName"
+                  class="tag-input"
+                  placeholder="输入名称后回车"
+                  @keydown.enter="commitNewPose"
+                  @keydown.esc="addingPose = false"
+                  @blur="commitNewPose"
+                />
+              </template>
+              <button v-else class="tag-add" @click="addingPose = true">+ 添加</button>
             </div>
           </section>
 
           <!-- 服装列表 -->
           <section class="mgr-section">
-            <h3 class="mgr-label">👗 服装</h3>
+            <h3 class="mgr-label"><i class="fas fa-shirt"></i> 服装</h3>
             <div class="tag-list">
-              <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)"
-                title="点击移除">{{ c }} ✕</span>
-              <button class="tag-add" @click="addCostume">+ 添加</button>
+              <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" title="点击移除">{{ c }} ✕</span>
+              <template v-if="addingCostume">
+                <input
+                  ref="costumeInputRef"
+                  v-model="newCostumeName"
+                  class="tag-input"
+                  placeholder="输入名称后回车"
+                  @keydown.enter="commitNewCostume"
+                  @keydown.esc="addingCostume = false"
+                  @blur="commitNewCostume"
+                />
+              </template>
+              <button v-else class="tag-add" @click="addingCostume = true">+ 添加</button>
             </div>
           </section>
 
-          <!-- 🖼️ 立绘列表（grid） -->
+          <!-- 立绘网格 -->
           <section class="mgr-section">
-            <h3 class="mgr-label">🖼️ 立绘</h3>
+            <h3 class="mgr-label"><i class="fas fa-image"></i> 立绘</h3>
             <div class="img-grid">
-              <div v-for="(img, idx) in editableImages" :key="img.file"
-                :class="['img-card', { selected: editIndex === idx }]" @click="startEdit(idx)">
+              <div
+                v-for="img in editableImages"
+                :key="img.file"
+                :class="['img-card', { selected: editFile === img.file }]"
+                @click="editFile = img.file"
+              >
                 <div class="img-wrap">
                   <img class="img-grid-thumb" :src="charStore.getImageUrl(img.file)" :alt="img.file" />
                 </div>
@@ -401,51 +554,44 @@ async function saveAll() {
         </div>
       </div>
 
-      <!-- 右栏：立绘预览 + 编辑（选中时显示） -->
-      <div class="editor-right" :class="{ open: editIndex !== null }">
-        <template v-if="editIndex !== null">
-          <div class="preview-header">
-            <span class="preview-filename">{{ editableImages[editIndex]?.file }}</span>
-            <div class="preview-actions">
-              <button class="preview-btn preview-btn-del" @click="deleteImage(editIndex)" title="删除此立绘">🗑️</button>
-              <button class="preview-btn" @click="editIndex = null" title="关闭">✕</button>
-            </div>
+      <!-- 右栏：立绘预览 -->
+      <CharacterPreview
+        :image="editingImage"
+        :image-url="editingImageUrl"
+        :poses="editablePoses"
+        :costumes="editableCostumes"
+        @update-pose="setImagePose"
+        @update-costume="setImageCostume"
+        @add-emotion="addEmotion"
+        @remove-emotion="removeEmotion"
+        @delete="deleteImage"
+        @close="editFile = null"
+      />
+    </div>
+
+    <!-- 删除角色确认弹窗 -->
+    <Transition name="modal-fade">
+      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+        <div class="modal-card modal-warn">
+          <div class="modal-header">
+            <h3 class="modal-title"><i class="fas fa-triangle-exclamation"></i> 确认删除</h3>
+            <button class="modal-close" @click="showDeleteConfirm = false">✕</button>
           </div>
-          <div class="preview-image">
-            <img :src="charStore.getImageUrl(editableImages[editIndex]?.file ?? '')" />
+          <div class="modal-body">
+            <p class="delete-warn-text">
+              确定要删除角色 <strong>{{ editingId }}</strong> 吗？<br />
+              此操作会删除该角色的所有立绘、提示词和配置，<strong>不可恢复</strong>。
+            </p>
           </div>
-          <div class="preview-editor">
-            <div class="edit-row">
-              <label>姿势</label>
-              <select :value="editableImages[editIndex]?.pose"
-                @change="setImagePose(editIndex, ($event.target as HTMLSelectElement).value)">
-                <option v-for="p in editablePoses" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </div>
-            <div class="edit-row">
-              <label>服装</label>
-              <select :value="editableImages[editIndex]?.costume"
-                @change="setImageCostume(editIndex, ($event.target as HTMLSelectElement).value)">
-                <option v-for="c in editableCostumes" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </div>
-            <div class="edit-row">
-              <label>情绪</label>
-              <div class="emotion-edit">
-                <code v-for="(em, ei) in editableImages[editIndex]?.emotions" :key="ei" class="em-tag"
-                  @click="removeEmotion(editIndex, ei)" title="点击移除">{{ em }} ✕</code>
-                <input class="emotion-input" :value="emotionInputs[editIndex] ?? ''"
-                  @input="emotionInputs[editIndex] = ($event.target as HTMLInputElement).value"
-                  @keydown="onEmotionKeydown(editIndex, $event)" placeholder="输入后按空格添加" />
-              </div>
-            </div>
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="showDeleteConfirm = false">取消</button>
+            <button class="btn-delete-confirm" :disabled="isDeleting" @click="deleteCharacter">
+              {{ isDeleting ? '删除中...' : '确认删除' }}
+            </button>
           </div>
-        </template>
-        <div v-else class="preview-empty">
-          ← 从左侧选择一张立绘
         </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -459,61 +605,13 @@ async function saveAll() {
   margin-bottom: 16px;
 }
 
-/* ---- 角色卡片网格 ---- */
-.char-grid {
-  display: grid;
-  padding: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px;
-}
-
-.char-card {
-  background: white;
-  border: 1px solid #e5e5e7;
-  border-radius: 12px;
-  padding: 16px 12px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-}
-
-.char-card:hover {
-  border-color: #0071e3;
-  box-shadow: 0 2px 8px rgba(0, 113, 227, 0.08);
-  transform: translateY(-1px);
-}
-.char-card-add { border: 2px dashed #d2d2d7; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100px; background:#fafafa; }
-.char-card-add:hover { border-color:#0071e3; background:#f0f7ff; }
-
-.card-icon {
-  font-size: 28px;
-  margin-bottom: 6px;
-}
-
-.card-name {
-  font-size: 14px;
-  font-weight: 600;
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  padding: 16px 16px 0;
   color: #1d1d1f;
 }
-
-.card-id {
-  font-size: 11px;
-  color: #999;
-  margin-top: 2px;
-}
-
-.card-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 10px;
-  background: #0071e3;
-  color: white;
-  padding: 1px 6px;
-  border-radius: 8px;
-}
-
 
 /* ---- 编辑器双栏布局 ---- */
 .editor-view {
@@ -530,30 +628,15 @@ async function saveAll() {
   padding: 16px;
   overflow: hidden;
   height: 100%;
+}
 
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
+.editor-left {
   scrollbar-width: none;
-  scrollbar-color: transparent transparent;
+}
+.editor-left::-webkit-scrollbar {
+  display: none;
 }
 
-.editor-right {
-  width: 0;
-  overflow: hidden;
-  background: white;
-  border-left: 1px solid #e5e5e7;
-  display: flex;
-  flex-direction: column;
-  transition: width 0.2s ease;
-}
-
-.editor-right.open {
-  width: 340px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
 
 /* ---- 固定顶部栏 ---- */
 .editor-sticky {
@@ -703,7 +786,10 @@ async function saveAll() {
   min-height: 140px;
   transition: border-color 0.12s, background 0.12s;
 }
-.img-card-add:hover { border-color: #0071e3; background: #f0f7ff; }
+.img-card-add:hover {
+  border-color: #0071e3;
+  background: #f0f7ff;
+}
 
 .img-add-icon {
   font-size: 32px;
@@ -721,78 +807,7 @@ async function saveAll() {
   margin-top: 1px;
 }
 
-/* ---- 右侧预览 ---- */
-.preview-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid #eee;
-  flex-shrink: 0;
-}
-
-.preview-filename {
-  font-size: 12px;
-  font-family: monospace;
-  color: #555;
-}
-
-.preview-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.preview-btn {
-  background: none;
-  border: none;
-  font-size: 14px;
-  cursor: pointer;
-  color: #999;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.preview-btn:hover {
-  background: #f0f0f0;
-  color: #333;
-}
-.preview-btn-del:hover { background: #ffe0e0; color: #d00; }
-
-.preview-image {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  background: #fafafa;
-  overflow: hidden;
-}
-
-.preview-image img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.preview-editor {
-  padding: 10px 12px;
-  border-top: 1px solid #eee;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.preview-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #bbb;
-  font-size: 13px;
-}
-
+/* ---- 表单 ---- */
 .mgr-section {
   margin-bottom: 20px;
 }
@@ -825,7 +840,7 @@ async function saveAll() {
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
-/* 标签列表（姿势/服装/情绪） */
+/* 标签列表 */
 .tag-list {
   display: flex;
   flex-wrap: wrap;
@@ -850,19 +865,6 @@ async function saveAll() {
   background: #fff5f5;
 }
 
-.tag-auto {
-  border-color: #e8f0ff;
-  background: #e8f0ff;
-  color: #0071e3;
-  cursor: default;
-}
-
-.tag-auto:hover {
-  border-color: #e8f0ff;
-  color: #0071e3;
-  background: #e8f0ff;
-}
-
 .tag-add {
   font-size: 12px;
   padding: 4px 10px;
@@ -878,195 +880,224 @@ async function saveAll() {
   color: #0071e3;
 }
 
-/* 图片列表 */
-.img-list {}
-
-.img-card {
-  border: 1px solid #e5e5e7;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-
-.img-card.editing {
-  border-color: #0071e3;
-}
-
-.img-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  cursor: pointer;
+/* ---- 行内标签输入 ---- */
+.tag-input {
   font-size: 12px;
-  transition: background 0.1s;
-}
-
-.img-preview:hover {
-  background: #f5f9ff;
-}
-
-.img-thumb {
-  width: 40px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 4px;
-  border: 1px solid #e5e5e7;
-  background: #fafafa;
-  flex-shrink: 0;
-}
-
-.img-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.img-file {
-  font-family: monospace;
-  color: #555;
-  font-size: 11px;
-}
-
-.img-summary {
-  color: #999;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 图片编辑区 */
-.img-editor {
-  background: #fafafa;
-  border-top: 1px solid #e5e5e7;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.edit-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.edit-row label {
-  font-size: 11px;
-  color: #888;
-  width: 40px;
-  flex-shrink: 0;
-}
-
-.edit-row select {
-  flex: 1;
-  padding: 4px 8px;
-  font-size: 12px;
-  border: 1px solid #d2d2d7;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border: 1px solid #0071e3;
+  border-radius: 14px;
   background: white;
-  outline: none;
-}
-
-.emotion-edit {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  align-items: center;
-}
-
-.em-tag {
-  font-size: 11px;
-  background: #e8f0ff;
-  color: #0071e3;
-  padding: 2px 7px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: monospace;
-}
-
-.em-tag:hover {
-  background: #ffe0e0;
-  color: #d00;
-}
-
-.emotion-input {
-  flex: 1;
-  min-width: 120px;
-  padding: 3px 8px;
-  font-size: 12px;
-  border: 1px solid #d2d2d7;
-  border-radius: 6px;
-  background: white;
+  color: #1d1d1f;
   outline: none;
   font-family: inherit;
+  min-width: 120px;
+  transition: border-color 0.15s;
 }
 
-.emotion-input:focus {
-  border-color: #0071e3;
+.tag-input:focus {
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
-.btn-add-em {
-  width: 22px;
-  height: 22px;
-  border: 1px dashed #aaa;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-  font-size: 14px;
-  color: #888;
+/* ---- 创建角色模态框 ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  line-height: 1;
+  z-index: 200;
+  backdrop-filter: blur(4px);
 }
 
-.btn-add-em:hover {
-  border-color: #0071e3;
-  color: #0071e3;
+.modal-card {
+  background: white;
+  border-radius: 16px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
 }
 
-/* 底部 */
-.mgr-actions {
+.modal-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #e5e5e7;
+  padding: 18px 20px 0;
 }
 
-.btn-save {
-  padding: 8px 24px;
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #999;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.modal-close:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.modal-body {
+  padding: 16px 20px;
+}
+
+.modal-body .form-group {
+  margin-bottom: 14px;
+}
+
+.modal-body .form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 5px;
+}
+
+.modal-body .label-note {
+  font-weight: 400;
+  color: #999;
+}
+
+.modal-body .form-input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: white;
+  color: #1d1d1f;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.modal-body .form-input:focus {
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.form-error {
+  font-size: 13px;
+  color: #d00;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
+
+.btn-cancel {
+  padding: 8px 18px;
+  font-size: 13px;
+  border: 1px solid #d2d2d7;
+  background: white;
+  color: #555;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-cancel:hover {
+  border-color: #999;
+  color: #333;
+}
+
+.btn-create {
+  padding: 8px 20px;
   font-size: 13px;
   font-weight: 500;
   border: none;
   background: #0071e3;
   color: white;
-  border-radius: 20px;
+  border-radius: 8px;
   cursor: pointer;
   transition: opacity 0.15s;
 }
 
-.btn-save:hover {
+.btn-create:hover {
   opacity: 0.85;
 }
 
-.btn-save.dirty {
-  background: #30b94e;
+/* ---- 模态切换动画 ---- */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: all 0.2s ease;
 }
 
-.save-msg {
-  font-size: 12px;
-  color: #30b94e;
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
 }
 
-.save-err {
-  font-size: 12px;
-  color: #d00;
+.modal-fade-enter-from .modal-card,
+.modal-fade-leave-to .modal-card {
+  transform: scale(0.95);
+}
+
+/* ---- 删除按钮 ---- */
+.btn-delete {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0.4;
+  transition: all 0.15s;
+}
+
+.btn-delete:hover {
+  opacity: 1;
+  background: #fff0f0;
+}
+
+.btn-delete-confirm {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: #d00;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-delete-confirm:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-delete-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delete-warn-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #555;
+  margin: 0;
+}
+
+.delete-warn-text strong {
+  color: #1d1d1f;
+}
+
+.modal-warn {
+  border-top: 3px solid #d00;
 }
 </style>

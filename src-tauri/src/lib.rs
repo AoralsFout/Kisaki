@@ -61,6 +61,17 @@ fn delete_character_image(id: String, filename: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 删除整个角色目录（含所有图片和配置文件）
+#[tauri::command]
+fn delete_character(id: String) -> Result<(), String> {
+    let dir = project_root().join("public").join("character").join(&id);
+    if !dir.exists() {
+        return Err(format!("角色目录不存在: {}", id));
+    }
+    fs::remove_dir_all(&dir).map_err(|e| format!("删除角色目录失败: {}", e))?;
+    Ok(())
+}
+
 /// 扫描角色目录，返回所有可用角色 ID
 #[tauri::command]
 fn list_characters() -> Result<Vec<String>, String> {
@@ -90,7 +101,7 @@ fn list_characters() -> Result<Vec<String>, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_character_file, save_character_image, delete_character_image, list_characters])
+        .invoke_handler(tauri::generate_handler![write_character_file, save_character_image, delete_character_image, delete_character, list_characters])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

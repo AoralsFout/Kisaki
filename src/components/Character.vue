@@ -34,6 +34,22 @@ const fadingImage = ref<CharacterImageData | null>(null)
 /** 是否已触发淡出 */
 const fading = ref(false)
 
+/** 图片预加载：提前加载当前选中图片到浏览器缓存 */
+function preloadImage(file: string | undefined) {
+  if (!file) return
+  const url = charStore.getImageUrl(file)
+  const img = new Image()
+  img.src = url
+}
+
+/** 监听当前图片变更，预加载新图 */
+watch(
+  () => controller.currentImage.value?.file,
+  (newFile) => {
+    if (newFile) preloadImage(newFile)
+  },
+)
+
 /** 根据当前姿态计算 CSS 样式 */
 const imageStyle = computed(() => {
   const pose = controller.screenPosePreset.value

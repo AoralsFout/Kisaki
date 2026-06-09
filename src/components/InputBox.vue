@@ -37,10 +37,12 @@ watch(inputText, (v) => {
   emit('update:modelValue', v)
 })
 
-// 显示时自动聚焦
+// 显示时自动聚焦，关闭时清空输入
 watch(() => props.visible, (v) => {
   if (v) {
     setTimeout(() => inputRef.value?.focus(), 100)
+  } else {
+    inputText.value = ''
   }
 })
 
@@ -64,11 +66,10 @@ function handleClose() {
 </script>
 
 <template>
-  <Transition name="slide-up">
-    <div v-if="visible" class="input-overlay" @click.self="handleClose">
+  <div class="input-overlay" @click.self="handleClose">
       <div class="input-container" @click.stop>
         <div class="input-header">
-          <span class="input-title">💬 对话</span>
+          <span class="input-title"><i class="fas fa-comment"></i> 对话</span>
           <button class="btn-close" @click="handleClose">✕</button>
         </div>
         <textarea
@@ -92,7 +93,6 @@ function handleClose() {
         </div>
       </div>
     </div>
-  </Transition>
 </template>
 
 <style scoped>
@@ -198,15 +198,4 @@ function handleClose() {
   cursor: not-allowed;
 }
 
-/* 过渡动画 */
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-up-enter-from,
-.slide-up-leave-to {
-  transform: translateY(100%);
-  opacity: 0;
-}
 </style>

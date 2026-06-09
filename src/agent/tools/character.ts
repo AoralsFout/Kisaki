@@ -6,6 +6,7 @@
 import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
 import { useCharacterStore } from '../../stores/character'
+import { getCharacterController } from '../../character/commandBus'
 
 function getStore() {
   return useCharacterStore()
@@ -36,7 +37,7 @@ export const setEmotionTool: Tool = {
     if (store.emotions.length && !store.emotions.includes(emotion)) {
       return `不支持的情绪。可用: ${store.emotions.join(', ')}`
     }
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setEmotion(emotion)
     return `表情已切换为「${emotion}」`
@@ -68,7 +69,7 @@ export const setStanceTool: Tool = {
     if (store.poses.length && !store.poses.includes(stance)) {
       return `不支持的姿势。可用: ${store.poses.join(', ')}`
     }
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setPoseTag(stance)
     return `姿势已切换为「${stance}」`
@@ -100,7 +101,7 @@ export const setCostumeTool: Tool = {
     if (store.costumes.length && !store.costumes.includes(costume)) {
       return `不支持的服装。可用: ${store.costumes.join(', ')}`
     }
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setCostume(costume)
     return `服装已切换为「${costume}」`
@@ -125,7 +126,7 @@ export const setLookTool: Tool = {
     },
   },
   handler: async (args) => {
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setLook({
       pose: args.stance || undefined,
@@ -165,7 +166,7 @@ export const setScreenPoseTool: Tool = {
     if (!ALL_POSE_KEYS.includes(pose as any)) {
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setScreenPose(pose as any)
     return `屏幕位置已切换为「${POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose}」`
@@ -186,7 +187,7 @@ export const getStateTool: Tool = {
     },
   },
   handler: async () => {
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     const img = ctrl.currentImage.value
     const screenPose = ctrl.currentScreenPose.value
@@ -227,7 +228,7 @@ export const switchCharacterTool: Tool = {
     if (!store.availableList.includes(id)) {
       return `未知角色 "${id}"，可用: ${store.availableList.join(', ')}`
     }
-    const ctrl = (await import('../../character/commandBus')).getCharacterController()
+    const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     await ctrl.switchCharacter(id)
     return `已切换到 ${store.name}`

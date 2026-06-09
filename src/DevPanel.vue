@@ -115,7 +115,7 @@ function setEmotion(emotion: string) {
   <div class="dev-panel" :class="{ 'embedded': !isDevWindow }">
     <!-- === 身体姿势 === -->
     <section class="section">
-      <h2 class="section-title">🧍 姿势</h2>
+      <h2 class="section-title"><i class="fas fa-person"></i> 姿势</h2>
       <div class="status-bar">
         <span class="status-label">当前：</span>
         <span class="status-value">{{ controller.currentPoseTag.value || '-' }}</span>
@@ -131,7 +131,7 @@ function setEmotion(emotion: string) {
 
     <!-- === 服装 === -->
     <section class="section">
-      <h2 class="section-title">👗 服装</h2>
+      <h2 class="section-title"><i class="fas fa-shirt"></i> 服装</h2>
       <div class="status-bar">
         <span class="status-label">当前：</span>
         <span class="status-value">{{ controller.currentCostume.value || '-' }}</span>
@@ -147,7 +147,7 @@ function setEmotion(emotion: string) {
 
     <!-- === 情绪 === -->
     <section class="section">
-      <h2 class="section-title">😊 情绪</h2>
+      <h2 class="section-title"><i class="fas fa-face-smile"></i> 情绪</h2>
       <div class="status-bar">
         <span class="status-label">当前：</span>
         <span class="status-value">{{ controller.currentEmotion.value || '-' }}</span>
@@ -163,7 +163,7 @@ function setEmotion(emotion: string) {
 
     <!-- === 屏幕姿态 === -->
     <section class="section">
-      <h2 class="section-title">🖥️ 屏幕位置</h2>
+      <h2 class="section-title"><i class="fas fa-display"></i> 屏幕位置</h2>
       <div class="status-bar">
         <span class="status-label">当前：</span>
         <span class="status-value">{{ POSE_PRESETS[controller.currentScreenPose.value]?.label ?? '-' }}</span>

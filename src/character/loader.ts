@@ -6,6 +6,19 @@
  * - prompt.txt：    系统提示词（单独文件，避免 JSON 臃肿）
  */
 
+// 缓存版本号 — 调用 bustImageCache() 递增，替代 Date.now()
+let _imgVer = 0
+
+/** 强制刷新图片/数据缓存（保存角色后调用） */
+export function bustImageCache() {
+  _imgVer++
+}
+
+/** 获取当前缓存版本号 */
+export function getImageCacheVersion(): number {
+  return _imgVer
+}
+
 export interface CharacterImageData {
   file: string
   pose: string
@@ -31,10 +44,11 @@ export function imageUrl(charId: string, fileName: string): string {
   return `/character/${charId}/images/${fileName}`
 }
 
-/** 加时间戳避免缓存 */
+/** 加版本号避免缓存（使用递增计数器替代 Date.now() 以利用浏览器缓存） */
 function uncached(url: string): string {
+  if (_imgVer === 0) return url  // 版本 0 = 不附加查询参数，可被缓存
   const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}_t=${Date.now()}`
+  return `${url}${sep}_v=${_imgVer}`
 }
 
 /** 加载角色提示词（优先 prompt.txt，再 fallback JSON 内字段） */

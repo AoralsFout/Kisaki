@@ -84,19 +84,30 @@ function handleSend(text: string) {
 }
 
 async function openSettingsWindow() {
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+  const { getAllWindows } = await import('@tauri-apps/api/window')
   try {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+    // 检查是否已有设置窗口
+    const all = await getAllWindows()
+    const existing = all.find(w => w.label === 'settings')
+    if (existing) {
+      await existing.unminimize()
+      await existing.show()
+      await existing.setFocus()
+      return
+    }
+
     new WebviewWindow('settings', {
       url: '/?settings=1',
-      title: '⚙️ 设置',
+      title: '设置',
       width: 1000,
       height: 600,
       decorations: false,
       resizable: true,
-      center: true
+      center: true,
     })
   } catch (e) {
-    console.warn('无法打开设置窗口', e)
+    console.error('无法打开设置窗口', e)
   }
 }
 
@@ -137,30 +148,32 @@ async function handleSelectCharacter(charId: string) {
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar">
         <button class="tool-btn" @click="chat.openInput()">
-          <span class="btn-icon">💬</span>
+          <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
         </button>
         <button class="tool-btn" @click="showHistory = !showHistory">
-          <span class="btn-icon">📋</span>
+          <i class="fas fa-clipboard-list btn-icon"></i>
           <span class="btn-label">历史</span>
         </button>
         <button class="tool-btn" @click="showCharacterSelect = !showCharacterSelect">
-          <span class="btn-icon">🔄</span>
+          <i class="fas fa-rotate btn-icon"></i>
           <span class="btn-label">角色</span>
         </button>
         <button class="tool-btn" @click="openSettingsWindow()">
-          <span class="btn-icon">⚙️</span>
+          <i class="fas fa-gear btn-icon"></i>
           <span class="btn-label">设置</span>
         </button>
       </div>
 
-      <!-- 输入框 -->
-      <InputBox
-        :visible="chat.showInput"
-        :disabled="chat.isProcessing"
-        @send="handleSend"
-        @close="chat.closeInput()"
-      />
+      <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
+      <div class="input-wrapper" :class="{ open: chat.showInput }">
+        <InputBox
+          :visible="chat.showInput"
+          :disabled="chat.isProcessing"
+          @send="handleSend"
+          @close="chat.closeInput()"
+        />
+      </div>
     </div>
 
     <!-- 面板 -->
@@ -214,9 +227,21 @@ async function handleSelectCharacter(charId: string) {
 
 .character-area {
   position: absolute;
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  border: 1px dashed #f00
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- 输入框展开动画（缓慢抬升工具栏/气泡） ---- */
+.input-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.input-wrapper.open {
+  max-height: 260px;
 }
 
 /* ---- 底部工具栏 ---- */

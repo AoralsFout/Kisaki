@@ -68,7 +68,7 @@ function closeWindow() {
   <div class="settings-window" :class="{ standalone: isSettingsWindow }">
     <!-- 标题栏 -->
     <header class="topbar" data-tauri-drag-region>
-      <span class="topbar-title">⚙️ 设置</span>
+      <span class="topbar-title"><i class="fas fa-gear"></i> 设置</span>
       <div v-if="isSettingsWindow" class="window-controls">
         <button class="win-btn" @click="minimizeWindow" title="最小化">─</button>
         <button class="win-btn" @click="maximizeWindow" title="最大化">□</button>
@@ -80,19 +80,19 @@ function closeWindow() {
       <!-- 左侧导航 -->
       <nav class="sidebar">
         <button :class="['nav-item', { active: activeTab === 'api' }]" @click="activeTab = 'api'">
-          <span class="nav-icon">🔌</span>
+          <i class="fas fa-plug nav-icon"></i>
           <span>API 配置</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
-          <span class="nav-icon">🎭</span>
+          <i class="fas fa-masks-theater nav-icon"></i>
           <span>角色管理</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
-          <span class="nav-icon">🛠️</span>
+          <i class="fas fa-screwdriver-wrench nav-icon"></i>
           <span>Dev</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
-          <span class="nav-icon">ℹ️</span>
+          <i class="fas fa-circle-info nav-icon"></i>
           <span>关于</span>
         </button>
       </nav>
@@ -130,9 +130,9 @@ function closeWindow() {
 
           <div class="form-actions">
             <button class="btn-save" @click="handleSave">
-              {{ saved ? '✅ 已保存' : '保存' }}
+              {{ saved ? '✓ 已保存' : '保存' }}
             </button>
-            <span v-if="isConfigValid(config)" class="status-ok">配置可用 ✓</span>
+            <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> 配置可用</span>
           </div>
         </div>
 
@@ -143,7 +143,7 @@ function closeWindow() {
 
         <!-- ===== Dev 面板 ===== -->
         <div v-if="activeTab === 'dev'" class="content-section content-dev">
-          <h2 class="section-title">🛠️ Dev 面板</h2>
+          <h2 class="section-title"><i class="fas fa-screwdriver-wrench"></i> Dev 面板</h2>
           <p class="section-desc">姿态、情绪等功能的本地测试。</p>
           <DevPanel />
         </div>

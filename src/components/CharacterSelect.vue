@@ -30,7 +30,7 @@ function handleSelect(id: string) {
     <div v-if="visible" class="overlay">
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">🎭 切换角色</span>
+          <span class="panel-title"><i class="fas fa-masks-theater"></i> 切换角色</span>
           <div class="header-actions">
             <span class="count">{{ charStore.availableList.length }} 个角色</span>
             <button class="btn-close" @click="emit('close')">✕</button>
@@ -45,7 +45,8 @@ function handleSelect(id: string) {
             @click="handleSelect(id)"
           >
             <div class="char-avatar">
-              {{ id === charStore.currentId ? '⭐' : '🎀' }}
+              <i v-if="id === charStore.currentId" class="fas fa-star"></i>
+              <i v-else class="fas fa-ribbon"></i>
             </div>
             <div class="char-info">
               <div class="char-name">
@@ -53,7 +54,7 @@ function handleSelect(id: string) {
               </div>
               <div class="char-id">{{ id }}</div>
             </div>
-            <div v-if="id === charStore.currentId" class="char-check">✓</div>
+            <div v-if="id === charStore.currentId" class="char-check"><i class="fas fa-check"></i></div>
           </div>
 
           <div class="list-end"></div>
@@ -171,6 +172,7 @@ function handleSelect(id: string) {
   justify-content: center;
   background: rgba(255, 255, 255, 0.04);
   border-radius: 50%;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .char-info {

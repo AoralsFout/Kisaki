@@ -39,10 +39,10 @@ watch(
       <div class="history-panel">
         <!-- 头部 -->
         <div class="history-header">
-          <span class="history-title">📋 对话历史</span>
+          <span class="history-title"><i class="fas fa-clipboard-list"></i> 对话历史</span>
           <div class="header-actions">
             <span class="msg-count">{{ chat.messages.length }} 条</span>
-            <button class="btn-clear" @click="chat.clearMessages()" title="清空历史">🗑️</button>
+            <button class="btn-clear" @click="chat.clearMessages()" title="清空历史"><i class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
         </div>
@@ -59,7 +59,8 @@ watch(
             :class="['message', msg.role]"
           >
             <div class="msg-avatar">
-              {{ msg.role === 'user' ? '🧑' : '🎀' }}
+              <i v-if="msg.role === 'user'" class="fas fa-user"></i>
+              <i v-else class="fas fa-ribbon"></i>
             </div>
             <div class="msg-content">
               <div class="msg-role-label">
@@ -68,7 +69,7 @@ watch(
               </div>
               <!-- 思考内容（仅 assistant 消息可能有） -->
               <details v-if="msg.thinking" class="thinking-block">
-                <summary class="thinking-summary">🤔 思考过程</summary>
+                <summary class="thinking-summary"><i class="fas fa-circle-question"></i> 思考过程</summary>
                 <div class="thinking-text">{{ msg.thinking }}</div>
               </details>
               <div class="msg-text">{{ msg.text }}</div>
