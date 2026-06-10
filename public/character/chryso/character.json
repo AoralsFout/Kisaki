@@ -204,5 +204,7 @@
         "惊讶"
       ]
     }
-  ]
+  ],
+  "voiceLanguage": "ja-JP",
+  "textLanguage": "zh-CN"
 }

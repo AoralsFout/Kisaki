@@ -199,5 +199,7 @@
         "idle"
       ]
     }
-  ]
+  ],
+  "voiceLanguage": "ja-JP",
+  "textLanguage": "zh-CN"
 }

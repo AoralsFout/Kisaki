@@ -19,6 +19,7 @@ import { fetchVoiceList } from '../tts/api'
 import type { CosyVoiceConfig, VoiceInfo } from '../tts/types'
 import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
+import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../stores/language'
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has('settings')
 const selfWindow = ref<WebviewWindow | null>(null)
@@ -34,6 +35,7 @@ const voices = ref<VoiceInfo[]>([])
 const loadingVoices = ref(false)
 const voiceError = ref('')
 const ttsEnabled = ref(isTtsEnabled())
+const displayLang = ref(getDisplayLanguage())
 
 // ---- 导航 ----
 type Tab = 'api' | 'character' | 'tts' | 'dev' | 'about'
@@ -260,6 +262,17 @@ function closeWindow() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <hr class="section-divider" />
+
+          <!-- 用户显示语言偏好 -->
+          <div class="form-group">
+            <label class="form-label">显示语言</label>
+            <select v-model="displayLang" class="form-select" @change="setDisplayLanguage(displayLang)">
+              <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+            </select>
+            <p class="form-hint">AI 回复的文本将翻译为你选择的语言显示。角色语音始终使用其母语合成。</p>
           </div>
         </div>
 

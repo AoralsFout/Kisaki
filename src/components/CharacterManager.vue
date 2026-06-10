@@ -9,6 +9,7 @@ import { bustImageCache } from '../character/loader'
 import { loadCosyVoiceConfig, isCosyVoiceConfigValid } from '../tts'
 import { fetchVoiceList } from '../tts/api'
 import type { VoiceInfo } from '../tts/types'
+import { SUPPORTED_LANGUAGES } from '../stores/language'
 import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
 
@@ -57,6 +58,8 @@ const loadingVoices = ref(false)
 const voiceError = ref('')
 const selectedVoice = ref('')
 const selectedVoiceModel = ref('')
+const selectedVoiceLang = ref('ja-JP')
+const selectedTextLang = ref('zh-CN')
 
 // 行内输入自动聚焦
 watch(addingPose, (v) => { if (v) setTimeout(() => poseInputRef.value?.focus(), 50) })
@@ -113,6 +116,7 @@ async function submitCreateForm() {
       poses: ['standing'], emotions: ['idle'],
       costumes: ['default'], images: [],
       voice: '', voiceModel: '',
+      voiceLanguage: 'ja-JP', textLanguage: 'zh-CN',
     }
     await invoke('write_character_file', {
       id, filename: 'character.json',
@@ -187,6 +191,8 @@ function loadData() {
   editableCostumes.value = [...data.costumes]
   selectedVoice.value = data.voice ?? ''
   selectedVoiceModel.value = data.voiceModel ?? ''
+  selectedVoiceLang.value = data.voiceLanguage || 'ja-JP'
+  selectedTextLang.value = data.textLanguage || 'zh-CN'
   editFile.value = null
   // 异步加载音色列表
   loadVoices()
@@ -400,6 +406,8 @@ async function saveAll() {
     newData.voice = selectedVoice.value
     newData.voiceModel = selectedVoiceModel.value || undefined
   }
+  newData.voiceLanguage = selectedVoiceLang.value
+  newData.textLanguage = selectedTextLang.value
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
   if (!jsonOk) { saveError.value = '保存角色配置失败'; return }
@@ -579,6 +587,21 @@ async function saveAll() {
             <p v-else-if="selectedVoice" class="voice-hint-ok">
               <i class="fas fa-check-circle"></i> 已选择语音音色
             </p>
+
+            <div class="lang-row">
+              <div class="lang-field">
+                <label class="lang-label">语音语言（TTS）</label>
+                <select v-model="selectedVoiceLang" class="voice-select" @change="markChanged">
+                  <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+                </select>
+              </div>
+              <div class="lang-field">
+                <label class="lang-label">默认显示语言</label>
+                <select v-model="selectedTextLang" class="voice-select" @change="markChanged">
+                  <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+                </select>
+              </div>
+            </div>
           </section>
 
           <!-- 立绘网格 -->
@@ -1225,5 +1248,25 @@ async function saveAll() {
   font-size: 11px;
   color: #d00;
   margin: 6px 0 0;
+}
+
+/* ---- 语音/显示语言选择 ---- */
+.lang-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lang-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.lang-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #777;
+  margin-bottom: 4px;
 }
 </style>

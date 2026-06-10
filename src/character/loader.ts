@@ -41,6 +41,10 @@ export interface CharacterData {
   voice?: string
   /** 语音合成模型 */
   voiceModel?: string
+  /** TTS 合成用语言，如 "ja-JP"、"zh-CN"、"en-US" */
+  voiceLanguage?: string
+  /** 默认文本显示语言，如 "zh-CN"、"en-US"、"ja-JP" */
+  textLanguage?: string
 }
 
 /** 图片完整 URL */

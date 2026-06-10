@@ -10,6 +10,52 @@ import { getDefaultMessages } from './prompts'
 /** 最大保留的对话轮数（一轮 = 一问一答） */
 const MAX_ROUNDS = 10
 
+/**
+ * 构建双语回复格式指令
+ * @param voiceLang 角色语音语言（TTS 合成用），如 "ja-JP"
+ * @param displayLang 用户显示语言，如 "zh-CN"
+ */
+function buildLangInstruction(voiceLang: string, displayLang: string): string {
+  const langNames: Record<string, string> = {
+    'zh-CN': '中文（简体）',
+    'zh-TW': '中文（繁体）',
+    'en-US': '英语',
+    'ja-JP': '日语',
+    'ko-KR': '韩语',
+    'fr-FR': '法语',
+    'de-DE': '德语',
+    'es-ES': '西班牙语',
+    'ru-RU': '俄语',
+  }
+  const voiceLangName = langNames[voiceLang] || voiceLang
+  const displayLangName = langNames[displayLang] || displayLang
+
+  // 如果语音语言和显示语言相同，不需要双语格式
+  if (voiceLang === displayLang) {
+    return `\n\n## 📝 语言要求\n你的母语是 ${voiceLangName}。请用 ${voiceLangName} 回复。`
+  }
+
+  return `\n\n## 📝 双语回复格式（必须遵守）
+
+你的母语是 ${voiceLangName}，但用户使用 ${displayLangName}。
+
+每次回复你必须同时输出以下两个部分：
+1. 【${voiceLangName}】用你的母语（${voiceLangName}）自然说出的话（用于语音合成）
+2. 【译文】翻译成用户语言（${displayLangName}）的版本（用于显示）
+
+格式：
+【${voiceLangName}】<角色母语内容>
+【译文】<用户语言内容>
+
+示例（母语=日语，用户语言=中文）：
+【日本語】こんにちは、お兄さん。今日はどうしたの？
+【译文】你好呀，哥哥。今天怎么啦？
+
+注意：
+- 即使调用了工具，最终回复也要遵循此格式
+- 不要省略任一字段`
+}
+
 /** 工具使用说明（自动追加到所有角色提示词末尾） */
 const TOOL_INSTRUCTIONS = `
 ## 🔧 函数调用规则（必须遵守）
@@ -53,12 +99,13 @@ export class ChatContext {
     this.reset()
   }
 
-  /** 设置自定义 system prompt（自动追加工具说明） */
-  setSystemPrompt(prompt: string) {
+  /** 设置自定义 system prompt（自动追加语言指令和工具说明） */
+  setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string) {
     this.customPrompt = prompt
+    const langInstruction = voiceLang && displayLang ? buildLangInstruction(voiceLang, displayLang) : ''
     this.messages[0] = {
       role: 'system',
-      content: prompt + TOOL_INSTRUCTIONS,
+      content: prompt + langInstruction + TOOL_INSTRUCTIONS,
     }
   }
 

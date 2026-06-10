@@ -58,6 +58,35 @@ function stripTextToolCalls(text: string): string {
   return text.replace(TEXT_TOOL_CALL_RE, '').trim()
 }
 
+/** 双语回复的语言标签匹配模式 */
+const NATIVE_RE = /【([^】]+)】([\s\S]*?)(?=【译文】|$)/
+const DISPLAY_RE = /【译文】([\s\S]*?)$/
+
+/**
+ * 解析 AI 回复中的双语内容
+ * 格式：
+ *   【日语】こんにちは
+ *   【译文】你好
+ *
+ * 如果解析失败则整段文本同时用作显示和 TTS
+ */
+function parseBilingualResponse(text: string): { nativeText: string; displayText: string } {
+  const nativeMatch = text.match(NATIVE_RE)
+  const displayMatch = text.match(DISPLAY_RE)
+
+  if (nativeMatch && displayMatch) {
+    const nativeText = nativeMatch[2].trim()
+    const displayText = displayMatch[1].trim()
+    if (nativeText && displayText) {
+      return { nativeText, displayText }
+    }
+  }
+
+  // 没有【译文】标签但可能是纯母语回复（语音=显示语言的情况）
+  // 此时整段文本同时用于显示和播报
+  return { nativeText: text, displayText: text }
+}
+
 /** 包装 chat() 为 Promise 返回 */
 function chatOnce(
   messages: ReturnType<ChatContext['getMessages']>,
@@ -196,12 +225,14 @@ export const useChatStore = defineStore('chat', () => {
             continue // 继续请求 AI 生成最终回复
           }
 
-          // 正常文本回复
+          // 正常文本回复 — 解析双语内容
           if (finalText) {
-            chatContext.addAssistantMessage(finalText)
-            addMessage('assistant', finalText, currentThinking.value)
-            // TTS 播报
-            triggerTts(finalText)
+            const { nativeText, displayText } = parseBilingualResponse(finalText)
+
+            chatContext.addAssistantMessage(displayText)
+            addMessage('assistant', displayText, currentThinking.value)
+            // TTS 播报使用角色母语文本
+            triggerTts(nativeText)
           }
           break
         }
@@ -287,9 +318,9 @@ export const useChatStore = defineStore('chat', () => {
     chatContext = new ChatContext()
   }
 
-  /** 更新角色 system prompt */
-  function setSystemPrompt(prompt: string) {
-    chatContext.setSystemPrompt(prompt)
+  /** 更新角色 system prompt（含语言配置） */
+  function setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string) {
+    chatContext.setSystemPrompt(prompt, voiceLang, displayLang)
   }
 
   function showBubbleText(text: string, typing: boolean = true) {

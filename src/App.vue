@@ -13,6 +13,7 @@ import DevPanel from './DevPanel.vue'
 import { useChatStore } from './stores/chat'
 import { useCharacterStore } from './character'
 import { speakText, isTtsEnabled, setTtsEnabled } from './tts'
+import { resolveDisplayLanguage } from './stores/language'
 
 const isDev = new URLSearchParams(window.location.search).has('dev')
 const isSettings = new URLSearchParams(window.location.search).has('settings')
@@ -38,17 +39,19 @@ onMounted(async () => {
   chat.init()
   await charStore.init()
   if (charStore.prompt) {
-    chat.setSystemPrompt(charStore.prompt)
+    const voiceLang = charStore.data?.voiceLanguage || 'ja-JP'
+    const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
+    chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
   }
 
   setTimeout(() => {
     if (!welcomeShown) {
       welcomeShown = true
       chat.showBubbleText('嘿嘿', true)
-      // TTS 播报欢迎语
-      if (isTtsEnabled() && charStore.data?.voice) {
-        speakText('嘿嘿', charStore.data.voice).catch(() => {})
-      }
+      // // TTS 播报欢迎语
+      // if (isTtsEnabled() && charStore.data?.voice) {
+      //   speakText('', charStore.data.voice).catch(() => {})
+      // }
     }
   }, 1000)
 
@@ -127,7 +130,11 @@ async function handleSelectCharacter(charId: string) {
   if (!ctrl || charId === charStore.currentId) return
   await ctrl.switchCharacter(charId)
   chat.resetContext()
-  if (charStore.prompt) chat.setSystemPrompt(charStore.prompt)
+  if (charStore.prompt) {
+    const voiceLang = charStore.data?.voiceLanguage || 'ja-JP'
+    const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
+    chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
+  }
   chat.showBubbleText(`切换到 ${charStore.name}~`, false)
 }
 </script>
