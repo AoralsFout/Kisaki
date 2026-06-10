@@ -1,0 +1,18 @@
+// Kisaki niri window-rule
+window-rule {
+    match app-id=r#"com.kisaki.app$"#
+    match title="Kisaki"
+    match title="kisaki"
+    draw-border-with-background false
+    border {
+        off
+    }
+    focus-ring {
+        off
+    }
+    shadow {
+        off
+    }
+    geometry-corner-radius 0
+    open-floating true
+}
