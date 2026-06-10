@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::fs;
+use serde::Serialize;
 
 /// 获取项目根目录
 /// Tauri 运行时 cwd 是 src-tauri/，需要向上找一级
@@ -97,11 +98,186 @@ fn list_characters() -> Result<Vec<String>, String> {
     Ok(result)
 }
 
+// ---- CosyVoice TTS ----
+
+/// TTS 返回结果
+#[derive(Serialize)]
+struct TtsResult {
+    audio_base64: String,
+    format: String,
+}
+
+/// 通过 CosyVoice WebSocket API 合成语音并返回音频数据（base64）
+#[tauri::command]
+async fn cosyvoice_tts(
+    api_key: String,
+    model: String,
+    voice: String,
+    text: String,
+    ws_url: String,
+) -> Result<TtsResult, String> {
+    use base64::Engine;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::connect_async;
+    use uuid::Uuid;
+
+    if text.trim().is_empty() {
+        return Err("合成文本不能为空".to_string());
+    }
+
+    // 构建 WebSocket 请求（添加 Authorization 头）
+    let mut request = ws_url
+        .into_client_request()
+        .map_err(|e| format!("构建请求失败: {}", e))?;
+
+    let auth_value = format!("bearer {}", api_key);
+    request.headers_mut().insert(
+        http::header::AUTHORIZATION,
+        http::HeaderValue::from_str(&auth_value).map_err(|_| "无效的 Authorization 头".to_string())?,
+    );
+
+    // 连接 WebSocket
+    let (ws_stream, _) = connect_async(request)
+        .await
+        .map_err(|e| format!("WebSocket 连接失败: {}", e))?;
+
+    let (mut write, mut read) = ws_stream.split();
+
+    let task_id = Uuid::new_v4().to_string();
+
+    // 发送 run-task 事件
+    let run_task = serde_json::json!({
+        "header": {
+            "action": "run-task",
+            "task_id": task_id,
+            "streaming": "duplex"
+        },
+        "payload": {
+            "task_group": "audio",
+            "task": "tts",
+            "function": "SpeechSynthesizer",
+            "model": model,
+            "parameters": {
+                "text_type": "PlainText",
+                "voice": voice,
+                "format": "mp3",
+                "sample_rate": 24000
+            },
+            "input": {}
+        }
+    });
+
+    write
+        .send(tokio_tungstenite::tungstenite::Message::Text(run_task.to_string()))
+        .await
+        .map_err(|e| format!("发送 run-task 失败: {}", e))?;
+
+    let mut audio_data: Vec<u8> = Vec::new();
+    let mut finished = false;
+
+    while !finished {
+        match read.next().await {
+            Some(Ok(msg)) => match msg {
+                tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                    audio_data.extend_from_slice(&data);
+                }
+                tokio_tungstenite::tungstenite::Message::Text(text_msg) => {
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(&text_msg).map_err(|e| format!("JSON 解析失败: {}", e))?;
+
+                    let event = parsed["header"]["event"].as_str().unwrap_or("");
+
+                    match event {
+                        "task-started" => {
+                            // 发送 continue-task
+                            let continue_task = serde_json::json!({
+                                "header": {
+                                    "action": "continue-task",
+                                    "task_id": task_id,
+                                    "streaming": "duplex"
+                                },
+                                "payload": {
+                                    "input": {
+                                        "text": text
+                                    }
+                                }
+                            });
+                            write
+                                .send(tokio_tungstenite::tungstenite::Message::Text(
+                                    continue_task.to_string(),
+                                ))
+                                .await
+                                .map_err(|e| format!("发送 continue-task 失败: {}", e))?;
+
+                            // 立即发送 finish-task
+                            let finish_task = serde_json::json!({
+                                "header": {
+                                    "action": "finish-task",
+                                    "task_id": task_id,
+                                    "streaming": "duplex"
+                                },
+                                "payload": {
+                                    "input": {}
+                                }
+                            });
+                            write
+                                .send(tokio_tungstenite::tungstenite::Message::Text(
+                                    finish_task.to_string(),
+                                ))
+                                .await
+                                .map_err(|e| format!("发送 finish-task 失败: {}", e))?;
+                        }
+                        "task-finished" => {
+                            finished = true;
+                        }
+                        "task-failed" => {
+                            let err_msg = parsed["header"]["error_message"]
+                                .as_str()
+                                .unwrap_or("未知错误");
+                            return Err(format!("TTS 任务失败: {}", err_msg));
+                        }
+                        _ => {
+                            // result-generated 等事件忽略
+                        }
+                    }
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => {
+                    finished = true;
+                }
+                _ => {}
+            },
+            Some(Err(e)) => {
+                return Err(format!("WebSocket 接收错误: {}", e));
+            }
+            None => {
+                finished = true;
+            }
+        }
+    }
+
+    if audio_data.is_empty() {
+        return Err("未接收到音频数据".to_string());
+    }
+
+    Ok(TtsResult {
+        audio_base64: base64::engine::general_purpose::STANDARD.encode(&audio_data),
+        format: "mp3".to_string(),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_character_file, save_character_image, delete_character_image, delete_character, list_characters])
+        .invoke_handler(tauri::generate_handler![
+            write_character_file,
+            save_character_image,
+            delete_character_image,
+            delete_character,
+            list_characters,
+            cosyvoice_tts,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

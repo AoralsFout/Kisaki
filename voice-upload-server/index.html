@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音色克隆 - 音频上传服务</title>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --card-hover: #222240;
+      --border: #2a2a45;
+      --text: #e2e2f0;
+      --text-dim: #8888aa;
+      --success: #34d399;
+      --danger: #f87171;
+      --radius: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 {
+      font-size: 28px; font-weight: 700;
+      background: linear-gradient(135deg, var(--primary-light), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 32px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 28px; margin-bottom: 24px; transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #3a3a60; }
+    .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius); padding: 48px 24px;
+      text-align: center; cursor: pointer; transition: all 0.2s; position: relative;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+    .drop-zone-icon { font-size: 48px; margin-bottom: 12px; }
+    .drop-zone-text { font-size: 15px; color: var(--text-dim); }
+    .drop-zone-text strong { color: var(--text); }
+    .drop-zone-hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+    .drop-zone input[type="file"] { display: none; }
+    .form-row { display: flex; gap: 12px; margin-top: 16px; }
+    .form-row input {
+      flex: 1; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 14px; outline: none; transition: border-color 0.2s;
+    }
+    .form-row input:focus { border-color: var(--primary); }
+    .form-row input::placeholder { color: #555577; }
+    .btn {
+      padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-light); }
+    .btn-danger { background: rgba(248, 113, 113, 0.15); color: var(--danger); padding: 4px 12px; font-size: 12px; }
+    .btn-danger:hover { background: rgba(248, 113, 113, 0.25); }
+    .btn-copy { background: rgba(99, 102, 241, 0.15); color: var(--primary-light); padding: 4px 12px; font-size: 12px; }
+    .btn-copy:hover { background: rgba(99, 102, 241, 0.25); }
+    .file-list { list-style: none; }
+    .file-item {
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; transition: background 0.15s;
+    }
+    .file-item:hover { background: var(--card-hover); }
+    .file-icon { font-size: 20px; flex-shrink: 0; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .file-url {
+      font-size: 11px; color: var(--primary-light); max-width: 300px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+    }
+    .file-url:hover { text-decoration: underline; }
+    .file-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .server-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13px; }
+    .server-info dt { color: var(--text-dim); }
+    .server-info dd { font-family: monospace; word-break: break-all; }
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px;
+      font-size: 13px; color: white; opacity: 0; transform: translateY(20px);
+      transition: all 0.3s ease; z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background: #065f46; }
+    .toast.error { background: #7f1d1d; }
+    .progress-bar {
+      height: 4px; background: var(--border); border-radius: 2px; margin-top: 12px; overflow: hidden; display: none;
+    }
+    .progress-bar.active { display: block; }
+    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), #a78bfa); border-radius: 2px; transition: width 0.3s ease; }
+    .empty-state { text-align: center; padding: 32px; color: var(--text-dim); font-size: 14px; }
+    @media (max-width: 640px) { .form-row { flex-direction: column; } .file-item { flex-wrap: wrap; } .file-url { max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>&#x1F399;&#xFE0F; 音色克隆音频上传</h1>
+    <p class="subtitle">上传角色语音样本，生成专属 CosyVoice 音色</p>
+
+    <div class="card">
+      <div class="card-title">&#x1F4E4; 上传音频文件</div>
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">&#x1F3B5;</div>
+        <div class="drop-zone-text">拖拽音频文件到此处，或 <strong>点击选择文件</strong></div>
+        <div class="drop-zone-hint">支持 WAV、MP3、OGG、M4A、FLAC · 最大 50MB · 3-10 秒最佳</div>
+        <input type="file" id="fileInput" accept="audio/*" />
+      </div>
+      <div class="form-row">
+        <input type="text" id="fileLabel" placeholder="为这段音频起个名字（可选）" />
+        <button class="btn btn-primary" id="uploadBtn" disabled>上传</button>
+      </div>
+      <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="justify-content: space-between;">
+        <span>&#x1F4C2; 已上传文件</span>
+        <span style="font-size:12px;color:var(--text-dim);" id="fileCount">0 个文件</span>
+      </div>
+      <ul class="file-list" id="fileList"><div class="empty-state">暂无上传文件</div></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">&#x2139;&#xFE0F; 服务器信息</div>
+      <dl class="server-info">
+        <dt>上传端点：</dt><dd><code>POST /api/upload</code></dd>
+        <dt>文件访问：</dt><dd><code>/uploads/&lt;filename&gt;</code></dd>
+        <dt>API 端点：</dt><dd><code>GET /api/files</code></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var selectedFile = null;
+    var files = [];
+
+    var dropZone = document.getElementById('dropZone');
+    var fileInput = document.getElementById('fileInput');
+    var fileLabel = document.getElementById('fileLabel');
+    var uploadBtn = document.getElementById('uploadBtn');
+    var fileList = document.getElementById('fileList');
+    var fileCount = document.getElementById('fileCount');
+    var progressBar = document.getElementById('progressBar');
+    var progressFill = document.getElementById('progressFill');
+    var toast = document.getElementById('toast');
+
+    function loadFiles() {
+      fetch('/api/files')
+        .then(function(r) { if (!r.ok) throw new Error('加载失败'); return r.json(); })
+        .then(function(data) { files = data; renderFiles(); })
+        .catch(function(e) { showToast('加载失败: ' + e.message, 'error'); });
+    }
+
+    function renderFiles() {
+      fileList.innerHTML = '';
+      fileCount.textContent = files.length + ' 个文件';
+      if (files.length === 0) {
+        fileList.innerHTML = '<div class="empty-state">暂无上传文件</div>';
+        return;
+      }
+      var baseUrl = window.location.origin;
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        var fileUrl = baseUrl + '/uploads/' + encodeURIComponent(f.filename);
+        var size = formatSize(f.size);
+        var date = formatDate(f.uploadedAt);
+        var label = f.label ? ' · ' + escapeHtml(f.label) : '';
+
+        var li = document.createElement('li');
+        li.className = 'file-item';
+        li.innerHTML =
+          '<span class="file-icon">&#x1F50A;</span>' +
+          '<div class="file-info">' +
+            '<div class="file-name">' + escapeHtml(f.originalName || f.filename) + '</div>' +
+            '<div class="file-url" title="' + fileUrl + '" onclick="copyText(\'' + fileUrl + '\')">' + fileUrl + '</div>' +
+            '<div class="file-meta">' + size + ' · ' + date + label + '</div>' +
+          '</div>' +
+          '<div class="file-actions">' +
+            '<button class="btn btn-copy" onclick="copyText(\'' + fileUrl + '\')">复制 URL</button>' +
+            '<button class="btn btn-danger" onclick="deleteFile(\'' + f.filename + '\')">删除</button>' +
+          '</div>';
+        fileList.appendChild(li);
+      }
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function formatDate(ts) {
+      var d = new Date(ts);
+      return d.toLocaleString('zh-CN');
+    }
+
+    function escapeHtml(str) {
+      var div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function copyText(text) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+          showToast('已复制到剪贴板', 'success');
+        }).catch(function() { fallbackCopy(text); });
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      showToast('已复制到剪贴板', 'success');
+    }
+
+    function deleteFile(filename) {
+      if (!confirm('确定删除 ' + filename + ' 吗？')) return;
+      fetch('/api/files/' + encodeURIComponent(filename), { method: 'DELETE' })
+        .then(function(r) { if (!r.ok) throw new Error('删除失败'); return r.json(); })
+        .then(function() { showToast('已删除: ' + filename, 'success'); loadFiles(); })
+        .catch(function(e) { showToast('删除失败: ' + e.message, 'error'); });
+    }
+
+    dropZone.addEventListener('click', function() { fileInput.click(); });
+    dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+    dropZone.addEventListener('drop', function(e) {
+      e.preventDefault(); dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) selectFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', function() {
+      if (fileInput.files.length > 0) selectFile(fileInput.files[0]);
+    });
+
+    function selectFile(file) {
+      selectedFile = file;
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = '上传 ' + file.name;
+    }
+
+    uploadBtn.addEventListener('click', function() {
+      if (!selectedFile) return;
+      var formData = new FormData();
+      formData.append('audio', selectedFile);
+      if (fileLabel.value.trim()) formData.append('label', fileLabel.value.trim());
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = '上传中...';
+      progressBar.classList.add('active');
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload', true);
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) progressFill.style.width = Math.round((e.loaded / e.total) * 100) + '%';
+      };
+      xhr.onload = function() {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          showToast('上传成功！', 'success');
+          fileLabel.value = ''; selectedFile = null; uploadBtn.textContent = '上传';
+          fileInput.value = ''; progressFill.style.width = '0%';
+          loadFiles();
+        } else {
+          try { showToast(JSON.parse(xhr.responseText).error, 'error'); }
+          catch(e) { showToast('上传失败 (' + xhr.status + ')', 'error'); }
+        }
+        uploadBtn.disabled = false;
+        progressBar.classList.remove('active');
+      };
+      xhr.onerror = function() { showToast('网络错误', 'error'); uploadBtn.disabled = false; progressBar.classList.remove('active'); };
+      xhr.send(formData);
+    });
+
+    function showToast(msg, type) {
+      toast.textContent = msg;
+      toast.className = 'toast ' + type + ' show';
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(function() { toast.classList.remove('show'); }, 3000);
+    }
+
+    loadFiles();
+    setInterval(loadFiles, 30000);
+  </script>
+</body>
+</html>

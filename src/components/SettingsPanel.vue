@@ -10,6 +10,13 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { loadConfig, saveConfig, DEFAULT_CONFIG, isConfigValid } from '../ai'
 import type { AIConfig } from '../ai'
+import {
+  loadCosyVoiceConfig, saveCosyVoiceConfig,
+  REGIONS, MODELS, DEFAULT_COSYVOICE_CONFIG,
+  isTtsEnabled, setTtsEnabled,
+} from '../tts'
+import { fetchVoiceList } from '../tts/api'
+import type { CosyVoiceConfig, VoiceInfo } from '../tts/types'
 import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 
@@ -20,8 +27,16 @@ const selfWindow = ref<WebviewWindow | null>(null)
 const config = ref<AIConfig>({ ...DEFAULT_CONFIG })
 const saved = ref(false)
 
+// ---- CosyVoice 配置 ----
+const cvConfig = ref<CosyVoiceConfig>({ ...DEFAULT_COSYVOICE_CONFIG })
+const cvSaved = ref(false)
+const voices = ref<VoiceInfo[]>([])
+const loadingVoices = ref(false)
+const voiceError = ref('')
+const ttsEnabled = ref(isTtsEnabled())
+
 // ---- 导航 ----
-type Tab = 'api' | 'character' | 'dev' | 'about'
+type Tab = 'api' | 'character' | 'tts' | 'dev' | 'about'
 const activeTab = ref<Tab>('api')
 
 const PRESETS = [
@@ -36,6 +51,7 @@ onMounted(() => {
     selfWindow.value = getCurrentWebviewWindow()
   }
   config.value = { ...loadConfig() }
+  cvConfig.value = { ...loadCosyVoiceConfig() }
 })
 
 function applyPreset(p: typeof PRESETS[0]) {
@@ -47,6 +63,32 @@ function handleSave() {
   saveConfig(config.value)
   saved.value = true
   setTimeout(() => { saved.value = false }, 1500)
+}
+
+function handleCvSave() {
+  saveCosyVoiceConfig(cvConfig.value)
+  cvSaved.value = true
+  voiceError.value = ''
+  setTimeout(() => { cvSaved.value = false }, 1500)
+}
+
+async function handleFetchVoices() {
+  loadingVoices.value = true
+  voiceError.value = ''
+  voices.value = []
+  try {
+    // 先保存当前配置
+    saveCosyVoiceConfig(cvConfig.value)
+    const list = await fetchVoiceList()
+    voices.value = list
+    if (list.length === 0) {
+      voiceError.value = '暂无自定义音色，请先在阿里云百炼平台创建音色'
+    }
+  } catch (e) {
+    voiceError.value = (e as Error).message
+  } finally {
+    loadingVoices.value = false
+  }
 }
 
 async function minimizeWindow() {
@@ -86,6 +128,10 @@ function closeWindow() {
         <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
           <i class="fas fa-masks-theater nav-icon"></i>
           <span>角色管理</span>
+        </button>
+        <button :class="['nav-item', { active: activeTab === 'tts' }]" @click="activeTab = 'tts'">
+          <i class="fas fa-microphone nav-icon"></i>
+          <span>语音合成</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
@@ -133,6 +179,87 @@ function closeWindow() {
               {{ saved ? '✓ 已保存' : '保存' }}
             </button>
             <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> 配置可用</span>
+          </div>
+        </div>
+
+        <!-- ===== 语音合成 (CosyVoice) ===== -->
+        <div v-if="activeTab === 'tts'" class="content-section">
+          <h2 class="section-title"><i class="fas fa-microphone"></i> 语音合成</h2>
+          <p class="section-desc">配置阿里云 CosyVoice 实时语音合成，用于角色语音朗读。</p>
+
+          <!-- TTS 总开关 -->
+          <div class="form-group">
+            <div class="toggle-row">
+              <label class="toggle-label">
+                <span class="toggle-label-text">启用语音播报</span>
+                <span class="toggle-label-desc">AI 回复时自动朗读对话</span>
+              </label>
+              <button
+                :class="['toggle-switch', { active: ttsEnabled }]"
+                @click="ttsEnabled = !ttsEnabled; setTtsEnabled(ttsEnabled)"
+                role="switch"
+                :aria-checked="ttsEnabled"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
+          <hr class="section-divider" />
+
+          <div class="form-group">
+            <label class="form-label">API Key（DashScope）</label>
+            <input v-model="cvConfig.apiKey" class="form-input" type="password" placeholder="sk-..." />
+            <p class="form-hint">阿里云百炼平台的 API Key，用于声音复刻和语音合成</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">语音合成模型</label>
+            <select v-model="cvConfig.model" class="form-select">
+              <option v-for="m in MODELS" :key="m.value" :value="m.value">{{ m.label }}</option>
+            </select>
+            <p class="form-hint">不同模型支持的音色和语言不同，v3.5 系列仅支持自定义音色</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">地域</label>
+            <select v-model="cvConfig.region" class="form-select">
+              <option v-for="(r, k) in REGIONS" :key="k" :value="k">{{ r.label }}</option>
+            </select>
+          </div>
+
+          <div v-if="cvConfig.region === 'singapore'" class="form-group">
+            <label class="form-label">WorkspaceId</label>
+            <input v-model="REGIONS.singapore.workspaceId" class="form-input" placeholder="输入业务空间 ID" />
+            <p class="form-hint">新加坡地域需要填写业务空间 ID</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-save" @click="handleCvSave">
+              {{ cvSaved ? '✓ 已保存' : '保存配置' }}
+            </button>
+          </div>
+
+          <hr class="section-divider" />
+
+          <div class="form-group">
+            <label class="form-label">我的音色</label>
+            <button class="btn-secondary" :disabled="loadingVoices || !cvConfig.apiKey" @click="handleFetchVoices">
+              <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
+              {{ loadingVoices ? '查询中...' : '获取音色列表' }}
+            </button>
+
+            <div v-if="voiceError" class="voice-error">{{ voiceError }}</div>
+
+            <div v-if="voices.length > 0" class="voice-list">
+              <div v-for="v in voices" :key="v.voiceId" class="voice-item">
+                <div class="voice-item-icon"><i class="fas fa-user-mic"></i></div>
+                <div class="voice-item-info">
+                  <div class="voice-item-id">{{ v.voiceId }}</div>
+                  <div class="voice-item-meta">创建于 {{ v.gmtCreate }} · {{ v.status }}</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -397,6 +524,189 @@ function closeWindow() {
   font-size: 12px;
   color: #30b94e;
   font-weight: 500;
+}
+
+/* ===== 语音合成 ===== */
+.form-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #d2d2d7;
+  border-radius: 10px;
+  background: white;
+  color: #1d1d1f;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.form-select:focus {
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.form-hint {
+  font-size: 11px;
+  color: #999;
+  margin: 4px 0 0;
+}
+
+.section-divider {
+  border: none;
+  border-top: 1px solid #e5e5e7;
+  margin: 20px 0;
+}
+
+.btn-secondary {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #d2d2d7;
+  background: white;
+  color: #555;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #0071e3;
+  color: #0071e3;
+  background: #f5f9ff;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== Toggle Switch ===== */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-label-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.toggle-label-desc {
+  font-size: 11px;
+  color: #999;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: #ccc;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.toggle-switch.active {
+  background: #30b94e;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: left 0.2s;
+}
+
+.toggle-switch.active .toggle-knob {
+  left: 22px;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.voice-error {
+  font-size: 13px;
+  color: #d00;
+  margin-top: 10px;
+}
+
+.voice-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.voice-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #e5e5e7;
+  border-radius: 10px;
+  transition: border-color 0.12s;
+}
+
+.voice-item:hover {
+  border-color: #0071e3;
+}
+
+.voice-item-icon {
+  font-size: 18px;
+  color: #0071e3;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f7ff;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.voice-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.voice-item-id {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d1d1f;
+  word-break: break-all;
+  font-family: monospace;
+}
+
+.voice-item-meta {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
 }
 
 .about-card {

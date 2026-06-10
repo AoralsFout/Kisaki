@@ -6,6 +6,9 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
+import { loadCosyVoiceConfig, isCosyVoiceConfigValid } from '../tts'
+import { fetchVoiceList } from '../tts/api'
+import type { VoiceInfo } from '../tts/types'
 import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
 
@@ -47,6 +50,13 @@ const poseInputRef = ref<HTMLInputElement | null>(null)
 const addingCostume = ref(false)
 const newCostumeName = ref('')
 const costumeInputRef = ref<HTMLInputElement | null>(null)
+
+// ---- 语音合成 ----
+const availableVoices = ref<VoiceInfo[]>([])
+const loadingVoices = ref(false)
+const voiceError = ref('')
+const selectedVoice = ref('')
+const selectedVoiceModel = ref('')
 
 // 行内输入自动聚焦
 watch(addingPose, (v) => { if (v) setTimeout(() => poseInputRef.value?.focus(), 50) })
@@ -102,6 +112,7 @@ async function submitCreateForm() {
       prompt: '',
       poses: ['standing'], emotions: ['idle'],
       costumes: ['default'], images: [],
+      voice: '', voiceModel: '',
     }
     await invoke('write_character_file', {
       id, filename: 'character.json',
@@ -152,6 +163,21 @@ function backToList() {
   hasChanges.value = false
 }
 
+async function loadVoices() {
+  const cvConfig = loadCosyVoiceConfig()
+  if (!isCosyVoiceConfigValid(cvConfig)) return
+  loadingVoices.value = true
+  voiceError.value = ''
+  try {
+    availableVoices.value = await fetchVoiceList()
+  } catch {
+    // 静默失败，不影响编辑
+    availableVoices.value = []
+  } finally {
+    loadingVoices.value = false
+  }
+}
+
 function loadData() {
   loadPrompt()
   const data = charStore.data
@@ -159,7 +185,11 @@ function loadData() {
   editableImages.value = JSON.parse(JSON.stringify(data.images))
   editablePoses.value = [...data.poses]
   editableCostumes.value = [...data.costumes]
+  selectedVoice.value = data.voice ?? ''
+  selectedVoiceModel.value = data.voiceModel ?? ''
   editFile.value = null
+  // 异步加载音色列表
+  loadVoices()
 }
 
 async function loadPrompt() {
@@ -357,7 +387,7 @@ async function saveAll() {
   if (!promptOk) { saveError.value = '保存提示词失败'; return }
 
   const collectedEmotions = [...new Set(editableImages.value.flatMap(img => img.emotions))]
-  const newData = {
+  const newData: Record<string, any> = {
     id: data.id, name: data.name, description: data.description, version: data.version,
     poses: [...editablePoses.value],
     emotions: collectedEmotions,
@@ -365,6 +395,10 @@ async function saveAll() {
     images: editableImages.value.map(img => ({
       file: img.file, pose: img.pose, costume: img.costume, emotions: [...img.emotions],
     })),
+  }
+  if (selectedVoice.value) {
+    newData.voice = selectedVoice.value
+    newData.voiceModel = selectedVoiceModel.value || undefined
   }
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
@@ -522,6 +556,29 @@ async function saveAll() {
               </template>
               <button v-else class="tag-add" @click="addingCostume = true">+ 添加</button>
             </div>
+          </section>
+
+          <!-- 语音合成音色 -->
+          <section class="mgr-section">
+            <h3 class="mgr-label"><i class="fas fa-microphone"></i> 语音音色</h3>
+            <div class="voice-select-row">
+              <select v-model="selectedVoice" class="voice-select" @change="markChanged">
+                <option value="">不使用语音合成</option>
+                <option v-for="v in availableVoices" :key="v.voiceId" :value="v.voiceId">
+                  {{ v.voiceId }}
+                </option>
+              </select>
+              <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" title="刷新音色列表">
+                <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
+              </button>
+            </div>
+            <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
+            <p v-else-if="availableVoices.length === 0" class="voice-hint">
+              暂无音色，请先在设置中配置 CosyVoice API Key 并获取音色列表
+            </p>
+            <p v-else-if="selectedVoice" class="voice-hint-ok">
+              <i class="fas fa-check-circle"></i> 已选择语音音色
+            </p>
           </section>
 
           <!-- 立绘网格 -->
@@ -1099,5 +1156,74 @@ async function saveAll() {
 
 .modal-warn {
   border-top: 3px solid #d00;
+}
+
+/* ---- 语音音色选择 ---- */
+.voice-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-select {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: white;
+  color: #1d1d1f;
+  outline: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.voice-select:focus {
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.voice-refresh-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.voice-refresh-btn:hover:not(:disabled) {
+  border-color: #0071e3;
+  color: #0071e3;
+}
+
+.voice-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-hint {
+  font-size: 11px;
+  color: #999;
+  margin: 6px 0 0;
+}
+
+.voice-hint-ok {
+  font-size: 11px;
+  color: #30b94e;
+  margin: 6px 0 0;
+}
+
+.voice-hint-error {
+  font-size: 11px;
+  color: #d00;
+  margin: 6px 0 0;
 }
 </style>

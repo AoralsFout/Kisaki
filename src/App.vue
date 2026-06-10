@@ -12,6 +12,7 @@ import CharacterSelect from './components/CharacterSelect.vue'
 import DevPanel from './DevPanel.vue'
 import { useChatStore } from './stores/chat'
 import { useCharacterStore } from './character'
+import { speakText, isTtsEnabled, setTtsEnabled } from './tts'
 
 const isDev = new URLSearchParams(window.location.search).has('dev')
 const isSettings = new URLSearchParams(window.location.search).has('settings')
@@ -24,6 +25,12 @@ const bubbleRef = ref<InstanceType<typeof DialogueBubble> | null>(null)
 
 const showHistory = ref(false)
 const showCharacterSelect = ref(false)
+const ttsEnabled = ref(isTtsEnabled())
+
+function toggleTts() {
+  ttsEnabled.value = !ttsEnabled.value
+  setTtsEnabled(ttsEnabled.value)
+}
 
 let welcomeShown = false
 
@@ -38,6 +45,10 @@ onMounted(async () => {
     if (!welcomeShown) {
       welcomeShown = true
       chat.showBubbleText('嘿嘿', true)
+      // TTS 播报欢迎语
+      if (isTtsEnabled() && charStore.data?.voice) {
+        speakText('嘿嘿', charStore.data.voice).catch(() => {})
+      }
     }
   }, 1000)
 
@@ -159,6 +170,10 @@ async function handleSelectCharacter(charId: string) {
           <i class="fas fa-rotate btn-icon"></i>
           <span class="btn-label">角色</span>
         </button>
+        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts">
+          <i class="fas fa-volume-high btn-icon"></i>
+          <span class="btn-label">{{ ttsEnabled ? '语音' : '静音' }}</span>
+        </button>
         <button class="tool-btn" @click="openSettingsWindow()">
           <i class="fas fa-gear btn-icon"></i>
           <span class="btn-label">设置</span>
@@ -227,8 +242,9 @@ async function handleSelectCharacter(charId: string) {
 
 .character-area {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  border: 1px dashed #f00;
 }
 
 /* ---- 输入框展开动画（缓慢抬升工具栏/气泡） ---- */
@@ -308,5 +324,13 @@ async function handleSelectCharacter(charId: string) {
 
 .tool-btn:hover .btn-label {
   opacity: 1;
+}
+
+.tool-btn.tts-off {
+  opacity: 0.5;
+}
+
+.tool-btn.tts-off:hover {
+  opacity: 0.8;
 }
 </style>
