@@ -9,7 +9,20 @@
   "emotions": [
     "待机",
     "开心",
-    "idle"
+    "疑惑",
+    "害羞",
+    "欣慰",
+    "坏笑",
+    "惊讶",
+    "俏皮",
+    "认真思考",
+    "微笑",
+    "叹息",
+    "活泼",
+    "傲娇",
+    "高兴",
+    "严肃",
+    "讨厌"
   ],
   "costumes": [
     "魔女服"
@@ -34,162 +47,161 @@
     },
     {
       "file": "chrysoA_c.png",
-      "pose": "standing",
-      "costume": "costume_a",
-      "emotions": [
-        "idle"
-      ]
+      "pose": "站立",
+      "costume": "魔女服",
+      "emotions": []
     },
     {
       "file": "chrysoA_d.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "疑惑"
       ]
     },
     {
       "file": "chrysoA_e.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
       "file": "chrysoA_f.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "欣慰"
       ]
     },
     {
       "file": "chrysoA_g.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "坏笑"
       ]
     },
     {
       "file": "chrysoA_h.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "惊讶"
       ]
     },
     {
       "file": "chrysoA_i.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "俏皮"
       ]
     },
     {
       "file": "chrysoA_j.png",
-      "pose": "standing",
-      "costume": "costume_a",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "认真思考"
       ]
     },
     {
       "file": "chrysoA_k.png",
-      "pose": "standing",
-      "costume": "costume_a",
-      "emotions": [
-        "idle"
-      ]
+      "pose": "站立",
+      "costume": "魔女服",
+      "emotions": []
     },
     {
       "file": "chrysoB_a.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "微笑"
       ]
     },
     {
       "file": "chrysoB_b.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "叹息"
       ]
     },
     {
       "file": "chrysoB_c.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
       "file": "chrysoB_d.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "活泼",
+        "惊讶",
+        "傲娇"
       ]
     },
     {
       "file": "chrysoB_e.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "高兴"
       ]
     },
     {
       "file": "chrysoB_f.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
       "file": "chrysoB_g.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "严肃"
       ]
     },
     {
       "file": "chrysoB_h.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "讨厌"
       ]
     },
     {
       "file": "chrysoB_i.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
       "file": "chrysoB_j.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "严肃"
       ]
     },
     {
       "file": "chrysoB_k.png",
-      "pose": "standing",
-      "costume": "costume_b",
+      "pose": "站立",
+      "costume": "魔女服",
       "emotions": [
-        "idle"
+        "害羞",
+        "惊讶"
       ]
     }
   ]

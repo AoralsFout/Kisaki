@@ -8,16 +8,35 @@
     "sitting"
   ],
   "emotions": [
-    "idle",
-    "happy",
-    "thinking",
-    "sad",
-    "surprised",
-    "doubt",
-    "sigh",
-    "angry",
-    "shy",
-    "sleepy"
+    "待机",
+    "开心",
+    "害羞",
+    "不好意思",
+    "平静",
+    "些许惊讶",
+    "略微惊讶",
+    "得意",
+    "认真",
+    "略微害羞",
+    "嘻嘻",
+    "无语",
+    "期待",
+    "些许不高兴与害羞",
+    "无奈",
+    "些许严肃",
+    "兴奋",
+    "反驳",
+    "些许无语与不高兴",
+    "惊讶",
+    "些许嫌弃",
+    "严肃",
+    "叹息",
+    "些许认真",
+    "些许害羞",
+    "思考",
+    "些许不高兴",
+    "些许无语",
+    "惊讶害羞"
   ],
   "costumes": [
     "school",
@@ -29,7 +48,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -37,7 +56,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -45,7 +64,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
@@ -53,7 +72,8 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞",
+        "不好意思"
       ]
     },
     {
@@ -61,7 +81,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "平静"
       ]
     },
     {
@@ -69,7 +89,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "些许惊讶"
       ]
     },
     {
@@ -77,7 +97,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "略微惊讶"
       ]
     },
     {
@@ -85,7 +105,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -93,7 +113,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "平静"
       ]
     },
     {
@@ -101,7 +121,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -109,7 +129,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "得意"
       ]
     },
     {
@@ -117,7 +137,8 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞",
+        "认真"
       ]
     },
     {
@@ -125,7 +146,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "略微害羞"
       ]
     },
     {
@@ -133,7 +154,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "嘻嘻"
       ]
     },
     {
@@ -141,7 +162,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -149,7 +170,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "无语"
       ]
     },
     {
@@ -157,7 +178,7 @@
       "pose": "standing",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
@@ -165,7 +186,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -173,7 +194,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -181,7 +202,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
@@ -189,7 +210,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "不好意思"
       ]
     },
     {
@@ -197,7 +218,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "无语"
       ]
     },
     {
@@ -205,7 +226,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "无语"
       ]
     },
     {
@@ -213,7 +234,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "平静"
       ]
     },
     {
@@ -221,7 +242,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -229,7 +250,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "平静"
       ]
     },
     {
@@ -237,7 +258,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -245,7 +266,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "得意"
       ]
     },
     {
@@ -253,7 +274,9 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "认真",
+        "期待",
+        "些许不高兴与害羞"
       ]
     },
     {
@@ -261,7 +284,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
@@ -269,7 +292,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -277,7 +300,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -285,7 +308,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "平静"
       ]
     },
     {
@@ -293,7 +316,7 @@
       "pose": "sitting",
       "costume": "school",
       "emotions": [
-        "idle"
+        "害羞"
       ]
     },
     {
@@ -301,7 +324,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -309,7 +332,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -317,7 +340,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "无语"
       ]
     },
     {
@@ -325,7 +348,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "认真"
       ]
     },
     {
@@ -333,7 +356,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -341,7 +364,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -349,7 +372,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "无奈"
       ]
     },
     {
@@ -357,7 +380,8 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "些许严肃",
+        "认真"
       ]
     },
     {
@@ -365,7 +389,9 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "兴奋",
+        "反驳",
+        "害羞"
       ]
     },
     {
@@ -373,7 +399,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "些许无语与不高兴"
       ]
     },
     {
@@ -381,7 +407,8 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "惊讶",
+        "些许嫌弃"
       ]
     },
     {
@@ -389,7 +416,7 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "惊讶"
       ]
     },
     {
@@ -397,7 +424,8 @@
       "pose": "standing",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "害羞",
+        "惊讶"
       ]
     },
     {
@@ -405,7 +433,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -413,7 +441,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "待机"
       ]
     },
     {
@@ -421,7 +449,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "无语"
       ]
     },
     {
@@ -429,7 +457,8 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "严肃",
+        "认真"
       ]
     },
     {
@@ -437,7 +466,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -445,7 +474,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "开心"
       ]
     },
     {
@@ -453,7 +482,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "叹息"
       ]
     },
     {
@@ -461,7 +490,9 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "些许严肃",
+        "些许认真",
+        "些许害羞"
       ]
     },
     {
@@ -469,7 +500,9 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "惊讶",
+        "害羞",
+        "反驳"
       ]
     },
     {
@@ -477,7 +510,8 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "思考",
+        "些许不高兴"
       ]
     },
     {
@@ -485,7 +519,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "些许无语"
       ]
     },
     {
@@ -493,7 +527,7 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "惊讶害羞"
       ]
     },
     {
@@ -501,7 +535,8 @@
       "pose": "sitting",
       "costume": "casual",
       "emotions": [
-        "idle"
+        "惊讶",
+        "害羞"
       ]
     }
   ]
