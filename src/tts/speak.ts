@@ -9,6 +9,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { loadCosyVoiceConfig, getWsUrl } from './config'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('TTS')
 
 /** TTS 存储 key */
 const ENABLED_KEY = 'deskpet-tts-enabled'
@@ -63,7 +66,7 @@ export async function speakText(text: string, voiceId: string): Promise<void> {
     if (controller.signal.aborted) return
     await playAudio(result.audio_base64, result.format, controller.signal)
   } catch (err) {
-    console.warn('[TTS] 批处理播报失败:', err)
+    log.warn('批处理播报失败', err)
   } finally {
     if (currentController === controller) {
       currentController = null
@@ -91,14 +94,14 @@ export async function speakTextStreaming(text: string, voiceId: string): Promise
 
   if (!canStream) {
     // 不支持流式 → 回退到批处理
-    console.info('[TTS] 当前环境不支持 MediaSource 流式播放，回退到批处理模式')
+    log.info('当前环境不支持 MediaSource 流式播放，回退到批处理模式')
     return speakText(text, voiceId)
   }
 
   try {
     await playStream(controller, cvConfig.model, voiceId, text, wsUrl, mimeType)
   } catch (err) {
-    console.warn('[TTS] 流式播报失败:', err)
+    log.warn('流式播报失败', err)
   } finally {
     if (currentController === controller) {
       currentController = null

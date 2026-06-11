@@ -6,6 +6,9 @@
  */
 import type { ChatMessage } from './types'
 import { getDefaultMessages } from './prompts'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('ChatContext')
 
 /** 最大保留的对话轮数（一轮 = 一问一答） */
 const MAX_ROUNDS = 10
@@ -108,25 +111,30 @@ export class ChatContext {
       role: 'system',
       content: prompt + langInstruction + TOOL_INSTRUCTIONS,
     }
+    log.debug('System prompt 已设置 (语音: %s, 显示: %s)', voiceLang || '默认', displayLang || '默认')
   }
 
   /** 重置对话 */
   reset() {
+    const prevLen = this.messages.length
     this.messages = getDefaultMessages()
     if (this.customPrompt) {
       this.messages[0] = { role: 'system', content: this.customPrompt }
     }
+    log.info('对话已重置 (之前 %d 条消息)', prevLen)
   }
 
   /** 添加用户消息 */
   addUserMessage(content: string) {
     this.messages.push({ role: 'user', content })
     this.prune()
+    log.debug('用户消息已添加, 当前 %d 条', this.messages.length)
   }
 
   /** 添加助手回复（纯文本） */
   addAssistantMessage(content: string) {
     this.messages.push({ role: 'assistant', content })
+    log.debug('助手消息已添加, 回复长度: %d 字符', content.length)
   }
 
   /**
@@ -139,6 +147,7 @@ export class ChatContext {
       content: '',
       tool_calls: toolCalls,
     })
+    log.debug('助手工具调用已添加: %d 个', toolCalls.length)
   }
 
   /** 添加工具执行结果 */
@@ -148,6 +157,7 @@ export class ChatContext {
       content,
       tool_call_id: toolCallId,
     })
+    log.debug('工具结果已添加: %s (长度: %d)', toolCallId, content.length)
   }
 
   /** 获取完整消息列表（供 API 调用） */

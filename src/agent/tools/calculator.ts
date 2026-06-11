@@ -4,6 +4,9 @@
  * 使用递归下降解析器安全求值，不依赖 eval / new Function。
  */
 import type { Tool } from '../types'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('ToolCalculator')
 
 // ==================== 词法分析 ====================
 
@@ -180,10 +183,13 @@ export const calculatorTool: Tool = {
     const expr = String(args.expression ?? '')
     if (!expr.trim()) return '请提供数学表达式'
 
+    log.debug('计算: "%s"', expr)
     try {
       const result = safeEval(expr)
+      log.debug('计算结果: %s = %s', expr, result)
       return `${expr} = ${result}`
     } catch (err) {
+      log.warn('计算失败: "%s" - %s', expr, (err as Error).message)
       return `计算错误: ${(err as Error).message}`
     }
   },

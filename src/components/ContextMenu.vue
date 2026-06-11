@@ -3,6 +3,9 @@
  * 右键菜单组件
  */
 import { ref, onMounted, onUnmounted } from 'vue'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('ContextMenu')
 
 export interface MenuItem {
   label: string

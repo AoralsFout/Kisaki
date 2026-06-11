@@ -10,13 +10,18 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
 import DevPanel from './DevPanel.vue'
+import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
 import { useCharacterStore } from './character'
 import { speakText, isTtsEnabled, setTtsEnabled } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
+import { createLogger } from './utils/logger'
+
+const log = createLogger('App')
 
 const isDev = new URLSearchParams(window.location.search).has('dev')
 const isSettings = new URLSearchParams(window.location.search).has('settings')
+const isLogs = new URLSearchParams(window.location.search).has('logs')
 
 const chat = useChatStore()
 const charStore = useCharacterStore()
@@ -36,6 +41,9 @@ function toggleTts() {
 let welcomeShown = false
 
 onMounted(async () => {
+  // 日志窗口/Dev 窗口不初始化角色和对话
+  if (isLogs || isDev) return
+
   chat.init()
   await charStore.init()
   if (charStore.prompt) {
@@ -121,7 +129,39 @@ async function openSettingsWindow() {
       center: true,
     })
   } catch (e) {
-    console.error('无法打开设置窗口', e)
+    log.error('无法打开设置窗口', e)
+  }
+}
+
+async function openLogWindow() {
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+  const { getAllWindows } = await import('@tauri-apps/api/window')
+  try {
+    const all = await getAllWindows()
+    const existing = all.find(w => w.label === 'logs')
+    if (existing) {
+      await existing.unminimize()
+      await existing.show()
+      await existing.setFocus()
+      return
+    }
+
+    const appWindow = all.find(w => w.label === 'main')
+    const mainPos = appWindow ? await appWindow.outerPosition() : undefined
+    const mainSize = appWindow ? await appWindow.outerSize() : undefined
+
+    new WebviewWindow('logs', {
+      url: '/?logs=1',
+      title: '日志',
+      width: 800,
+      height: 500,
+      x: mainPos ? mainPos.x + (mainSize?.width ?? 400) : undefined,
+      y: mainPos ? mainPos.y : undefined,
+      decorations: false,
+      resizable: true,
+    })
+  } catch (e) {
+    log.error('无法打开日志窗口', e)
   }
 }
 
@@ -142,6 +182,7 @@ async function handleSelectCharacter(charId: string) {
 <template>
   <DevPanel v-if="isDev" />
   <SettingsPanel v-else-if="isSettings" />
+  <LogViewer v-else-if="isLogs" />
 
   <main v-else class="app-container">
     <!-- 拖拽区域 -->
@@ -180,6 +221,10 @@ async function handleSelectCharacter(charId: string) {
         <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts">
           <i class="fas fa-volume-high btn-icon"></i>
           <span class="btn-label">{{ ttsEnabled ? '语音' : '静音' }}</span>
+        </button>
+        <button class="tool-btn" @click="openLogWindow()">
+          <i class="fas fa-receipt btn-icon"></i>
+          <span class="btn-label">日志</span>
         </button>
         <button class="tool-btn" @click="openSettingsWindow()">
           <i class="fas fa-gear btn-icon"></i>

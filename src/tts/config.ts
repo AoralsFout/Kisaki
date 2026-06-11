@@ -2,7 +2,9 @@
  * CosyVoice 配置管理（localStorage）
  */
 import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion } from './types'
+import { createLogger } from '../utils/logger'
 
+const log = createLogger('TTSConfig')
 const STORAGE_KEY = 'deskpet-cosyvoice-config'
 
 /** 默认配置 */
@@ -47,6 +49,7 @@ export function loadCosyVoiceConfig(): CosyVoiceConfig {
 
 export function saveCosyVoiceConfig(config: CosyVoiceConfig) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+  log.debug('CosyVoice 配置已保存 (模型: %s, 地域: %s)', config.model, config.region)
 }
 
 export function isCosyVoiceConfigValid(config: CosyVoiceConfig): boolean {

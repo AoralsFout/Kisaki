@@ -7,6 +7,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { loadCharacterJson, listCharacters, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('CharacterStore')
 
 export const useCharacterStore = defineStore('character', () => {
   const currentId = ref('kisaki')
@@ -35,7 +38,7 @@ export const useCharacterStore = defineStore('character', () => {
       data.value = charData
       currentId.value = id
     } catch (err) {
-      console.error('加载角色失败:', err)
+      log.error('加载角色失败', err)
       throw err
     } finally {
       loading.value = false

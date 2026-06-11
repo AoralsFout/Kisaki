@@ -6,6 +6,9 @@
  */
 import type { Tool, ToolDefinition } from './types'
 import { useCharacterStore } from '../stores/character'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('AgentRegistry')
 
 /** 工具注册表 */
 const tools = new Map<string, Tool>()
@@ -18,6 +21,7 @@ export function register(tool: Tool) {
 /** 批量注册 */
 export function registerAll(...toolList: Tool[]) {
   for (const t of toolList) register(t)
+  log.debug('批量注册 %d 个工具', toolList.length)
 }
 
 /** 按名称获取工具 */

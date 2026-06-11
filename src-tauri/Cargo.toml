@@ -28,4 +28,5 @@ futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 http = "1"
 tokio = { version = "1", features = ["rt", "net"] }
+tauri-plugin-dialog = "2.7.1"
 

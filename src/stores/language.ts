@@ -1,7 +1,9 @@
 /**
  * 用户语言偏好管理（localStorage）
  */
+import { createLogger } from '../utils/logger'
 
+const log = createLogger('Language')
 const DISPLAY_LANG_KEY = 'deskpet-display-language'
 
 /** 支持的语言列表 */
@@ -29,6 +31,7 @@ export function getDisplayLanguage(): string {
 /** 设置用户偏好的显示语言 */
 export function setDisplayLanguage(lang: string) {
   localStorage.setItem(DISPLAY_LANG_KEY, lang)
+  log.info('显示语言切换: %s', lang)
 }
 
 /**

@@ -7,6 +7,9 @@ import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
 import { loadCosyVoiceConfig, isCosyVoiceConfigValid } from '../tts'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('CharacterMgr')
 import { fetchVoiceList } from '../tts/api'
 import type { VoiceInfo } from '../tts/types'
 import { SUPPORTED_LANGUAGES } from '../stores/language'
@@ -213,7 +216,7 @@ async function tauriWrite(filename: string, content: string): Promise<boolean> {
     await invoke('write_character_file', { id: editingId.value, filename, content })
     return true
   } catch (e) {
-    console.error('写入失败:', e)
+    log.error('写入失败', e)
     return false
   }
 }

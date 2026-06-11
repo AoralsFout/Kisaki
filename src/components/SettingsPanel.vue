@@ -106,6 +106,32 @@ async function maximizeWindow() {
 function closeWindow() {
   selfWindow.value?.close()
 }
+
+async function openLogWindow() {
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+  const { getAllWindows } = await import('@tauri-apps/api/window')
+  try {
+    const all = await getAllWindows()
+    const existing = all.find(w => w.label === 'logs')
+    if (existing) {
+      await existing.unminimize()
+      await existing.show()
+      await existing.setFocus()
+      return
+    }
+
+    new WebviewWindow('logs', {
+      url: '/?logs=1',
+      title: '日志',
+      width: 800,
+      height: 500,
+      decorations: false,
+      resizable: true,
+    })
+  } catch (e) {
+    console.error('无法打开日志窗口', e)
+  }
+}
 </script>
 
 <template>
@@ -298,6 +324,10 @@ function closeWindow() {
             <p style="margin-top:12px;color:#999;font-size:12px;">
               数据仅保存在本地，API Key 不会上传到任何第三方服务器。
             </p>
+            <hr class="section-divider" />
+            <button class="btn-open-logs" @click="openLogWindow">
+              <i class="fas fa-receipt"></i> 打开日志查看器
+            </button>
           </div>
         </div>
       </main>
@@ -730,5 +760,28 @@ function closeWindow() {
   font-size: 13px;
   line-height: 1.6;
   color: #555;
+}
+
+.btn-open-logs {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #d2d2d7;
+  background: white;
+  color: #555;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-open-logs:hover {
+  border-color: #0071e3;
+  color: #0071e3;
+  background: #f5f9ff;
 }
 </style>

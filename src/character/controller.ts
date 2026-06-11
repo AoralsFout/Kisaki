@@ -13,6 +13,9 @@ import {
   DEFAULT_POSE, getPose, ALL_POSE_KEYS,
   type PoseKey, type PosePreset,
 } from './poses'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('CharacterCtrl')
 
 export function useCharacterController() {
   const charStore = useCharacterStore()
@@ -58,9 +61,13 @@ export function useCharacterController() {
       pose: currentPoseTag.value, emotion, costume: currentCostume.value,
       exclude: currentImage.value?.file,
     })
-    if (!img) return
+    if (!img) {
+      log.warn('未找到匹配情绪"%s"的图片', emotion)
+      return
+    }
     currentEmotion.value = emotion
     currentImage.value = img
+    log.debug('情绪切换: %s, 图片: %s', emotion, img.file)
   }
 
   function setPoseTag(pose: string) {
@@ -69,9 +76,13 @@ export function useCharacterController() {
       pose, emotion: currentEmotion.value, costume: currentCostume.value,
       exclude: currentImage.value?.file,
     })
-    if (!img) return
+    if (!img) {
+      log.warn('未找到匹配姿势"%s"的图片', pose)
+      return
+    }
     currentPoseTag.value = pose
     currentImage.value = img
+    log.debug('姿势切换: %s, 图片: %s', pose, img.file)
   }
 
   function setCostume(costume: string) {
@@ -80,9 +91,13 @@ export function useCharacterController() {
       pose: currentPoseTag.value, emotion: currentEmotion.value, costume,
       exclude: currentImage.value?.file,
     })
-    if (!img) return
+    if (!img) {
+      log.warn('未找到匹配服装"%s"的图片', costume)
+      return
+    }
     currentCostume.value = costume
     currentImage.value = img
+    log.debug('服装切换: %s, 图片: %s', costume, img.file)
   }
 
   function setLook(look: {
@@ -99,27 +114,34 @@ export function useCharacterController() {
       pose, emotion, costume,
       exclude: currentImage.value?.file,
     })
-    if (!img) return
+    if (!img) {
+      log.warn('setLook 未找到匹配图片: %o', look)
+      return
+    }
     if (look.pose) currentPoseTag.value = pose
     if (look.emotion) currentEmotion.value = emotion
     if (look.costume) currentCostume.value = costume
     currentImage.value = img
+    log.info('外观批量更新: %o', look)
   }
 
   function setScreenPose(key: PoseKey) {
     if (ALL_POSE_KEYS.includes(key)) {
       currentScreenPose.value = key
+      log.debug('屏幕位置切换: %s', key)
     }
   }
 
   // ======== 角色切换 ========
   async function switchCharacter(charId: string) {
+    log.info('切换角色: %s', charId)
     await charStore.loadCharacter(charId)
     currentPoseTag.value = ''
     currentEmotion.value = ''
     currentCostume.value = ''
     syncDefaultsFromData()
     currentImage.value = selectCurrentImage()
+    log.info('角色切换完成: %s (%s)', charId, charStore.name)
   }
 
   // ======== 监听数据加载 ========
@@ -138,6 +160,7 @@ export function useCharacterController() {
       currentImage.value = selectCurrentImage()
     }
     ready.value = true
+    log.info('控制器初始化完成, 角色: %s', charStore.name)
   }
 
   function dispose() {}

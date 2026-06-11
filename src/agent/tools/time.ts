@@ -2,6 +2,9 @@
  * 时间工具 - 获取当前日期和时间
  */
 import type { Tool } from '../types'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('ToolTime')
 
 export const timeTool: Tool = {
   definition: {
@@ -39,6 +42,7 @@ export const timeTool: Tool = {
     const weekdays = ['日', '一', '二', '三', '四', '五', '六']
     const dayOfWeek = weekdays[now.getDay()]
 
+    log.debug('查询时间: %s (时区: %s)', formatted, tz || '本地')
     return `当前时间：${formatted}（星期${dayOfWeek}）`
   },
 }

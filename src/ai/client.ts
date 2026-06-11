@@ -5,6 +5,9 @@
  * 支持流式输出 + Function Calling (Tool Use)。
  */
 import type { AIConfig, ChatMessage, StreamCallbacks, ToolCallData } from './types'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('API')
 
 /** 默认配置 */
 export const DEFAULT_CONFIG: AIConfig = {
@@ -67,7 +70,7 @@ export async function chat(
   }
   if (tools?.length) {
     body.tools = tools
-    console.log('[API] tools sent:', tools.length, tools.map((t: any) => t.function?.name ?? t.name))
+    log.debug('tools sent: %d %o', tools.length, tools.map((t: any) => t.function?.name ?? t.name))
   }
 
   try {

@@ -9,6 +9,9 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCharacterController, POSE_PRESETS, useCharacterStore, findImages } from './character'
 import type { PoseKey } from './character'
+import { createLogger } from './utils/logger'
+
+const log = createLogger('DevPanel')
 
 const charStore = useCharacterStore()
 const controller = useCharacterController()
@@ -35,6 +38,8 @@ onMounted(async () => {
     await charStore.init()
   }
   controller.init()
+
+  log.info('DevPanel 挂载 %s', isDevWindow.value ? '(独立窗口)' : '(嵌入式)')
 
   // 请求主窗口同步当前状态
   sendToMain('request-state', {})

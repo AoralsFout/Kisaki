@@ -5,18 +5,25 @@
  */
 import { loadCosyVoiceConfig, getHttpUrl } from './config'
 import type { VoiceInfo } from './types'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('TTSApi')
 
 /** 从服务端查询用户创建的自定义音色列表 */
 export async function fetchVoiceList(): Promise<VoiceInfo[]> {
   const config = loadCosyVoiceConfig()
   if (!config.apiKey) {
+    log.warn('fetchVoiceList: API Key 未配置')
     throw new Error('请先配置 CosyVoice API Key')
   }
 
   const url = getHttpUrl(config)
   if (url.includes('{WorkspaceId}')) {
+    log.warn('fetchVoiceList: 新加坡地域须填写 WorkspaceId')
     throw new Error('新加坡地域需要填写 WorkspaceId')
   }
+
+  log.debug('获取音色列表...')
 
   const payload = {
     model: 'voice-enrollment',
@@ -44,10 +51,9 @@ export async function fetchVoiceList(): Promise<VoiceInfo[]> {
   const data = await response.json()
   const rawVoices: Record<string, any>[] = data?.output?.voice_list ?? []
 
-  // API 返回 snake_case，映射为 camelCase
-  return rawVoices
-    .filter(v => v.status === 'OK')
-    .map(v => ({
+  const voices = rawVoices
+    .filter((v: any) => v.status === 'OK')
+    .map((v: any) => ({
       voiceId: v.voice_id ?? '',
       gmtCreate: v.gmt_create ?? '',
       gmtModified: v.gmt_modified ?? '',
@@ -55,14 +61,19 @@ export async function fetchVoiceList(): Promise<VoiceInfo[]> {
       targetModel: v.target_model ?? '',
       prefix: v.prefix ?? '',
     }))
+
+  log.info('获取到 %d 个可用音色', voices.length)
+  return voices
 }
 
 /** 测试 API Key 是否有效 */
 export async function testApiKey(): Promise<boolean> {
   try {
-    await fetchVoiceList()
+    const list = await fetchVoiceList()
+    log.debug('API Key 测试通过（%d 个音色）', list.length)
     return true
   } catch {
+    log.warn('API Key 测试失败')
     return false
   }
 }

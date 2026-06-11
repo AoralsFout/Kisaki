@@ -7,6 +7,9 @@ import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
 import { useCharacterStore } from '../../stores/character'
 import { getCharacterController } from '../../character/commandBus'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('ToolCharacter')
 
 function getStore() {
   return useCharacterStore()
@@ -35,11 +38,13 @@ export const setEmotionTool: Tool = {
     const emotion = String(args.emotion ?? '')
     const store = getStore()
     if (store.emotions.length && !store.emotions.includes(emotion)) {
+      log.warn('不支持的情绪: %s', emotion)
       return `不支持的情绪。可用: ${store.emotions.join(', ')}`
     }
     const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setEmotion(emotion)
+    log.info('表情切换: %s', emotion)
     return `表情已切换为「${emotion}」`
   },
 }
@@ -67,11 +72,13 @@ export const setStanceTool: Tool = {
     const stance = String(args.stance ?? '')
     const store = getStore()
     if (store.poses.length && !store.poses.includes(stance)) {
+      log.warn('不支持的姿势: %s', stance)
       return `不支持的姿势。可用: ${store.poses.join(', ')}`
     }
     const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setPoseTag(stance)
+    log.info('姿势切换: %s', stance)
     return `姿势已切换为「${stance}」`
   },
 }
@@ -99,11 +106,13 @@ export const setCostumeTool: Tool = {
     const costume = String(args.costume ?? '')
     const store = getStore()
     if (store.costumes.length && !store.costumes.includes(costume)) {
+      log.warn('不支持的服装: %s', costume)
       return `不支持的服装。可用: ${store.costumes.join(', ')}`
     }
     const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setCostume(costume)
+    log.info('服装切换: %s', costume)
     return `服装已切换为「${costume}」`
   },
 }
@@ -137,6 +146,7 @@ export const setLookTool: Tool = {
     if (args.stance) parts.push(`姿势=${args.stance}`)
     if (args.emotion) parts.push(`表情=${args.emotion}`)
     if (args.costume) parts.push(`服装=${args.costume}`)
+    log.info('角色外观更新: %s', parts.join(', ') || '无变更')
     return parts.length ? `已更新：${parts.join('、')}` : '未做任何更改'
   },
 }
@@ -164,12 +174,15 @@ export const setScreenPoseTool: Tool = {
   handler: async (args) => {
     const pose = String(args.pose ?? '')
     if (!ALL_POSE_KEYS.includes(pose as any)) {
+      log.warn('不支持的屏幕位置: %s', pose)
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
     const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setScreenPose(pose as any)
-    return `屏幕位置已切换为「${POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose}」`
+    const label = POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose
+    log.info('屏幕位置切换: %s (%s)', pose, label)
+    return `屏幕位置已切换为「${label}」`
   },
 }
 
@@ -192,11 +205,19 @@ export const getStateTool: Tool = {
     const img = ctrl.currentImage.value
     const screenPose = ctrl.currentScreenPose.value
     const screenLabel = POSE_PRESETS[screenPose]?.label ?? screenPose
+    const state = {
+      character: ctrl.charStore.name,
+      pose: ctrl.currentPoseTag.value,
+      emotion: ctrl.currentEmotion.value,
+      costume: ctrl.currentCostume.value,
+      screen: screenLabel,
+    }
+    log.debug('查询角色状态: %o', state)
     return [
-      `角色: ${ctrl.charStore.name}`,
-      `姿势: ${ctrl.currentPoseTag.value}`,
-      `表情: ${ctrl.currentEmotion.value}`,
-      `服装: ${ctrl.currentCostume.value}`,
+      `角色: ${state.character}`,
+      `姿势: ${state.pose}`,
+      `表情: ${state.emotion}`,
+      `服装: ${state.costume}`,
       `屏幕位置: ${screenLabel}`,
       `当前图片: ${img?.file ?? '无'}`,
     ].join('\n')
@@ -226,11 +247,13 @@ export const switchCharacterTool: Tool = {
     const id = String(args.character_id ?? '')
     const store = getStore()
     if (!store.availableList.includes(id)) {
+      log.warn('未知角色: %s', id)
       return `未知角色 "${id}"，可用: ${store.availableList.join(', ')}`
     }
     const ctrl = getCharacterController()
     if (!ctrl) return '角色控制器未初始化'
     await ctrl.switchCharacter(id)
+    log.info('角色切换: %s (%s)', id, store.name)
     return `已切换到 ${store.name}`
   },
 }

@@ -5,6 +5,9 @@
  */
 import { getTool } from './registry'
 import type { ToolCall, ToolResult } from './types'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('AgentExec')
 
 /** 解析 LLM 响应中的 tool_calls */
 export function parseToolCalls(choice: any): ToolCall[] {
@@ -29,6 +32,7 @@ export function parseToolCalls(choice: any): ToolCall[] {
 export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
   const tool = getTool(tc.name)
   if (!tool) {
+    log.warn('未知工具调用: %s', tc.name)
     return {
       role: 'tool',
       tool_call_id: tc.id,
@@ -36,14 +40,17 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
     }
   }
 
+  log.debug('执行工具: %s, 参数: %o', tc.name, tc.arguments)
   try {
     const result = await tool.handler(tc.arguments)
+    log.info('工具执行完成: %s', tc.name)
     return {
       role: 'tool',
       tool_call_id: tc.id,
       content: result,
     }
   } catch (err) {
+    log.warn('工具执行失败: %s - %s', tc.name, (err as Error).message)
     return {
       role: 'tool',
       tool_call_id: tc.id,

@@ -16,6 +16,9 @@
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { useCharacterController, registerCharacterController } from '../character'
 import type { CharacterImageData } from '../character'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('Character')
 
 const emit = defineEmits<{
   click: [event: MouseEvent]
@@ -63,10 +66,12 @@ const imageStyle = computed(() => {
 onMounted(() => {
   controller.init()
   registerCharacterController(controller)
+  log.info('Character 组件挂载')
 })
 
 onUnmounted(() => {
   controller.dispose()
+  log.info('Character 组件卸载')
 })
 
 /** 监听图片切换，驱动交叉淡出 */
@@ -75,6 +80,7 @@ watch(
   (newImg, oldImg) => {
     if (!oldImg || !newImg || oldImg.file === newImg.file) return
 
+    log.debug('图片切换: %s → %s', oldImg.file, newImg.file)
     fadingImage.value = null
     fading.value = false
 

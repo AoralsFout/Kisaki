@@ -5,11 +5,14 @@ export { register, registerAll, getTool, getDefinitions, listTools } from './reg
 export { parseToolCalls, executeToolCall, executeToolCalls } from './executor'
 export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter } from './types'
 
-import { registerAll } from './registry'
+import { createLogger } from '../utils/logger'
+import { registerAll, listTools } from './registry'
 import { timeTool } from './tools/time'
 import { weatherTool } from './tools/weather'
 import { calculatorTool } from './tools/calculator'
 import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, switchCharacterTool } from './tools/character'
+
+const log = createLogger('Agent')
 
 /** 初始化所有内置工具 */
 export function initTools() {
@@ -17,4 +20,5 @@ export function initTools() {
     timeTool, weatherTool, calculatorTool,
     setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, switchCharacterTool,
   )
+  log.info('内置工具已注册 (%d 个)', listTools().length)
 }

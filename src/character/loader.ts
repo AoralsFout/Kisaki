@@ -6,12 +6,17 @@
  * - prompt.txt：    系统提示词（单独文件，避免 JSON 臃肿）
  */
 
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('CharLoader')
+
 // 缓存版本号 — 调用 bustImageCache() 递增，替代 Date.now()
 let _imgVer = 0
 
 /** 强制刷新图片/数据缓存（保存角色后调用） */
 export function bustImageCache() {
   _imgVer++
+  log.debug('图片缓存已刷新, 版本: %d', _imgVer)
 }
 
 /** 获取当前缓存版本号 */
@@ -70,12 +75,18 @@ async function loadPrompt(id: string): Promise<string> {
 
 /** 加载单个角色配置 */
 export async function loadCharacterJson(id: string): Promise<CharacterData> {
+  log.debug('加载角色配置: %s', id)
   const res = await fetch(uncached(`/character/${id}/character.json`))
-  if (!res.ok) throw new Error(`加载角色 ${id} 失败: HTTP ${res.status}`)
+  if (!res.ok) {
+    log.warn('加载角色 %s 失败: HTTP %d', id, res.status)
+    throw new Error(`加载角色 ${id} 失败: HTTP ${res.status}`)
+  }
   const data: CharacterData = await res.json()
+  log.info('角色配置已加载: %s (%s), %d 张立绘', id, data.name, data.images.length)
 
   // 加载提示词（prompt.txt 优先）
   data.prompt = await loadPrompt(id)
+  log.debug('角色提示词长度: %d 字符', data.prompt.length)
 
   return data
 }
@@ -84,15 +95,19 @@ let cachedList: string[] | null = null
 
 /** 扫描可用角色列表（通过 Tauri 后端扫描目录） */
 export async function listCharacters(): Promise<string[]> {
-  if (cachedList) return cachedList
+  if (cachedList) {
+    log.debug('角色列表(缓存): %d 个', cachedList.length)
+    return cachedList
+  }
 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const list: string[] = await invoke('list_characters')
     cachedList = list
+    log.info('扫描到 %d 个角色: %s', list.length, list.join(', '))
     return list
   } catch {
-    // 非 Tauri 环境回退
+    log.warn('listCharacters 失败（非 Tauri 环境?）')
     return []
   }
 }

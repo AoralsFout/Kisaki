@@ -9,6 +9,9 @@ import { getDefinitions, executeToolCall, getTool, initTools } from '../agent'
 import type { ToolCall } from '../agent'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('ChatStore')
 
 // 初始化注册工具
 initTools()
@@ -133,6 +136,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function init() {
     configReady.value = isConfigValid(loadConfig())
+    log.info('ChatStore 初始化, 配置%s就绪', configReady.value ? '' : '未')
   }
 
   /** 发送消息给 AI（支持工具调用循环） */
@@ -147,10 +151,13 @@ export const useChatStore = defineStore('chat', () => {
     cancelSpeak()
 
     if (!isConfigValid(loadConfig())) {
+      log.warn('API 未配置，无法发送消息')
       showBubbleText('请先配置 API~ 右键菜单 → 设置 填写 API 信息', false)
       isProcessing.value = false
       return
     }
+
+    log.info('用户消息: "%s"', userText.slice(0, 100))
 
     // 添加用户消息
     addMessage('user', userText)
@@ -231,6 +238,7 @@ export const useChatStore = defineStore('chat', () => {
 
             chatContext.addAssistantMessage(displayText)
             addMessage('assistant', displayText, currentThinking.value)
+            log.info('AI 回复完成 (%d 字符, TTS: %d 字符)', displayText.length, nativeText.length)
             // TTS 播报使用角色母语文本
             triggerTts(nativeText)
           }
@@ -297,6 +305,7 @@ export const useChatStore = defineStore('chat', () => {
     isTyping.value = false
     isUsingTools.value = false
     cancelSpeak()
+    log.info('AI 回复已取消')
   }
 
   function addMessage(role: ChatMessage['role'], text: string, thinking?: string) {
@@ -312,10 +321,12 @@ export const useChatStore = defineStore('chat', () => {
   function clearMessages() {
     messages.value = []
     chatContext = new ChatContext()
+    log.info('聊天记录已清空')
   }
 
   function resetContext() {
     chatContext = new ChatContext()
+    log.debug('对话上下文已重置')
   }
 
   /** 更新角色 system prompt（含语言配置） */

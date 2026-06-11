@@ -6,6 +6,9 @@
  */
 import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '../stores/chat'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('ChatHistory')
 
 const props = withDefaults(defineProps<{
   visible?: boolean

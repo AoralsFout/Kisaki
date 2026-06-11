@@ -4,6 +4,9 @@
  * 使用 wttr.in（免费，无需 API Key）
  */
 import type { Tool } from '../types'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('ToolWeather')
 
 export const weatherTool: Tool = {
   definition: {
@@ -28,11 +31,12 @@ export const weatherTool: Tool = {
     },
   },
   handler: async (args) => {
-    const city = encodeURIComponent(String(args.city))
+    const city = String(args.city)
     const days = Math.min(Math.max(Number(args.days) || 1, 1), 3)
+    log.debug('查询天气: %s (%d 天)', city, days)
 
     try {
-      const res = await fetch(`https://wttr.in/${city}?format=j1&lang=zh`, {
+      const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, {
         signal: AbortSignal.timeout(8000),
       })
 
@@ -42,9 +46,12 @@ export const weatherTool: Tool = {
       const current = data.current_condition?.[0]
       const forecast = data.weather?.slice(0, days) ?? []
 
-      if (!current) return `无法获取 "${args.city}" 的天气信息`
+      if (!current) {
+        log.warn('未获取到天气数据: %s', city)
+        return `无法获取 "${city}" 的天气信息`
+      }
 
-      let result = `🌍 ${args.city} 天气\n`
+      let result = `🌍 ${city} 天气\n`
       result += `🌡️ 当前: ${current.temp_C}°C (体感 ${current.FeelsLikeC}°C)\n`
       result += `☁️ ${current.weatherDesc?.[0]?.value ?? '未知'}\n`
       result += `💧 湿度: ${current.humidity}%\n`
@@ -58,11 +65,14 @@ export const weatherTool: Tool = {
         result += `\n📅 ${date}: ${desc} ${minTemp}~${maxTemp}°C`
       }
 
+      log.info('天气查询成功: %s - %s°C', city, current.temp_C)
       return result
     } catch (err) {
       if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
-        return `查询 "${args.city}" 天气超时，请稍后重试`
+        log.warn('天气查询超时: %s', city)
+        return `查询 "${city}" 天气超时，请稍后重试`
       }
+      log.warn('天气查询失败: %s - %s', city, (err as Error).message)
       return `查询天气失败: ${(err as Error).message}`
     }
   },
