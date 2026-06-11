@@ -38,8 +38,10 @@ const DISPLAY_RE = /【译文】([\s\S]*?)$/
  *   【译文】你好
  *
  * 如果解析失败则整段文本同时用作显示和 TTS
+ *
+ * @internal 导出以支持单元测试
  */
-function parseBilingualResponse(text: string): { nativeText: string; displayText: string } {
+export function parseBilingualResponse(text: string): { nativeText: string; displayText: string } {
   const nativeMatch = text.match(NATIVE_RE)
   const displayMatch = text.match(DISPLAY_RE)
 
