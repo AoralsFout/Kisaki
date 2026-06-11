@@ -24,12 +24,13 @@ const emit = defineEmits<{
       @click="emit('select', id)"
     >
       <div class="card-icon">
-        <i v-if="id === currentId" class="fas fa-star"></i>
-        <i v-else class="fas fa-ribbon"></i>
+        <!-- <i v-if="id === currentId" class="fas fa-star"></i>
+        <i v-else class="fas fa-ribbon"></i> -->
+        <i class="fas fa-star"></i>
       </div>
       <div class="card-name">{{ id.charAt(0).toUpperCase() + id.slice(1) }}</div>
       <div class="card-id">{{ id }}</div>
-      <div v-if="id === currentId" class="card-badge">当前</div>
+      <!-- <div v-if="id === currentId" class="card-badge">当前</div> -->
     </div>
     <div class="char-card char-card-add" @click="emit('create')">
       <div class="card-icon" style="font-size:32px;color:#aaa;">+</div>

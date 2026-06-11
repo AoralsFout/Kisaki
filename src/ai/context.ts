@@ -53,6 +53,7 @@ function buildLangInstruction(voiceLang: string, displayLang: string): string {
 
 注意：
 - 即使调用了工具，最终回复也要遵循此格式
+- 母语内容必须是由母语文字和标点符号组合，可以被合成为语音的文本。不允许出现emoji，特殊符号，颜文字等不可语音合成内容
 - 不要省略任一字段`
 }
 

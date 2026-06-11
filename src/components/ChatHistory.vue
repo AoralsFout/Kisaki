@@ -42,7 +42,8 @@ watch(
           <span class="history-title"><i class="fas fa-clipboard-list"></i> 对话历史</span>
           <div class="header-actions">
             <span class="msg-count">{{ chat.messages.length }} 条</span>
-            <button class="btn-clear" @click="chat.clearMessages()" title="清空历史"><i class="fas fa-trash-can"></i></button>
+            <button class="btn-clear" @click="chat.clearMessages()" title="清空历史"><i
+                class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
         </div>
@@ -53,14 +54,10 @@ watch(
             暂无对话记录
           </div>
 
-          <div
-            v-for="msg in chat.messages"
-            :key="msg.id"
-            :class="['message', msg.role]"
-          >
+          <div v-for="msg in chat.messages" :key="msg.id" :class="['message', msg.role]">
             <div class="msg-avatar">
               <i v-if="msg.role === 'user'" class="fas fa-user"></i>
-              <i v-else class="fas fa-ribbon"></i>
+              <i v-else class="fas fa-star"></i>
             </div>
             <div class="msg-content">
               <div class="msg-role-label">
@@ -69,7 +66,7 @@ watch(
               </div>
               <!-- 思考内容（仅 assistant 消息可能有） -->
               <details v-if="msg.thinking" class="thinking-block">
-                <summary class="thinking-summary"><i class="fas fa-circle-question"></i> 思考过程</summary>
+                <summary class="thinking-summary">思考过程</summary>
                 <div class="thinking-text">{{ msg.thinking }}</div>
               </details>
               <div class="msg-text">{{ msg.text }}</div>
@@ -143,6 +140,7 @@ watch(
   padding: 2px 4px;
   border-radius: 4px;
   opacity: 0.5;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .btn-clear:hover {
@@ -216,6 +214,10 @@ watch(
   justify-content: center;
   background: rgba(255, 255, 255, 0.04);
   border-radius: 50%;
+
+  >i {
+    color: rgba(255, 255, 255, 0.4);
+  }
 }
 
 .msg-content {
