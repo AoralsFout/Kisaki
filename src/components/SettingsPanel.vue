@@ -19,6 +19,7 @@ import type { CosyVoiceConfig, VoiceInfo } from '../tts/types'
 import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../stores/language'
+import { getTypingSpeed, setTypingSpeed } from '../stores/language'
 import { WINDOW_LOGS, QUERY_SETTINGS, QUERY_LOGS } from '../constants'
 import { getAllWindows } from '@tauri-apps/api/window'
 
@@ -37,6 +38,13 @@ const loadingVoices = ref(false)
 const voiceError = ref('')
 const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
+const typingSpeed = ref(getTypingSpeed())
+
+function onTypingSpeedInput(e: Event) {
+  const val = parseInt((e.target as HTMLInputElement).value, 10)
+  typingSpeed.value = val
+  setTypingSpeed(val)
+}
 
 // ---- 导航 ----
 type Tab = 'api' | 'character' | 'tts' | 'dev' | 'shortcuts' | 'about'
@@ -302,6 +310,25 @@ async function openLogWindow() {
               <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
             </select>
             <p class="form-hint">AI 回复的文本将翻译为你选择的语言显示。角色语音始终使用其母语合成。</p>
+          </div>
+
+          <!-- 打字机速度 -->
+          <div class="form-group">
+            <label class="form-label">打字机速度</label>
+            <div class="speed-slider-row">
+              <input
+                type="range"
+                min="10" max="200" step="5"
+                :value="typingSpeed"
+                @input="onTypingSpeedInput"
+                class="speed-slider"
+              />
+              <span class="speed-value">{{ typingSpeed }}ms</span>
+              <span class="speed-tag" :class="{ fast: typingSpeed <= 20, medium: typingSpeed > 20 && typingSpeed <= 60, slow: typingSpeed > 60 }">
+                {{ typingSpeed <= 20 ? '快速' : typingSpeed <= 60 ? '中等' : '慢速' }}
+              </span>
+            </div>
+            <p class="form-hint">每显示一个字符的间隔时间。（10ms=极快，200ms=极慢，默认50ms）</p>
           </div>
         </div>
 
@@ -920,4 +947,70 @@ async function openLogWindow() {
   color: #4a7aff;
   background: rgba(74, 122, 255, 0.1);
 }
+
+	/* ===== 打字机速度滑块 ===== */
+	.speed-slider-row {
+	  display: flex;
+	  align-items: center;
+	  gap: 12px;
+	}
+
+	.speed-slider {
+	  flex: 1;
+	  max-width: 240px;
+	  -webkit-appearance: none;
+	  appearance: none;
+	  height: 6px;
+	  border-radius: 3px;
+	  background: #2a2a4a;
+	  outline: none;
+	  cursor: pointer;
+	}
+
+	.speed-slider::-webkit-slider-thumb {
+	  -webkit-appearance: none;
+	  appearance: none;
+	  width: 18px;
+	  height: 18px;
+	  border-radius: 50%;
+	  background: #4a7aff;
+	  border: 2px solid #1a1a2e;
+	  cursor: pointer;
+	  transition: transform 0.1s;
+	}
+
+	.speed-slider::-webkit-slider-thumb:hover {
+	  transform: scale(1.15);
+	}
+
+	.speed-value {
+	  font-size: 13px;
+	  color: #ddd;
+	  font-weight: 500;
+	  min-width: 40px;
+	  font-family: monospace;
+	}
+
+	.speed-tag {
+	  font-size: 11px;
+	  padding: 2px 8px;
+	  border-radius: 10px;
+	  font-weight: 600;
+	  text-transform: uppercase;
+	}
+
+	.speed-tag.fast {
+	  color: #30b94e;
+	  background: rgba(48, 185, 78, 0.12);
+	}
+
+	.speed-tag.medium {
+	  color: #ffa726;
+	  background: rgba(255, 167, 38, 0.12);
+	}
+
+	.speed-tag.slow {
+	  color: #ef5350;
+	  background: rgba(239, 83, 80, 0.12);
+	}
 </style>

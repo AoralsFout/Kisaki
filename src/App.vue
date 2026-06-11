@@ -236,6 +236,7 @@ async function handleSelectCharacter(charId: string) {
         :thinking="chat.currentThinking"
         :visible="chat.showBubble"
         :typing="chat.isTyping"
+        @typing-end="chat.isTyping = false"
       />
 
       <!-- 工具按钮行（悬停展开文字） -->

@@ -62,3 +62,7 @@ export const DEFAULT_VOICE_LANGUAGE = 'ja-JP'
 
 /** 默认文本语言 */
 export const DEFAULT_TEXT_LANGUAGE = 'zh-CN'
+
+/** 打字机显示速度（ms/字符） */
+export const STORAGE_TYPING_SPEED = 'deskpet-typing-speed'
+export const DEFAULT_TYPING_SPEED = 50

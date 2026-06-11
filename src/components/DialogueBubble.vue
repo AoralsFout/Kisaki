@@ -2,11 +2,13 @@
 /**
  * 对话气泡组件
  *
- * - 流式模式（typing=true）：直接显示 props.text，不逐字动画
- * - 固定模式（typing=false）：显示完整文本
- * - 支持 thinking 内容（如 DeepSeek 推理过程）以灰色斜体展示
+ * - 非流式模式：缓冲完整文本后，以打字机动画逐字显示
+ * - typing=true：打字机动画
+ * - typing=false：直接显示完整文本
+ * - 打字速度可在设置面板中调整（localStorage: deskpet-typing-speed）
  */
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
+import { getTypingSpeed } from '../stores/language'
 
 const props = withDefaults(defineProps<{
   text?: string
@@ -24,27 +26,69 @@ const emit = defineEmits<{
   'typing-end': []
 }>()
 
-// 流式模式下直接用 props.text，不做动画
 const displayText = ref('')
+const isAnimating = ref(false)
+let typingTimer: ReturnType<typeof setInterval> | null = null
+
+function cleanupTimer() {
+  if (typingTimer !== null) {
+    clearInterval(typingTimer)
+    typingTimer = null
+  }
+}
+
+function startTypewriter(fullText: string) {
+  cleanupTimer()
+  displayText.value = ''
+  isAnimating.value = true
+
+  const speed = getTypingSpeed()
+  let index = 0
+
+  typingTimer = setInterval(() => {
+    if (index < fullText.length) {
+      displayText.value += fullText[index]
+      index++
+    } else {
+      cleanupTimer()
+      isAnimating.value = false
+      emit('typing-end')
+    }
+  }, speed)
+}
 
 watch(
   () => props.text,
   (newText) => {
-    displayText.value = newText ?? ''
-    if (!newText) return
-    // typing=false 或第一次赋值时立即触发 typing-end
+    cleanupTimer()
+    isAnimating.value = false
+
+    const text = newText ?? ''
+    if (!text) {
+      displayText.value = ''
+      return
+    }
+
     if (!props.typing) {
+      // 固定模式：直接显示完整文本
+      displayText.value = text
       emit('typing-end')
+    } else {
+      // 打字机模式：逐字动画
+      startTypewriter(text)
     }
   },
-  { immediate: true },
 )
 
 /** 跳过打字/直接显示完整文本 */
 function skipTyping() {
+  cleanupTimer()
+  isAnimating.value = false
   displayText.value = props.text
   emit('typing-end')
 }
+
+onUnmounted(cleanupTimer)
 
 defineExpose({ skipTyping })
 </script>
@@ -61,8 +105,8 @@ defineExpose({ skipTyping })
       <!-- 主文本 -->
       <span class="bubble-text">{{ displayText }}</span>
 
-      <!-- 光标（流式输出中） -->
-      <span v-if="typing && text" class="cursor">▌</span>
+      <!-- 光标（打字机动画中） -->
+      <span v-if="isAnimating" class="cursor">▌</span>
     </div>
   </div>
 </template>

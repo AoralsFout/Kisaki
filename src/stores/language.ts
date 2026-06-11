@@ -2,7 +2,7 @@
  * 用户语言偏好管理（localStorage）
  */
 import { createLogger } from '../utils/logger'
-import { STORAGE_DISPLAY_LANGUAGE } from '../constants'
+import { STORAGE_DISPLAY_LANGUAGE, STORAGE_TYPING_SPEED, DEFAULT_TYPING_SPEED } from '../constants'
 
 const log = createLogger('Language')
 const DISPLAY_LANG_KEY = STORAGE_DISPLAY_LANGUAGE
@@ -41,4 +41,23 @@ export function setDisplayLanguage(lang: string) {
 export function resolveDisplayLanguage(charTextLang?: string): string {
   const userLang = getDisplayLanguage()
   return userLang || charTextLang || 'zh-CN'
+}
+
+// ─── 打字机速度 ────────────────────────────────────────
+
+/** 获取打字机速度（ms/字符） */
+export function getTypingSpeed(): number {
+  try {
+    const val = localStorage.getItem(STORAGE_TYPING_SPEED)
+    if (val !== null) {
+      const n = parseInt(val, 10)
+      if (!isNaN(n) && n >= 5 && n <= 500) return n
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_TYPING_SPEED
+}
+
+/** 设置打字机速度 */
+export function setTypingSpeed(ms: number) {
+  localStorage.setItem(STORAGE_TYPING_SPEED, String(Math.round(ms)))
 }

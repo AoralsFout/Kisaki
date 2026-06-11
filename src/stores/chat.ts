@@ -253,9 +253,9 @@ export const useChatStore = defineStore('chat', () => {
 
     // 准备气泡
     showBubble.value = true
-    currentBubbleText.value = ''
-    currentThinking.value = ''
+    currentBubbleText.value = ""
     isTyping.value = false
+    currentThinking.value = ''
 
     // 同步角色数据到 agent 上下文（替代 agent 直接 import Pinia）
     {
@@ -295,30 +295,30 @@ export const useChatStore = defineStore('chat', () => {
         log.info('📐 第%d轮: tools 启用 → 跳过 response_format', turn)
       }
       try {
+        let contentBuffer = ""  // 单轮缓冲区：累积完整内容后统一解析
         const result = await chatOnce(
           chatContext.getMessages(),
           turnHasTools ? tools : [],
           abortController.signal,
           {
             onChunk: (delta) => {
-              // 分离  标签（如果内容里有）
+              // 缓冲内容，不直接更新气泡（等待结构化解析后以打字机形式显示）
+              contentBuffer += delta
+              // 仍从内容中提取 thinking（如 <think> 标签）用于实时显示
               if (!thinkSplitDone) {
-                const full = (currentBubbleText.value + delta)
+                const full = contentBuffer
                 const match = full.match(/^([\s\S]*?)<\/think>\s*([\s\S]*)$/)
                 if (match) {
                   const think = match[1].replace(/^<think>\s*/, '')
-                  if (think) currentThinking.value += think
-                  currentBubbleText.value = match[2]
+                  if (think) currentThinking.value = think
                   thinkSplitDone = true
                   return
                 }
                 if (full.includes('<think>') && !full.includes('</think>')) {
                   currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
-                  currentBubbleText.value = ''
                   return
                 }
               }
-              currentBubbleText.value += delta
             },
             onThinking: (t) => {
               currentThinking.value += t
@@ -334,7 +334,7 @@ export const useChatStore = defineStore('chat', () => {
           const textCalls = agentService.extractTextToolCalls(finalText)
           if (textCalls.length > 0) {
             isUsingTools.value = true
-            currentBubbleText.value = ''
+            currentBubbleText.value = ""
             // 将 AI 回复（不含工具调用部分）加入上下文
             const cleanText = agentService.stripTextToolCalls(finalText)
             if (cleanText) {
@@ -392,6 +392,9 @@ export const useChatStore = defineStore('chat', () => {
             log.info('📐 AI 回复完成 [解析:%s] (显示:%d字, TTS:%d字)', parseMethod, displayText.length, nativeText.length)
             // TTS 播报使用角色母语文本
             triggerTts(nativeText)
+            // 气泡输出：非流式，等待结构化解析成功后以打字机动画显示文本
+            currentBubbleText.value = displayText
+            isTyping.value = true
           }
           break
         }
@@ -399,7 +402,7 @@ export const useChatStore = defineStore('chat', () => {
         if (result.type === 'tools') {
           // 执行工具
           isUsingTools.value = true
-          currentBubbleText.value = ''
+          currentBubbleText.value = ""
 
           // 将 tool_calls 加入上下文
           chatContext.addAssistantToolCall(result.calls)
@@ -416,8 +419,8 @@ export const useChatStore = defineStore('chat', () => {
           }
 
           isUsingTools.value = false
+          currentBubbleText.value = ""
           // 继续循环，用工具结果再请求 AI
-          currentBubbleText.value = ''
           continue
         }
       } catch (err) {
@@ -433,7 +436,6 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     isProcessing.value = false
-    isTyping.value = false
     abortController = null
   }
 
@@ -458,7 +460,6 @@ export const useChatStore = defineStore('chat', () => {
     abortController?.abort()
     abortController = null
     isProcessing.value = false
-    isTyping.value = false
     isUsingTools.value = false
     cancelSpeak()
     log.info('AI 回复已取消')
@@ -497,9 +498,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function hideBubble() {
-    showBubble.value = false
-    currentBubbleText.value = ''
+    currentBubbleText.value = ""
     isTyping.value = false
+    showBubble.value = false
   }
 
   function toggleInput() { showInput.value = !showInput.value }
