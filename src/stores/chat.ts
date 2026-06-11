@@ -7,7 +7,7 @@ import { chat, isConfigValid, loadConfig, ChatContext } from '../ai'
 import type { ToolCallData } from '../ai'
 import { getDefinitions, executeToolCall, getTool, initTools } from '../agent'
 import type { ToolCall } from '../agent'
-import { speakText, cancelSpeak } from '../tts'
+import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 
 // 初始化注册工具
@@ -284,7 +284,7 @@ export const useChatStore = defineStore('chat', () => {
       const charStore = useCharacterStore()
       const voiceId = charStore.data?.voice
       if (!voiceId) return
-      await speakText(text, voiceId)
+      await speakTextStreaming(text, voiceId)
     } catch {
       // 静默失败
     }
