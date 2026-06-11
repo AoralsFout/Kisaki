@@ -1,18 +1,34 @@
 /**
  * 角色控制工具（三维标签）
  *
- * 使用 useCharacterStore 获取当前角色的标签列表。
+ * 通过 agentCtx 获取角色数据和控制器，不直接耦合 Pinia store。
  */
 import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
-import { useCharacterStore } from '../../stores/character'
-import { getCharacterController } from '../../character/commandBus'
+import { getAgentCharData, getAgentController } from '../context'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolCharacter')
 
+/** 可用角色列表（由 App.vue 通过 setAgentCharData 后的缓存注入） */
+let _availableChars: string[] = []
+
+export function setAvailableCharacters(list: string[]) {
+  _availableChars = list
+}
+
 function getStore() {
-  return useCharacterStore()
+  const data = getAgentCharData()
+  const ctrl = getAgentController()
+  if (!data || !ctrl) return null
+  return {
+    data,
+    emotions: data.emotions ?? [],
+    poses: data.poses ?? [],
+    costumes: data.costumes ?? [],
+    name: data.name,
+    availableList: _availableChars,
+  }
 }
 
 /** 切换情绪 */
@@ -37,11 +53,12 @@ export const setEmotionTool: Tool = {
   handler: async (args) => {
     const emotion = String(args.emotion ?? '')
     const store = getStore()
+    if (!store) return '角色数据未就绪'
     if (store.emotions.length && !store.emotions.includes(emotion)) {
       log.warn('不支持的情绪: %s', emotion)
       return `不支持的情绪。可用: ${store.emotions.join(', ')}`
     }
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setEmotion(emotion)
     log.info('表情切换: %s', emotion)
@@ -71,11 +88,12 @@ export const setStanceTool: Tool = {
   handler: async (args) => {
     const stance = String(args.stance ?? '')
     const store = getStore()
+    if (!store) return '角色数据未就绪'
     if (store.poses.length && !store.poses.includes(stance)) {
       log.warn('不支持的姿势: %s', stance)
       return `不支持的姿势。可用: ${store.poses.join(', ')}`
     }
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setPoseTag(stance)
     log.info('姿势切换: %s', stance)
@@ -105,11 +123,12 @@ export const setCostumeTool: Tool = {
   handler: async (args) => {
     const costume = String(args.costume ?? '')
     const store = getStore()
+    if (!store) return '角色数据未就绪'
     if (store.costumes.length && !store.costumes.includes(costume)) {
       log.warn('不支持的服装: %s', costume)
       return `不支持的服装。可用: ${store.costumes.join(', ')}`
     }
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setCostume(costume)
     log.info('服装切换: %s', costume)
@@ -135,7 +154,7 @@ export const setLookTool: Tool = {
     },
   },
   handler: async (args) => {
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setLook({
       pose: args.stance || undefined,
@@ -177,7 +196,7 @@ export const setScreenPoseTool: Tool = {
       log.warn('不支持的屏幕位置: %s', pose)
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setScreenPose(pose as any)
     const label = POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose
@@ -200,7 +219,7 @@ export const getStateTool: Tool = {
     },
   },
   handler: async () => {
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     const img = ctrl.currentImage.value
     const screenPose = ctrl.currentScreenPose.value
@@ -246,11 +265,12 @@ export const switchCharacterTool: Tool = {
   handler: async (args) => {
     const id = String(args.character_id ?? '')
     const store = getStore()
+    if (!store) return '角色数据未就绪'
     if (!store.availableList.includes(id)) {
       log.warn('未知角色: %s', id)
       return `未知角色 "${id}"，可用: ${store.availableList.join(', ')}`
     }
-    const ctrl = getCharacterController()
+    const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     await ctrl.switchCharacter(id)
     log.info('角色切换: %s (%s)', id, store.name)

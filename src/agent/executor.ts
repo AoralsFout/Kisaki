@@ -9,17 +9,24 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentExec')
 
+/** LLM 响应 choice 结构中的 tool_calls 字段 */
+interface LLMChoice {
+  delta?: { tool_calls?: Array<Record<string, unknown>> }
+  message?: { tool_calls?: Array<Record<string, unknown>> }
+}
+
 /** 解析 LLM 响应中的 tool_calls */
-export function parseToolCalls(choice: any): ToolCall[] {
+export function parseToolCalls(choice: LLMChoice): ToolCall[] {
   const calls: ToolCall[] = []
   const toolCalls = choice?.delta?.tool_calls ?? choice?.message?.tool_calls ?? []
 
   for (const tc of toolCalls) {
     try {
+      const fn = tc.function as Record<string, unknown> | undefined
       calls.push({
-        id: tc.id,
-        name: tc.function?.name ?? '',
-        arguments: JSON.parse(tc.function?.arguments ?? '{}'),
+        id: String(tc.id ?? ''),
+        name: String(fn?.name ?? ''),
+        arguments: JSON.parse(String(fn?.arguments ?? '{}')),
       })
     } catch {
       // 跳过解析失败的 tool_call

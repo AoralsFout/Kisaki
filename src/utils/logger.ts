@@ -64,6 +64,7 @@ function detectWindowSource(): string {
   else if (params.has('logs')) _windowSource = '日志'
   else if (params.has('dev')) _windowSource = 'Dev'
   else _windowSource = '主窗口'
+  // NOTE: 若新增窗口标识，请同步更新 src/constants.ts 中的 QUERY_* 常量
   return _windowSource
 }
 
@@ -147,6 +148,7 @@ export function subscribe(cb: LogCallback): () => void {
 // 实现跨窗口日志实时同步，让日志查看器窗口能看到其它窗口的日志。
 
 const LOG_CHANNEL = 'deskpet-logs'
+// NOTE: 若修改频道名，请同步更新 src/constants.ts 中的 CHANNEL_DESKPET_LOGS
 let bc: BroadcastChannel | null = null
 
 // 延迟初始化 BroadcastChannel（避免模块加载时竞态）
@@ -318,11 +320,17 @@ export async function enableFilePersistence() {
   scheduleFileFlush()
 }
 
+/** Tauri 全局 API（通过 window.__TAURI_INTERNALS__ 或 window.__TAURI__ 检测） */
+interface TauriWindow extends Window {
+  __TAURI_INTERNALS__?: Record<string, unknown>
+  __TAURI__?: Record<string, unknown>
+}
+
 /** 检测是否运行在 Tauri 环境中（Tauri v2 使用 __TAURI_INTERNALS__） */
 function isTauri(): boolean {
   return typeof window !== 'undefined' && (
-    (window as any).__TAURI_INTERNALS__ !== undefined ||
-    (window as any).__TAURI__ !== undefined
+    (window as TauriWindow).__TAURI_INTERNALS__ !== undefined ||
+    (window as TauriWindow).__TAURI__ !== undefined
   )
 }
 

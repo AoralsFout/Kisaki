@@ -5,16 +5,13 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { chat, isConfigValid, loadConfig, ChatContext } from '../ai'
 import type { ToolCallData } from '../ai'
-import { getDefinitions, executeToolCall, getTool, initTools } from '../agent'
+import { agentService } from '../agent/service'
 import type { ToolCall } from '../agent'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('ChatStore')
-
-// 初始化注册工具
-initTools()
 
 export interface ChatMessage {
   id: string
@@ -29,37 +26,6 @@ export interface ChatMessage {
 type ChatResult =
   | { type: 'done'; text: string }
   | { type: 'tools'; calls: ToolCallData[] }
-
-/**
- * 从 AI 文本中提取工具调用（兜底方案）
- * 匹配模式: function_name({ "key": "value" })
- * 支持同一文本中包含多个工具调用
- */
-const TEXT_TOOL_CALL_RE = /(\w+)\s*\(\s*(\{[^}]*\})\s*\)/g
-
-function extractTextToolCalls(text: string): ToolCall[] {
-  const calls: ToolCall[] = []
-  const re = new RegExp(TEXT_TOOL_CALL_RE.source, 'g')
-  let match: RegExpExecArray | null
-  while ((match = re.exec(text)) !== null) {
-    const name = match[1]
-    const argsStr = match[2]
-    if (!getTool(name)) continue
-    try {
-      calls.push({
-        id: `text_${Date.now()}_${calls.length}`,
-        name,
-        arguments: JSON.parse(argsStr),
-      })
-    } catch { /* 跳过解析失败的 JSON */ }
-  }
-  return calls
-}
-
-/** 从文本中移除工具调用部分，保留纯文本回复 */
-function stripTextToolCalls(text: string): string {
-  return text.replace(TEXT_TOOL_CALL_RE, '').trim()
-}
 
 /** 双语回复的语言标签匹配模式 */
 const NATIVE_RE = /【([^】]+)】([\s\S]*?)(?=【译文】|$)/
@@ -150,6 +116,13 @@ export const useChatStore = defineStore('chat', () => {
     // 用户发送新消息时，取消正在播放的语音
     cancelSpeak()
 
+    if (!navigator.onLine) {
+      log.warn('网络不可用，无法发送消息')
+      showBubbleText('网络似乎断开了，联网后重试吧~', false)
+      isProcessing.value = false
+      return
+    }
+
     if (!isConfigValid(loadConfig())) {
       log.warn('API 未配置，无法发送消息')
       showBubbleText('请先配置 API~ 右键菜单 → 设置 填写 API 信息', false)
@@ -169,8 +142,14 @@ export const useChatStore = defineStore('chat', () => {
     currentThinking.value = ''
     isTyping.value = false
 
+    // 同步角色数据到 agent 上下文（替代 agent 直接 import Pinia）
+    {
+      const charStore = useCharacterStore()
+      if (charStore.data) agentService.syncCharacterData(charStore.data)
+    }
+
     // 收集工具定义
-    const tools = getDefinitions()
+    const tools = agentService.getToolDefinitions()
 
     abortController = new AbortController()
     let thinkSplitDone = false
@@ -214,18 +193,18 @@ export const useChatStore = defineStore('chat', () => {
           const finalText = result.text
 
           // 兜底：检测 AI 文本中是否包含工具调用（不支持原生 FC 的模型会把调用写在文字里）
-          const textCalls = extractTextToolCalls(finalText)
+          const textCalls = agentService.extractTextToolCalls(finalText)
           if (textCalls.length > 0) {
             isUsingTools.value = true
             currentBubbleText.value = ''
             // 将 AI 回复（不含工具调用部分）加入上下文
-            const cleanText = stripTextToolCalls(finalText)
+            const cleanText = agentService.stripTextToolCalls(finalText)
             if (cleanText) {
               chatContext.addAssistantMessage(cleanText)
             }
             // 依次执行工具
             for (const tc of textCalls) {
-              const result = await executeToolCall(tc)
+              const result = await agentService.execute(tc)
               chatContext.addToolResult(tc.id, result.content)
             }
             isUsingTools.value = false
@@ -260,7 +239,7 @@ export const useChatStore = defineStore('chat', () => {
               name: tc.function.name,
               arguments: JSON.parse(tc.function.arguments || '{}'),
             }
-            const toolResult = await executeToolCall(toolCall)
+            const toolResult = await agentService.execute(toolCall)
             chatContext.addToolResult(tc.id, toolResult.content)
           }
 
@@ -274,6 +253,11 @@ export const useChatStore = defineStore('chat', () => {
         showBubbleText(`出错了: ${(err as Error).message}`, false)
         break
       }
+    }
+
+    // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
+    if (!currentBubbleText.value) {
+        showBubbleText('我已经处理好了，还有什么需要帮忙的吗？', false)
     }
 
     isProcessing.value = false

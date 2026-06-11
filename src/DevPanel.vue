@@ -10,6 +10,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCharacterController, POSE_PRESETS, useCharacterStore, findImages } from './character'
 import type { PoseKey } from './character'
 import { createLogger } from './utils/logger'
+import { CHANNEL_DESKPET_DEV } from './constants'
 
 const log = createLogger('DevPanel')
 
@@ -18,7 +19,7 @@ const controller = useCharacterController()
 
 /** BroadcastChannel 向主窗口发指令 */
 let devChannel: BroadcastChannel | null = null
-try { devChannel = new BroadcastChannel('deskpet-dev') } catch { }
+try { devChannel = new BroadcastChannel(CHANNEL_DESKPET_DEV) } catch { }
 
 function sendToMain(type: string, payload: any) {
   devChannel?.postMessage({ type, payload })
@@ -197,13 +198,13 @@ function setEmotion(emotion: string) {
 
 .dev-panel.embedded {
   background: transparent;
-  color: #333;
+  color: #ccc;
   min-height: auto;
 }
 
 .section {
   padding: 12px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #2a2a4a;
 }
 
 .section:last-child {
@@ -215,7 +216,7 @@ function setEmotion(emotion: string) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  color: #999;
+  color: #888;
   margin: 0 0 8px;
 }
 
@@ -228,11 +229,11 @@ function setEmotion(emotion: string) {
 }
 
 .status-label {
-  color: #999;
+  color: #777;
 }
 
 .status-value {
-  color: #0071e3;
+  color: #7c8cff;
   font-weight: 500;
 }
 
@@ -246,50 +247,50 @@ function setEmotion(emotion: string) {
 .tag-btn {
   padding: 6px 14px;
   font-size: 12px;
-  border: 1px solid #ddd;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.12s;
 }
 
 .tag-btn:hover {
-  border-color: #0071e3;
-  color: #0071e3;
-  background: #f5f9ff;
+  border-color: #7c8cff;
+  color: #7c8cff;
+  background: rgba(124, 140, 255, 0.1);
 }
 
 .tag-btn.active {
-  background: #e8f0ff;
-  border-color: #0071e3;
-  color: #0071e3;
+  background: rgba(124, 140, 255, 0.15);
+  border-color: #7c8cff;
+  color: #b0bfff;
   font-weight: 500;
 }
 
 .tag-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-  border-color: #eee;
-  background: #fafafa;
-  color: #ccc;
+  border-color: #1e1e38;
+  background: #16162a;
+  color: #555;
 }
 
 .tag-btn:disabled:hover {
-  border-color: #eee;
-  color: #ccc;
-  background: #fafafa;
+  border-color: #1e1e38;
+  color: #555;
+  background: #16162a;
 }
 
 .tag-btn .cnt {
   font-size: 10px;
-  color: #0071e3;
+  color: #7c8cff;
   margin-left: 2px;
   font-weight: 400;
 }
 
 .tag-btn:disabled .cnt {
-  color: #ccc;
+  color: #555;
 }
 
 /* 情绪用网格 */
@@ -304,7 +305,7 @@ function setEmotion(emotion: string) {
   display: flex;
   gap: 4px;
   margin-bottom: 10px;
-  background: #f0f0f2;
+  background: #1e1e38;
   border-radius: 8px;
   padding: 3px;
 }
@@ -315,21 +316,21 @@ function setEmotion(emotion: string) {
   font-size: 12px;
   border: none;
   background: transparent;
-  color: #888;
+  color: #777;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.12s;
 }
 
 .tab.active {
-  background: white;
-  color: #1d1d1f;
+  background: #2a2a4a;
+  color: #e0e0e0;
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .tab:hover:not(.active) {
-  color: #555;
+  color: #ccc;
 }
 
 /* 屏幕姿态网格 */
@@ -341,7 +342,7 @@ function setEmotion(emotion: string) {
 
 .no-data {
   font-size: 12px;
-  color: #ccc;
+  color: #555;
   padding: 4px 0;
 }
 </style>

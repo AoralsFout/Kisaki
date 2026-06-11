@@ -4,6 +4,8 @@
 export { register, registerAll, getTool, getDefinitions, listTools } from './registry'
 export { parseToolCalls, executeToolCall, executeToolCalls } from './executor'
 export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter } from './types'
+export { setAgentCharData, setAgentController } from './context'
+export { setAvailableCharacters } from './tools/character'
 
 import { createLogger } from '../utils/logger'
 import { registerAll, listTools } from './registry'

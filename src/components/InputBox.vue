@@ -70,7 +70,7 @@ function handleClose() {
       <div class="input-container" @click.stop>
         <div class="input-header">
           <span class="input-title"><i class="fas fa-comment"></i> 对话</span>
-          <button class="btn-close" @click="handleClose">✕</button>
+          <button class="btn-close" @click="handleClose" aria-label="关闭输入框">✕</button>
         </div>
         <textarea
           ref="inputRef"
@@ -87,6 +87,7 @@ function handleClose() {
             class="btn-send"
             :disabled="!inputText.trim() || disabled"
             @click="sendMessage"
+            aria-label="发送消息"
           >
             发送
           </button>

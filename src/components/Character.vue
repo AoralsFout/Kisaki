@@ -16,6 +16,7 @@
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { useCharacterController, registerCharacterController } from '../character'
 import type { CharacterImageData } from '../character'
+import { setAgentController } from '../agent'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('Character')
@@ -37,11 +38,12 @@ const fadingImage = ref<CharacterImageData | null>(null)
 /** 是否已触发淡出 */
 const fading = ref(false)
 
-/** 图片预加载：提前加载当前选中图片到浏览器缓存 */
+/** 图片预加载 + 异步解码（避免主线程阻塞） */
 function preloadImage(file: string | undefined) {
   if (!file) return
   const url = charStore.getImageUrl(file)
   const img = new Image()
+  img.decoding = 'async'
   img.src = url
 }
 
@@ -66,6 +68,7 @@ const imageStyle = computed(() => {
 onMounted(() => {
   controller.init()
   registerCharacterController(controller)
+  setAgentController(controller)
   log.info('Character 组件挂载')
 })
 
@@ -129,7 +132,11 @@ defineExpose({ controller })
   user-select: none;
   -webkit-user-select: none;
   mask-image: linear-gradient(to left,#00000000 0%,#000 20%,#000 80%,#00000000 100%);
-  /* mask-image: linear-gradient(to bottom,#00000000 0%,#000 20%,#000 80%,#00000000 100%); */
+  /* contain 限制浏览器布局/样式/绘制范围，提升重绘性能 */
+  contain: layout style paint;
+  /* content-visibility 跳过视口外的渲染 */
+  content-visibility: auto;
+  contain-intrinsic-size: 600px 800px;
 }
 
 .img-base {
@@ -138,12 +145,18 @@ defineExpose({ controller })
   object-fit: contain;
   pointer-events: none;
 
+  /* will-change 提示浏览器将此元素提升为独立合成层（GPU） */
+  will-change: transform;
+  /* loading 懒加载 + 异步解码 */
+  loading: lazy;
+  decoding: async;
+
   /* 位置/缩放过渡（平滑动画） */
   transition:
     left 0.6s cubic-bezier(0.22, 1, 0.36, 1),
     bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    scale 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  /* 移除 scale 过渡（与 transform 重复），减少属性监听 */
 }
 
 .img-overlay {
@@ -152,15 +165,17 @@ defineExpose({ controller })
   pointer-events: none;
   opacity: 1;
   z-index: 2;
+  /* 覆盖层是独立合成层，只过渡 opacity（最省 GPU） */
+  will-change: opacity;
+  contain: layout style paint;
+  loading: lazy;
+  decoding: async;
 }
 
 .img-overlay.fade-out {
   opacity: 0;
   transition:
-    opacity 0.5s ease,
-    left 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    scale 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.5s ease;
+  /* 只过渡 opacity — 位置/缩放由底层统一管理，覆盖层跟随父级 */
 }
 </style>

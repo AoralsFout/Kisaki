@@ -6,9 +6,6 @@
  */
 import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '../stores/chat'
-import { createLogger } from '../utils/logger'
-
-const log = createLogger('ChatHistory')
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -22,6 +19,20 @@ const emit = defineEmits<{
 
 const chat = useChatStore()
 const listRef = ref<HTMLElement | null>(null)
+
+// 按 Escape 关闭面板
+let keyHandler: ((e: KeyboardEvent) => void) | null = null
+watch(() => props.visible, (v) => {
+  if (v) {
+    keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') emit('close')
+    }
+    document.addEventListener('keydown', keyHandler)
+  } else if (keyHandler) {
+    document.removeEventListener('keydown', keyHandler)
+    keyHandler = null
+  }
+})
 
 // 消息数量变化时自动滚到底部
 watch(

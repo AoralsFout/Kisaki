@@ -92,6 +92,8 @@ defineExpose({ skipTyping })
 
 .bubble-text {
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: hidden;
 }
 
 /* ---- 思考内容 ---- */

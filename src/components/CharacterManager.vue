@@ -6,8 +6,10 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
-import { loadCosyVoiceConfig, isCosyVoiceConfigValid } from '../tts'
+import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid } from '../tts'
 import { createLogger } from '../utils/logger'
+import { invoke } from '@tauri-apps/api/core'
+import { speakTextStreaming, cancelSpeak } from '../tts/speak'
 
 const log = createLogger('CharacterMgr')
 import { fetchVoiceList } from '../tts/api'
@@ -15,6 +17,7 @@ import type { VoiceInfo } from '../tts/types'
 import { SUPPORTED_LANGUAGES } from '../stores/language'
 import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
+import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE } from '../constants'
 
 const charStore = useCharacterStore()
 
@@ -61,8 +64,29 @@ const loadingVoices = ref(false)
 const voiceError = ref('')
 const selectedVoice = ref('')
 const selectedVoiceModel = ref('')
-const selectedVoiceLang = ref('ja-JP')
-const selectedTextLang = ref('zh-CN')
+const selectedVoiceLang = ref(DEFAULT_VOICE_LANGUAGE)
+const selectedTextLang = ref(DEFAULT_TEXT_LANGUAGE)
+
+// 音色试听
+const voicePreviewing = ref(false)
+const voicePreviewText = 'こんにちは、元気ですか？'
+
+async function previewVoice() {
+  if (!selectedVoice.value) return
+  if (voicePreviewing.value) {
+    cancelSpeak()
+    voicePreviewing.value = false
+    return
+  }
+  voicePreviewing.value = true
+  try {
+    await speakTextStreaming(voicePreviewText, selectedVoice.value)
+  } catch {
+    // 静默
+  } finally {
+    voicePreviewing.value = false
+  }
+}
 
 // 行内输入自动聚焦
 watch(addingPose, (v) => { if (v) setTimeout(() => poseInputRef.value?.focus(), 50) })
@@ -111,7 +135,7 @@ async function submitCreateForm() {
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
+    // invoke 已静态导入
 
     const defaultJson = {
       id, name, description: newCharDesc.value || name, version: 1,
@@ -171,12 +195,12 @@ function backToList() {
 }
 
 async function loadVoices() {
-  const cvConfig = loadCosyVoiceConfig()
+  const cvConfig = await loadCosyVoiceConfigSecure()
   if (!isCosyVoiceConfigValid(cvConfig)) return
   loadingVoices.value = true
   voiceError.value = ''
   try {
-    availableVoices.value = await fetchVoiceList()
+    availableVoices.value = await fetchVoiceList({ apiKey: cvConfig.apiKey })
   } catch {
     // 静默失败，不影响编辑
     availableVoices.value = []
@@ -212,7 +236,6 @@ async function loadPrompt() {
 
 async function tauriWrite(filename: string, content: string): Promise<boolean> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     await invoke('write_character_file', { id: editingId.value, filename, content })
     return true
   } catch (e) {
@@ -229,7 +252,6 @@ async function deleteCharacter() {
   if (!editingId.value) return
   isDeleting.value = true
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     await invoke('delete_character', { id: editingId.value })
     await charStore.refreshList()
     // 如果删除的是当前正在使用的角色，刷新 store
@@ -342,7 +364,6 @@ async function onFilePicked(event: Event) {
   const images = files.filter(f => f.type.startsWith('image/'))
   if (images.length === 0) { saveError.value = '请选择图片文件'; return }
 
-  const { invoke } = await import('@tauri-apps/api/core')
   const defaultPose = editablePoses.value[0] ?? ''
   const defaultCostume = editableCostumes.value[0] ?? ''
 
@@ -416,10 +437,9 @@ async function saveAll() {
   if (!jsonOk) { saveError.value = '保存角色配置失败'; return }
 
   if (orphaned.length > 0) {
-    const { invoke } = await import('@tauri-apps/api/core')
     await Promise.all(orphaned.map(f =>
       invoke('delete_character_image', { id: editingId.value, filename: f })
-        .catch(() => { /* ignore */ })
+        .catch(() => { log.warn('删除陈旧图片失败: %s', f) })
     ))
   }
 
@@ -443,6 +463,7 @@ async function saveAll() {
       <CharacterList
         :available-list="displayList"
         :current-id="charStore.currentId"
+        :get-character-name="charStore.getCharacterName"
         @select="enterEditor"
         @create="openCreateForm"
       />
@@ -583,6 +604,18 @@ async function saveAll() {
                 <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
               </button>
             </div>
+            <div v-if="selectedVoice" class="voice-preview-row">
+              <button
+                class="voice-preview-btn"
+                :class="{ playing: voicePreviewing }"
+                :disabled="!selectedVoice"
+                @click="previewVoice"
+              >
+                <i :class="voicePreviewing ? 'fas fa-stop' : 'fas fa-play'"></i>
+                {{ voicePreviewing ? '停止' : '试听' }}
+              </button>
+              <span class="voice-preview-hint">{{ voicePreviewText }}</span>
+            </div>
             <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
             <p v-else-if="availableVoices.length === 0" class="voice-hint">
               暂无音色，请先在设置中配置 CosyVoice API Key 并获取音色列表
@@ -688,12 +721,13 @@ async function saveAll() {
   margin-bottom: 16px;
 }
 
+/* ===== 深色主题覆盖 ===== */
 .section-title {
   font-size: 20px;
   font-weight: 700;
   margin: 0 0 4px;
   padding: 16px 16px 0;
-  color: #1d1d1f;
+  color: #e0e0e0;
 }
 
 /* ---- 编辑器双栏布局 ---- */
@@ -711,22 +745,18 @@ async function saveAll() {
   padding: 16px;
   overflow: hidden;
   height: 100%;
-}
-
-.editor-left {
   scrollbar-width: none;
 }
 .editor-left::-webkit-scrollbar {
   display: none;
 }
 
-
 /* ---- 固定顶部栏 ---- */
 .editor-sticky {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #f5f5f7;
+  background: #1a1a2e;
   padding: 14px 0 12px;
   flex-shrink: 0;
 }
@@ -740,7 +770,7 @@ async function saveAll() {
 .editor-title {
   font-size: 18px;
   font-weight: 700;
-  color: #1d1d1f;
+  color: #e0e0e0;
   margin: 0;
 }
 
@@ -758,16 +788,16 @@ async function saveAll() {
 .btn-back {
   padding: 5px 14px;
   font-size: 13px;
-  border: 1px solid #d2d2d7;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 8px;
   cursor: pointer;
 }
 
 .btn-back:hover {
-  border-color: #0071e3;
-  color: #0071e3;
+  border-color: #4a7aff;
+  color: #4a7aff;
 }
 
 .btn-save-top {
@@ -775,7 +805,7 @@ async function saveAll() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #0071e3;
+  background: #4a7aff;
   color: white;
   border-radius: 20px;
   cursor: pointer;
@@ -797,13 +827,28 @@ async function saveAll() {
 
 .save-err {
   font-size: 12px;
-  color: #d00;
+  color: #ef5350;
 }
 
 .editor-body {
   flex: 1;
   overflow-y: auto;
   padding-top: 12px;
+}
+
+/* 深色滚动条 */
+.editor-body::-webkit-scrollbar {
+  width: 6px;
+}
+.editor-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.editor-body::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 3px;
+}
+.editor-body::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
 }
 
 /* ---- 立绘 Grid ---- */
@@ -814,7 +859,7 @@ async function saveAll() {
 }
 
 .img-card {
-  border: 1px solid #e5e5e7;
+  border: 1px solid #2a2a4a;
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
@@ -822,12 +867,12 @@ async function saveAll() {
 }
 
 .img-card:hover {
-  border-color: #0071e3;
+  border-color: #4a7aff;
 }
 
 .img-card.selected {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.15);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 2px rgba(74, 122, 255, 0.2);
 }
 
 .img-wrap {
@@ -835,7 +880,7 @@ async function saveAll() {
   justify-content: center;
   align-items: flex-start;
   height: 100px;
-  background: #fafafa;
+  background: #1e1e38;
   overflow: hidden;
 }
 
@@ -852,7 +897,7 @@ async function saveAll() {
 .img-grid-name {
   font-size: 10px;
   font-family: monospace;
-  color: #555;
+  color: #aaa;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -864,26 +909,26 @@ async function saveAll() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border: 2px dashed #d2d2d7;
-  background: #fafafa;
+  border: 2px dashed #2a2a4a;
+  background: #1a1a2e;
   min-height: 140px;
   transition: border-color 0.12s, background 0.12s;
 }
 .img-card-add:hover {
-  border-color: #0071e3;
-  background: #f0f7ff;
+  border-color: #4a7aff;
+  background: rgba(74, 122, 255, 0.08);
 }
 
 .img-add-icon {
   font-size: 32px;
-  color: #aaa;
+  color: #666;
   line-height: 1;
   margin-top: 12px;
 }
 
 .img-grid-tags {
   font-size: 10px;
-  color: #999;
+  color: #777;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -898,7 +943,7 @@ async function saveAll() {
 .mgr-label {
   font-size: 13px;
   font-weight: 600;
-  color: #555;
+  color: #aaa;
   margin: 0 0 8px;
 }
 
@@ -908,10 +953,10 @@ async function saveAll() {
   padding: 12px;
   font-size: 13px;
   font-family: monospace;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 10px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   box-sizing: border-box;
   resize: vertical;
@@ -919,8 +964,29 @@ async function saveAll() {
 }
 
 .mgr-textarea:focus {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
+}
+
+/* textarea 深色滚动条 */
+.mgr-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+.mgr-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mgr-textarea::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 3px;
+}
+.mgr-textarea::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
+}
+
+/* textarea 右下角调整柄深色 */
+.mgr-textarea::-webkit-resizer {
+  background: #2a2a4a;
+  border-radius: 0 0 10px 0;
 }
 
 /* 标签列表 */
@@ -935,42 +1001,42 @@ async function saveAll() {
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 14px;
-  border: 1px solid #ddd;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   cursor: pointer;
   transition: all 0.12s;
 }
 
 .tag-item:hover {
-  border-color: #d00;
-  color: #d00;
-  background: #fff5f5;
+  border-color: #ef5350;
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.1);
 }
 
 .tag-add {
   font-size: 12px;
   padding: 4px 10px;
-  border: 1px dashed #aaa;
+  border: 1px dashed #555;
   background: none;
-  color: #888;
+  color: #777;
   border-radius: 14px;
   cursor: pointer;
 }
 
 .tag-add:hover {
-  border-color: #0071e3;
-  color: #0071e3;
+  border-color: #4a7aff;
+  color: #4a7aff;
 }
 
 /* ---- 行内标签输入 ---- */
 .tag-input {
   font-size: 12px;
   padding: 4px 10px;
-  border: 1px solid #0071e3;
+  border: 1px solid #4a7aff;
   border-radius: 14px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   font-family: inherit;
   min-width: 120px;
@@ -978,14 +1044,14 @@ async function saveAll() {
 }
 
 .tag-input:focus {
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 /* ---- 创建角色模态框 ---- */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -994,11 +1060,12 @@ async function saveAll() {
 }
 
 .modal-card {
-  background: white;
+  background: #16162a;
+  border: 1px solid #2a2a4a;
   border-radius: 16px;
   width: 420px;
   max-width: 90vw;
-  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
 
@@ -1012,7 +1079,7 @@ async function saveAll() {
 .modal-title {
   font-size: 16px;
   font-weight: 700;
-  color: #1d1d1f;
+  color: #e0e0e0;
   margin: 0;
 }
 
@@ -1020,15 +1087,15 @@ async function saveAll() {
   background: none;
   border: none;
   font-size: 18px;
-  color: #999;
+  color: #666;
   cursor: pointer;
   padding: 2px 8px;
   border-radius: 6px;
 }
 
 .modal-close:hover {
-  background: #f0f0f0;
-  color: #333;
+  background: #2a2a4a;
+  color: #ddd;
 }
 
 .modal-body {
@@ -1043,23 +1110,23 @@ async function saveAll() {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #555;
+  color: #aaa;
   margin-bottom: 5px;
 }
 
 .modal-body .label-note {
   font-weight: 400;
-  color: #999;
+  color: #777;
 }
 
 .modal-body .form-input {
   width: 100%;
   padding: 9px 12px;
   font-size: 14px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 8px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
@@ -1067,13 +1134,13 @@ async function saveAll() {
 }
 
 .modal-body .form-input:focus {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 .form-error {
   font-size: 13px;
-  color: #d00;
+  color: #ef5350;
   margin: 0;
 }
 
@@ -1087,16 +1154,16 @@ async function saveAll() {
 .btn-cancel {
   padding: 8px 18px;
   font-size: 13px;
-  border: 1px solid #d2d2d7;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 8px;
   cursor: pointer;
 }
 
 .btn-cancel:hover {
-  border-color: #999;
-  color: #333;
+  border-color: #555;
+  color: #ddd;
 }
 
 .btn-create {
@@ -1104,7 +1171,7 @@ async function saveAll() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #0071e3;
+  background: #4a7aff;
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -1120,12 +1187,10 @@ async function saveAll() {
 .modal-fade-leave-active {
   transition: all 0.2s ease;
 }
-
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
 }
-
 .modal-fade-enter-from .modal-card,
 .modal-fade-leave-to .modal-card {
   transform: scale(0.95);
@@ -1145,7 +1210,7 @@ async function saveAll() {
 
 .btn-delete:hover {
   opacity: 1;
-  background: #fff0f0;
+  background: rgba(239, 83, 80, 0.15);
 }
 
 .btn-delete-confirm {
@@ -1153,7 +1218,7 @@ async function saveAll() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #d00;
+  background: #ef5350;
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -1172,16 +1237,16 @@ async function saveAll() {
 .delete-warn-text {
   font-size: 14px;
   line-height: 1.7;
-  color: #555;
+  color: #aaa;
   margin: 0;
 }
 
 .delete-warn-text strong {
-  color: #1d1d1f;
+  color: #e0e0e0;
 }
 
 .modal-warn {
-  border-top: 3px solid #d00;
+  border-top: 3px solid #ef5350;
 }
 
 /* ---- 语音音色选择 ---- */
@@ -1195,10 +1260,10 @@ async function saveAll() {
   flex: 1;
   padding: 8px 10px;
   font-size: 13px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 8px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   font-family: inherit;
   cursor: pointer;
@@ -1206,8 +1271,8 @@ async function saveAll() {
 }
 
 .voice-select:focus {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 .voice-refresh-btn {
@@ -1216,18 +1281,18 @@ async function saveAll() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 8px;
-  background: white;
-  color: #666;
+  background: #1e1e38;
+  color: #888;
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
 }
 
 .voice-refresh-btn:hover:not(:disabled) {
-  border-color: #0071e3;
-  color: #0071e3;
+  border-color: #4a7aff;
+  color: #4a7aff;
 }
 
 .voice-refresh-btn:disabled {
@@ -1271,5 +1336,51 @@ async function saveAll() {
   font-weight: 600;
   color: #777;
   margin-bottom: 4px;
+}
+
+/* ---- 音色试听 ---- */
+.voice-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.voice-preview-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #30b94e;
+  background: transparent;
+  color: #30b94e;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.voice-preview-btn:hover:not(:disabled) {
+  background: #30b94e;
+  color: #1a1a2e;
+}
+
+.voice-preview-btn.playing {
+  background: #ff4444;
+  border-color: #ff4444;
+  color: white;
+}
+
+.voice-preview-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-preview-hint {
+  font-size: 11px;
+  color: #aaa;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

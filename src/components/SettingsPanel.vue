@@ -6,12 +6,11 @@
  * 作为独立 Tauri 窗口打开（?settings=1）。
  */
 import { ref, onMounted } from 'vue'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { loadConfig, saveConfig, DEFAULT_CONFIG, isConfigValid } from '../ai'
+import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid } from '../ai'
 import type { AIConfig } from '../ai'
 import {
-  loadCosyVoiceConfig, saveCosyVoiceConfig,
+  loadCosyVoiceConfigSecure, saveCosyVoiceConfigSecure,
   REGIONS, MODELS, DEFAULT_COSYVOICE_CONFIG,
   isTtsEnabled, setTtsEnabled,
 } from '../tts'
@@ -20,8 +19,10 @@ import type { CosyVoiceConfig, VoiceInfo } from '../tts/types'
 import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../stores/language'
+import { WINDOW_LOGS, QUERY_SETTINGS, QUERY_LOGS } from '../constants'
+import { getAllWindows } from '@tauri-apps/api/window'
 
-const isSettingsWindow = new URLSearchParams(window.location.search).has('settings')
+const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 配置状态 ----
@@ -38,7 +39,7 @@ const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
 
 // ---- 导航 ----
-type Tab = 'api' | 'character' | 'tts' | 'dev' | 'about'
+type Tab = 'api' | 'character' | 'tts' | 'dev' | 'shortcuts' | 'about'
 const activeTab = ref<Tab>('api')
 
 const PRESETS = [
@@ -48,12 +49,12 @@ const PRESETS = [
   { label: 'Ollama', baseURL: 'http://localhost:11434/v1', model: 'llama3' },
 ]
 
-onMounted(() => {
+onMounted(async () => {
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
   }
-  config.value = { ...loadConfig() }
-  cvConfig.value = { ...loadCosyVoiceConfig() }
+  config.value = { ...await loadConfigSecure() }
+  cvConfig.value = { ...await loadCosyVoiceConfigSecure() }
 })
 
 function applyPreset(p: typeof PRESETS[0]) {
@@ -61,14 +62,14 @@ function applyPreset(p: typeof PRESETS[0]) {
   config.value.model = p.model
 }
 
-function handleSave() {
-  saveConfig(config.value)
+async function handleSave() {
+  await saveConfigSecure(config.value)
   saved.value = true
   setTimeout(() => { saved.value = false }, 1500)
 }
 
-function handleCvSave() {
-  saveCosyVoiceConfig(cvConfig.value)
+async function handleCvSave() {
+  await saveCosyVoiceConfigSecure(cvConfig.value)
   cvSaved.value = true
   voiceError.value = ''
   setTimeout(() => { cvSaved.value = false }, 1500)
@@ -80,8 +81,8 @@ async function handleFetchVoices() {
   voices.value = []
   try {
     // 先保存当前配置
-    saveCosyVoiceConfig(cvConfig.value)
-    const list = await fetchVoiceList()
+    await saveCosyVoiceConfigSecure(cvConfig.value)
+    const list = await fetchVoiceList({ apiKey: cvConfig.value.apiKey })
     voices.value = list
     if (list.length === 0) {
       voiceError.value = '暂无自定义音色，请先在阿里云百炼平台创建音色'
@@ -108,11 +109,9 @@ function closeWindow() {
 }
 
 async function openLogWindow() {
-  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
-  const { getAllWindows } = await import('@tauri-apps/api/window')
   try {
     const all = await getAllWindows()
-    const existing = all.find(w => w.label === 'logs')
+    const existing = all.find(w => w.label === WINDOW_LOGS)
     if (existing) {
       await existing.unminimize()
       await existing.show()
@@ -120,8 +119,8 @@ async function openLogWindow() {
       return
     }
 
-    new WebviewWindow('logs', {
-      url: '/?logs=1',
+    new WebviewWindow(WINDOW_LOGS, {
+      url: `/?${QUERY_LOGS}=1`,
       title: '日志',
       width: 800,
       height: 500,
@@ -140,9 +139,9 @@ async function openLogWindow() {
     <header class="topbar" data-tauri-drag-region>
       <span class="topbar-title"><i class="fas fa-gear"></i> 设置</span>
       <div v-if="isSettingsWindow" class="window-controls">
-        <button class="win-btn" @click="minimizeWindow" title="最小化">─</button>
-        <button class="win-btn" @click="maximizeWindow" title="最大化">□</button>
-        <button class="win-btn win-close" @click="closeWindow" title="关闭">✕</button>
+        <button class="win-btn" @click="minimizeWindow" title="最小化" aria-label="最小化窗口">─</button>
+        <button class="win-btn" @click="maximizeWindow" title="最大化" aria-label="最大化或还原窗口">□</button>
+        <button class="win-btn win-close" @click="closeWindow" title="关闭" aria-label="关闭设置窗口">✕</button>
       </div>
     </header>
 
@@ -164,6 +163,10 @@ async function openLogWindow() {
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
           <span>Dev</span>
+        </button>
+        <button :class="['nav-item', { active: activeTab === 'shortcuts' }]" @click="activeTab = 'shortcuts'">
+          <i class="fas fa-keyboard nav-icon"></i>
+          <span>快捷键</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
           <i class="fas fa-circle-info nav-icon"></i>
@@ -314,6 +317,45 @@ async function openLogWindow() {
           <DevPanel />
         </div>
 
+        <!-- ===== 快捷键 ===== -->
+        <div v-if="activeTab === 'shortcuts'" class="content-section">
+          <h2 class="section-title"><i class="fas fa-keyboard"></i> 快捷键</h2>
+          <p class="section-desc">全局快捷键，在应用后台时也可使用。</p>
+
+          <div class="shortcut-list">
+            <div class="shortcut-item">
+              <div class="shortcut-info">
+                <span class="shortcut-label">打开日志窗口</span>
+                <span class="shortcut-desc">随时查看应用日志</span>
+              </div>
+              <kbd class="shortcut-keys">
+                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">L</span>
+              </kbd>
+            </div>
+            <div class="shortcut-item">
+              <div class="shortcut-info">
+                <span class="shortcut-label">打开设置窗口</span>
+                <span class="shortcut-desc">配置 API、TTS、角色管理</span>
+              </div>
+              <kbd class="shortcut-keys">
+                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">S</span>
+              </kbd>
+            </div>
+            <div class="shortcut-item">
+              <div class="shortcut-info">
+                <span class="shortcut-label">切换语音播报</span>
+                <span class="shortcut-desc">开启/关闭 TTS 语音朗读</span>
+              </div>
+              <kbd class="shortcut-keys">
+                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">T</span>
+              </kbd>
+            </div>
+          </div>
+
+          <hr class="section-divider" />
+          <p class="shortcut-footnote">快捷键通过 Tauri 全局快捷方式注册，可在系统任意窗口中使用。</p>
+        </div>
+
         <!-- ===== 关于 ===== -->
         <div v-if="activeTab === 'about'" class="content-section">
           <h2 class="section-title">关于</h2>
@@ -336,14 +378,14 @@ async function openLogWindow() {
 </template>
 
 <style scoped>
-/* ===== 全局 ===== */
+/* ===== 全局（深色主题） ===== */
 .settings-window {
   width: 100vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f5f5f7;
-  color: #1d1d1f;
+  background: #1a1a2e;
+  color: #e0e0e0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
 }
@@ -354,8 +396,8 @@ async function openLogWindow() {
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background: white;
-  border-bottom: 1px solid #e5e5e7;
+  background: #16162a;
+  border-bottom: 1px solid #2a2a4a;
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -363,7 +405,7 @@ async function openLogWindow() {
 .topbar-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: #ccc;
 }
 
 .window-controls {
@@ -377,15 +419,15 @@ async function openLogWindow() {
   border: none;
   font-size: 14px;
   cursor: pointer;
-  color: #999;
+  color: #666;
   padding: 4px 10px;
   border-radius: 6px;
   transition: background 0.1s;
 }
 
 .win-btn:hover {
-  background: #e8e8ed;
-  color: #333;
+  background: #2a2a4a;
+  color: #ddd;
 }
 
 .win-close:hover {
@@ -404,8 +446,8 @@ async function openLogWindow() {
 .sidebar {
   width: 180px;
   flex-shrink: 0;
-  background: white;
-  border-right: 1px solid #e5e5e7;
+  background: #16162a;
+  border-right: 1px solid #2a2a4a;
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
@@ -420,7 +462,7 @@ async function openLogWindow() {
   font-size: 13px;
   border: none;
   background: none;
-  color: #555;
+  color: #888;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
@@ -429,13 +471,13 @@ async function openLogWindow() {
 }
 
 .nav-item:hover {
-  background: #f0f0f2;
-  color: #1d1d1f;
+  background: #2a2a4a;
+  color: #ddd;
 }
 
 .nav-item.active {
-  background: #e8e8ed;
-  color: #1d1d1f;
+  background: #3a3a5a;
+  color: #fff;
   font-weight: 500;
 }
 
@@ -448,6 +490,25 @@ async function openLogWindow() {
   flex: 1;
   overflow-y: auto;
   padding: 28px 32px;
+}
+
+/* 深色滚动条 */
+.content::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.content::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.content::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 3px;
+}
+.content::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
 }
 
 .content-flush {
@@ -468,12 +529,12 @@ async function openLogWindow() {
   font-size: 20px;
   font-weight: 700;
   margin: 0 0 4px;
-  color: #1d1d1f;
+  color: #e0e0e0;
 }
 
 .section-desc {
   font-size: 13px;
-  color: #86868b;
+  color: #999;
   margin: 0 0 12px;
 }
 
@@ -486,7 +547,7 @@ async function openLogWindow() {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #555;
+  color: #aaa;
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -496,10 +557,10 @@ async function openLogWindow() {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 10px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
@@ -507,12 +568,12 @@ async function openLogWindow() {
 }
 
 .form-input:focus {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 .form-input::placeholder {
-  color: #c0c0c5;
+  color: #555;
 }
 
 /* ===== 预设按钮 ===== */
@@ -525,18 +586,18 @@ async function openLogWindow() {
 .preset-btn {
   padding: 6px 14px;
   font-size: 12px;
-  border: 1px solid #d2d2d7;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-btn:hover {
-  border-color: #0071e3;
-  color: #0071e3;
-  background: #f5f9ff;
+  border-color: #4a7aff;
+  color: #4a7aff;
+  background: rgba(74, 122, 255, 0.1);
 }
 
 /* ===== 操作按钮 ===== */
@@ -552,7 +613,7 @@ async function openLogWindow() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #0071e3;
+  background: #4a7aff;
   color: white;
   border-radius: 24px;
   cursor: pointer;
@@ -574,10 +635,10 @@ async function openLogWindow() {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 10px;
-  background: white;
-  color: #1d1d1f;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
@@ -587,19 +648,19 @@ async function openLogWindow() {
 }
 
 .form-select:focus {
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  border-color: #4a7aff;
+  box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 .form-hint {
   font-size: 11px;
-  color: #999;
+  color: #777;
   margin: 4px 0 0;
 }
 
 .section-divider {
   border: none;
-  border-top: 1px solid #e5e5e7;
+  border-top: 1px solid #2a2a4a;
   margin: 20px 0;
 }
 
@@ -607,18 +668,18 @@ async function openLogWindow() {
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid #d2d2d7;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  border-color: #0071e3;
-  color: #0071e3;
-  background: #f5f9ff;
+  border-color: #4a7aff;
+  color: #4a7aff;
+  background: rgba(74, 122, 255, 0.1);
 }
 
 .btn-secondary:disabled {
@@ -642,12 +703,12 @@ async function openLogWindow() {
 .toggle-label-text {
   font-size: 13px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: #e0e0e0;
 }
 
 .toggle-label-desc {
   font-size: 11px;
-  color: #999;
+  color: #888;
 }
 
 .toggle-switch {
@@ -655,7 +716,7 @@ async function openLogWindow() {
   width: 44px;
   height: 24px;
   border-radius: 12px;
-  background: #ccc;
+  background: #555;
   border: none;
   cursor: pointer;
   transition: background 0.2s;
@@ -675,7 +736,7 @@ async function openLogWindow() {
   height: 20px;
   border-radius: 50%;
   background: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   transition: left 0.2s;
 }
 
@@ -694,7 +755,7 @@ async function openLogWindow() {
 
 .voice-error {
   font-size: 13px;
-  color: #d00;
+  color: #ef5350;
   margin-top: 10px;
 }
 
@@ -710,25 +771,25 @@ async function openLogWindow() {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: white;
-  border: 1px solid #e5e5e7;
+  background: #16162a;
+  border: 1px solid #2a2a4a;
   border-radius: 10px;
   transition: border-color 0.12s;
 }
 
 .voice-item:hover {
-  border-color: #0071e3;
+  border-color: #4a7aff;
 }
 
 .voice-item-icon {
   font-size: 18px;
-  color: #0071e3;
+  color: #4a7aff;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f7ff;
+  background: rgba(74, 122, 255, 0.1);
   border-radius: 8px;
   flex-shrink: 0;
 }
@@ -741,25 +802,100 @@ async function openLogWindow() {
 .voice-item-id {
   font-size: 13px;
   font-weight: 500;
-  color: #1d1d1f;
+  color: #e0e0e0;
   word-break: break-all;
   font-family: monospace;
 }
 
 .voice-item-meta {
   font-size: 11px;
-  color: #999;
+  color: #888;
   margin-top: 2px;
 }
 
 .about-card {
-  background: white;
-  border: 1px solid #e5e5e7;
+  background: #16162a;
+  border: 1px solid #2a2a4a;
   border-radius: 12px;
   padding: 20px;
   font-size: 13px;
   line-height: 1.6;
-  color: #555;
+  color: #aaa;
+}
+
+/* ===== 快捷键（深色） ===== */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #16162a;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
+  transition: border-color 0.12s;
+}
+
+.shortcut-item:hover {
+  border-color: #3a3a5a;
+}
+
+.shortcut-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcut-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.shortcut-desc {
+  font-size: 11px;
+  color: #888;
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.shortcut-keys .key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #2a2a4a;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  color: #ddd;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+}
+
+.shortcut-keys .key-plus {
+  margin: 0 4px;
+  font-size: 13px;
+  color: #666;
+}
+
+.shortcut-footnote {
+  font-size: 12px;
+  color: #777;
+  margin: 0;
 }
 
 .btn-open-logs {
@@ -767,9 +903,9 @@ async function openLogWindow() {
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid #d2d2d7;
-  background: white;
-  color: #555;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
@@ -780,8 +916,8 @@ async function openLogWindow() {
 }
 
 .btn-open-logs:hover {
-  border-color: #0071e3;
-  color: #0071e3;
-  background: #f5f9ff;
+  border-color: #4a7aff;
+  color: #4a7aff;
+  background: rgba(74, 122, 255, 0.1);
 }
 </style>

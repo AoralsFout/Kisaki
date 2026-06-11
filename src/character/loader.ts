@@ -73,6 +73,34 @@ async function loadPrompt(id: string): Promise<string> {
   return ''
 }
 
+/** 当前支持的 schema 版本 */
+const CURRENT_VERSION = 1
+
+/** 数据迁移：将旧版本角色数据升级到最新格式 */
+function migrateCharacterData(raw: Record<string, unknown>): CharacterData {
+  const version = (raw.version as number) || 0
+  let data = { ...raw } as Record<string, unknown>
+
+  // v0 → v1：补全缺失字段
+  if (version < CURRENT_VERSION) {
+    data = {
+      ...data,
+      version: CURRENT_VERSION,
+      poses: data.poses || ['standing'],
+      emotions: data.emotions || ['idle'],
+      costumes: data.costumes || ['default'],
+      images: data.images || [],
+      voice: data.voice || '',
+      voiceModel: data.voiceModel || '',
+      voiceLanguage: data.voiceLanguage || 'ja-JP',
+      textLanguage: data.textLanguage || 'zh-CN',
+    }
+    log.info('数据迁移: v0 → v1')
+  }
+
+  return data as unknown as CharacterData
+}
+
 /** 加载单个角色配置 */
 export async function loadCharacterJson(id: string): Promise<CharacterData> {
   log.debug('加载角色配置: %s', id)
@@ -81,7 +109,8 @@ export async function loadCharacterJson(id: string): Promise<CharacterData> {
     log.warn('加载角色 %s 失败: HTTP %d', id, res.status)
     throw new Error(`加载角色 ${id} 失败: HTTP ${res.status}`)
   }
-  const data: CharacterData = await res.json()
+  const raw: Record<string, unknown> = await res.json()
+  const data = migrateCharacterData(raw)
   log.info('角色配置已加载: %s (%s), %d 张立绘', id, data.name, data.images.length)
 
   // 加载提示词（prompt.txt 优先）

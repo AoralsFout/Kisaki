@@ -7,6 +7,8 @@
 defineProps<{
   availableList: string[]
   currentId: string
+  /** 根据角色 ID 获取显示名称的函数 */
+  getCharacterName?: (id: string) => string
 }>()
 
 const emit = defineEmits<{
@@ -24,13 +26,10 @@ const emit = defineEmits<{
       @click="emit('select', id)"
     >
       <div class="card-icon">
-        <!-- <i v-if="id === currentId" class="fas fa-star"></i>
-        <i v-else class="fas fa-ribbon"></i> -->
         <i class="fas fa-star"></i>
       </div>
-      <div class="card-name">{{ id.charAt(0).toUpperCase() + id.slice(1) }}</div>
+      <div class="card-name">{{ getCharacterName?.(id) ?? id.charAt(0).toUpperCase() + id.slice(1) }}</div>
       <div class="card-id">{{ id }}</div>
-      <!-- <div v-if="id === currentId" class="card-badge">当前</div> -->
     </div>
     <div class="char-card char-card-add" @click="emit('create')">
       <div class="card-icon" style="font-size:32px;color:#aaa;">+</div>
@@ -48,8 +47,8 @@ const emit = defineEmits<{
 }
 
 .char-card {
-  background: white;
-  border: 1px solid #e5e5e7;
+  background: #16162a;
+  border: 1px solid #2a2a4a;
   border-radius: 12px;
   padding: 16px 12px;
   text-align: center;
@@ -59,50 +58,40 @@ const emit = defineEmits<{
 }
 
 .char-card:hover {
-  border-color: #0071e3;
-  box-shadow: 0 2px 8px rgba(0, 113, 227, 0.08);
+  border-color: #4a7aff;
+  box-shadow: 0 2px 8px rgba(74, 122, 255, 0.12);
   transform: translateY(-1px);
 }
 .char-card-add {
-  border: 2px dashed #d2d2d7;
+  border: 2px dashed #2a2a4a;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100px;
-  background: #fafafa;
+  background: transparent;
 }
 .char-card-add:hover {
-  border-color: #0071e3;
-  background: #f0f7ff;
+  border-color: #4a7aff;
+  background: rgba(74, 122, 255, 0.08);
 }
 
 .card-icon {
   font-size: 28px;
   margin-bottom: 6px;
+  color: #aaa;
 }
 
 .card-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: #e0e0e0;
 }
 
 .card-id {
   font-size: 11px;
-  color: #999;
+  color: #888;
   margin-top: 2px;
-}
-
-.card-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 10px;
-  background: #0071e3;
-  color: white;
-  padding: 1px 6px;
-  border-radius: 8px;
 }
 </style>

@@ -2,10 +2,10 @@
 /**
  * 角色切换面板
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useCharacterStore } from '../stores/character'
 
-defineProps<{
+const props = defineProps<{
   visible?: boolean
 }>()
 
@@ -16,6 +16,20 @@ const emit = defineEmits<{
 
 const charStore = useCharacterStore()
 const listRef = ref<HTMLElement | null>(null)
+
+// 按 Escape 关闭面板
+let keyHandler: ((e: KeyboardEvent) => void) | null = null
+watch(() => props.visible, (v) => {
+  if (v) {
+    keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') emit('close')
+    }
+    document.addEventListener('keydown', keyHandler)
+  } else if (keyHandler) {
+    document.removeEventListener('keydown', keyHandler)
+    keyHandler = null
+  }
+})
 
 function handleSelect(id: string) {
   if (id !== charStore.currentId) {
@@ -33,7 +47,7 @@ function handleSelect(id: string) {
           <span class="panel-title"><i class="fas fa-masks-theater"></i> 切换角色</span>
           <div class="header-actions">
             <span class="count">{{ charStore.availableList.length }} 个角色</span>
-            <button class="btn-close" @click="emit('close')">✕</button>
+            <button class="btn-close" @click="emit('close')" aria-label="关闭角色切换面板">✕</button>
           </div>
         </div>
 
@@ -50,7 +64,7 @@ function handleSelect(id: string) {
             </div>
             <div class="char-info">
               <div class="char-name">
-                {{ id === charStore.currentId ? `${charStore.name}（当前）` : id.charAt(0).toUpperCase() + id.slice(1) }}
+                {{ id === charStore.currentId ? `${charStore.name}（当前）` : charStore.getCharacterName(id) }}
               </div>
               <div class="char-id">{{ id }}</div>
             </div>

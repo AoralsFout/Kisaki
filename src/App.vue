@@ -2,7 +2,7 @@
 /**
  * 桌宠 - 主应用组件
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import Character from './components/Character.vue'
 import DialogueBubble from './components/DialogueBubble.vue'
 import InputBox from './components/InputBox.vue'
@@ -13,15 +13,31 @@ import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
 import { useCharacterStore } from './character'
-import { speakText, isTtsEnabled, setTtsEnabled } from './tts'
+import { isTtsEnabled, setTtsEnabled } from './tts'
+import { loadConfigSecure } from './ai'
+import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
+import { setAvailableCharacters } from './agent'
 import { createLogger } from './utils/logger'
+import {
+  WINDOW_MAIN,
+  WINDOW_SETTINGS,
+  WINDOW_LOGS,
+  QUERY_DEV,
+  QUERY_SETTINGS,
+  QUERY_LOGS,
+  CHANNEL_DESKPET_DEV,
+  DEFAULT_VOICE_LANGUAGE,
+} from './constants'
+import { register } from '@tauri-apps/plugin-global-shortcut'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { getAllWindows } from '@tauri-apps/api/window'
 
 const log = createLogger('App')
 
-const isDev = new URLSearchParams(window.location.search).has('dev')
-const isSettings = new URLSearchParams(window.location.search).has('settings')
-const isLogs = new URLSearchParams(window.location.search).has('logs')
+const isDev = new URLSearchParams(window.location.search).has(QUERY_DEV)
+const isSettings = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
+const isLogs = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 
 const chat = useChatStore()
 const charStore = useCharacterStore()
@@ -44,10 +60,20 @@ onMounted(async () => {
   // 日志窗口/Dev 窗口不初始化角色和对话
   if (isLogs || isDev) return
 
+  // 加载并解密 API Key（填充解密缓存，后续 sync loadConfig 直接取缓存）
+  await Promise.allSettled([
+    loadConfigSecure(),
+    loadCosyVoiceConfigSecure(),
+  ])
   chat.init()
   await charStore.init()
+  // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
+  setAvailableCharacters(charStore.availableList)
+  watch(() => charStore.availableList, (list) => {
+    setAvailableCharacters(list)
+  })
   if (charStore.prompt) {
-    const voiceLang = charStore.data?.voiceLanguage || 'ja-JP'
+    const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
     const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
     chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
   }
@@ -56,16 +82,12 @@ onMounted(async () => {
     if (!welcomeShown) {
       welcomeShown = true
       chat.showBubbleText('嘿嘿', true)
-      // // TTS 播报欢迎语
-      // if (isTtsEnabled() && charStore.data?.voice) {
-      //   speakText('', charStore.data.voice).catch(() => {})
-      // }
     }
   }, 1000)
 
   if (!isDev) {
     try {
-      const channel = new BroadcastChannel('deskpet-dev')
+      const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
       channel.onmessage = (event) => {
         const { type, payload } = event.data ?? {}
         const ctrl = characterRef.value?.controller
@@ -85,7 +107,23 @@ onMounted(async () => {
           })
         }
       }
-    } catch { /* ignore */ }
+    } catch (e) { log.warn('BroadcastChannel 初始化失败', e) }
+  }
+
+  // 注册全局快捷键
+  if (!isDev && !isSettings && !isLogs) {
+    try {
+      await register('Ctrl+Shift+L', (event) => {
+        if (event.state === 'Pressed') openLogWindow()
+      })
+      await register('Ctrl+Shift+S', (event) => {
+        if (event.state === 'Pressed') openSettingsWindow()
+      })
+      await register('Ctrl+Shift+T', (event) => {
+        if (event.state === 'Pressed') toggleTts()
+      })
+      log.info('全局快捷键已注册 (Ctrl+Shift+L=日志, S=设置, T=静音)')
+    } catch (e) { log.warn('全局快捷键注册失败', e) }
   }
 })
 
@@ -106,12 +144,10 @@ function handleSend(text: string) {
 }
 
 async function openSettingsWindow() {
-  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
-  const { getAllWindows } = await import('@tauri-apps/api/window')
   try {
     // 检查是否已有设置窗口
     const all = await getAllWindows()
-    const existing = all.find(w => w.label === 'settings')
+    const existing = all.find(w => w.label === WINDOW_SETTINGS)
     if (existing) {
       await existing.unminimize()
       await existing.show()
@@ -119,8 +155,8 @@ async function openSettingsWindow() {
       return
     }
 
-    new WebviewWindow('settings', {
-      url: '/?settings=1',
+    new WebviewWindow(WINDOW_SETTINGS, {
+      url: `/?${QUERY_SETTINGS}=1`,
       title: '设置',
       width: 1000,
       height: 600,
@@ -134,11 +170,9 @@ async function openSettingsWindow() {
 }
 
 async function openLogWindow() {
-  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
-  const { getAllWindows } = await import('@tauri-apps/api/window')
   try {
     const all = await getAllWindows()
-    const existing = all.find(w => w.label === 'logs')
+    const existing = all.find(w => w.label === WINDOW_LOGS)
     if (existing) {
       await existing.unminimize()
       await existing.show()
@@ -146,12 +180,12 @@ async function openLogWindow() {
       return
     }
 
-    const appWindow = all.find(w => w.label === 'main')
+    const appWindow = all.find(w => w.label === WINDOW_MAIN)
     const mainPos = appWindow ? await appWindow.outerPosition() : undefined
     const mainSize = appWindow ? await appWindow.outerSize() : undefined
 
-    new WebviewWindow('logs', {
-      url: '/?logs=1',
+    new WebviewWindow(WINDOW_LOGS, {
+      url: `/?${QUERY_LOGS}=1`,
       title: '日志',
       width: 800,
       height: 500,
@@ -171,7 +205,7 @@ async function handleSelectCharacter(charId: string) {
   await ctrl.switchCharacter(charId)
   chat.resetContext()
   if (charStore.prompt) {
-    const voiceLang = charStore.data?.voiceLanguage || 'ja-JP'
+    const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
     const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
     chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
   }
@@ -206,27 +240,27 @@ async function handleSelectCharacter(charId: string) {
 
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar">
-        <button class="tool-btn" @click="chat.openInput()">
+        <button class="tool-btn" @click="chat.openInput()" aria-label="打开聊天输入框">
           <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
         </button>
-        <button class="tool-btn" @click="showHistory = !showHistory">
+        <button class="tool-btn" @click="showHistory = !showHistory" aria-label="打开对话历史">
           <i class="fas fa-clipboard-list btn-icon"></i>
           <span class="btn-label">历史</span>
         </button>
-        <button class="tool-btn" @click="showCharacterSelect = !showCharacterSelect">
+        <button class="tool-btn" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
           <i class="fas fa-rotate btn-icon"></i>
           <span class="btn-label">角色</span>
         </button>
-        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts">
+        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts" :aria-label="ttsEnabled ? '关闭语音播报' : '开启语音播报'">
           <i class="fas fa-volume-high btn-icon"></i>
           <span class="btn-label">{{ ttsEnabled ? '语音' : '静音' }}</span>
         </button>
-        <button class="tool-btn" @click="openLogWindow()">
+        <button class="tool-btn" @click="openLogWindow()" aria-label="打开日志窗口">
           <i class="fas fa-receipt btn-icon"></i>
           <span class="btn-label">日志</span>
         </button>
-        <button class="tool-btn" @click="openSettingsWindow()">
+        <button class="tool-btn" @click="openSettingsWindow()" aria-label="打开设置窗口">
           <i class="fas fa-gear btn-icon"></i>
           <span class="btn-label">设置</span>
         </button>

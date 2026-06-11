@@ -102,8 +102,8 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 .preview-panel {
   width: 0;
   overflow: hidden;
-  background: white;
-  border-left: 1px solid #e5e5e7;
+  background: #16162a;
+  border-left: 1px solid #2a2a4a;
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -120,14 +120,14 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #2a2a4a;
   flex-shrink: 0;
 }
 
 .preview-filename {
   font-size: 12px;
   font-family: monospace;
-  color: #555;
+  color: #aaa;
 }
 
 .preview-actions {
@@ -141,18 +141,18 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   border: none;
   font-size: 14px;
   cursor: pointer;
-  color: #999;
+  color: #666;
   padding: 2px 6px;
   border-radius: 4px;
 }
 
 .preview-btn:hover {
-  background: #f0f0f0;
-  color: #333;
+  background: #2a2a4a;
+  color: #ddd;
 }
 .preview-btn-del:hover {
-  background: #ffe0e0;
-  color: #d00;
+  background: rgba(239, 83, 80, 0.15);
+  color: #ef5350;
 }
 
 .preview-image {
@@ -161,7 +161,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: #fafafa;
+  background: #1a1a2e;
   overflow: hidden;
 }
 
@@ -173,7 +173,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 
 .preview-editor {
   padding: 10px 12px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #2a2a4a;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -185,7 +185,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #bbb;
+  color: #555;
   font-size: 13px;
 }
 
@@ -206,9 +206,10 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   flex: 1;
   padding: 4px 8px;
   font-size: 12px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 6px;
-  background: white;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
 }
 
@@ -222,8 +223,8 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 
 .em-tag {
   font-size: 11px;
-  background: #e8f0ff;
-  color: #0071e3;
+  background: rgba(74, 122, 255, 0.15);
+  color: #7c8cff;
   padding: 2px 7px;
   border-radius: 4px;
   cursor: pointer;
@@ -231,8 +232,8 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 }
 
 .em-tag:hover {
-  background: #ffe0e0;
-  color: #d00;
+  background: rgba(239, 83, 80, 0.15);
+  color: #ef5350;
 }
 
 .emotion-input {
@@ -240,14 +241,15 @@ function handleEmotionKeydown(e: KeyboardEvent) {
   min-width: 120px;
   padding: 3px 8px;
   font-size: 12px;
-  border: 1px solid #d2d2d7;
+  border: 1px solid #2a2a4a;
   border-radius: 6px;
-  background: white;
+  background: #1e1e38;
+  color: #e0e0e0;
   outline: none;
   font-family: inherit;
 }
 
 .emotion-input:focus {
-  border-color: #0071e3;
+  border-color: #4a7aff;
 }
 </style>

@@ -5,14 +5,18 @@
  * 显示应用运行时的日志，支持实时/历史模式、级别过滤、
  * 命名空间搜索、关键词搜索和导出功能。
  */
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getBuffer, clearBuffer, subscribe, subscribeCrossWindow } from '../utils/logger'
 import type { LogEntry, LogLevel } from '../utils/logger'
+import { QUERY_LOGS } from '../constants'
+import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 // ─── 窗口模式 ─────────────────────────────────────────
 
 /** 是否作为独立 Tauri 窗口运行 (?logs=1) */
-const isStandalone = new URLSearchParams(window.location.search).has('logs')
+const isStandalone = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 
 // ─── 类型 ─────────────────────────────────────────────
 
@@ -47,6 +51,35 @@ const LEVEL_BG: Record<LogLevel, string> = {
 
 const entries = ref<DisplayEntry[]>([])
 let nextId = 0
+
+// ─── 日志条目节流（rAF 批量刷新） ──────────────────────
+const pendingEntries: DisplayEntry[] = []
+let flushRafId = 0
+
+/** 将缓冲条目一次性刷新到响应式数组（限制 60fps） */
+function flushPendingEntries() {
+  flushRafId = 0
+  if (pendingEntries.length === 0) return
+
+  const batch = pendingEntries.splice(0)
+  entries.value.push(...batch)
+
+  // 限制内存
+  if (entries.value.length > 5000) {
+    entries.value.splice(0, entries.value.length - 4000)
+  }
+
+  // 自动滚动
+  if (autoScroll.value) {
+    requestAnimationFrame(() => {
+      if (logListRef.value && autoScroll.value) {
+        logListRef.value.scrollTop = logListRef.value.scrollHeight
+      }
+    })
+  } else {
+    hasNewLogs.value = true
+  }
+}
 
 // 过滤器
 const enabledLevels = ref<Set<LogLevel>>(new Set(isStandalone
@@ -172,7 +205,7 @@ function formatArgsDisplay(args?: unknown[]): string {
   }).join('\n---\n')
 }
 
-// ─── 实时模式 ─────────────────────────────────────────
+// ─── 实时模式（rAF 节流） ────────────────────────────
 
 function addEntry(entry: LogEntry) {
   const display: DisplayEntry = {
@@ -185,23 +218,10 @@ function addEntry(entry: LogEntry) {
     source: entry.source,
     expanded: false,
   }
-  entries.value.push(display)
-
-  // 限制内存中条目数
-  if (entries.value.length > 5000) {
-    entries.value.splice(0, entries.value.length - 4000)
-  }
-
-  // 自动滚动
-  if (autoScroll.value) {
-    // 使用 nextTick 确保 DOM 更新后再滚动
-    requestAnimationFrame(() => {
-      if (logListRef.value && autoScroll.value) {
-        logListRef.value.scrollTop = logListRef.value.scrollHeight
-      }
-    })
-  } else {
-    hasNewLogs.value = true
+  // 写入缓冲队列，在下一个 rAF 批量推入响应式数组
+  pendingEntries.push(display)
+  if (!flushRafId) {
+    flushRafId = requestAnimationFrame(flushPendingEntries)
   }
 }
 
@@ -214,7 +234,6 @@ async function loadHistory() {
   historyEntries.value = []
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     const result: Array<{
       line: number
       timestamp: string
@@ -242,7 +261,6 @@ async function loadHistory() {
 
 async function refreshLogFileList() {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     availableLogFiles.value = await invoke<string[]>('list_log_files')
     if (availableLogFiles.value.length > 0 && !selectedLogFile.value) {
       selectedLogFile.value = availableLogFiles.value[0]
@@ -256,9 +274,6 @@ async function refreshLogFileList() {
 
 async function exportLog() {
   try {
-    const { save } = await import('@tauri-apps/plugin-dialog')
-    const { invoke } = await import('@tauri-apps/api/core')
-
     const destPath = await save({
       title: '导出日志文件',
       defaultPath: 'kisaki-logs-' + new Date().toISOString().slice(0, 10) + '.log',
@@ -277,11 +292,10 @@ async function exportLog() {
       })
     } else {
       // 实时模式：先 flush 再导出当日文件
-      const { invoke: invoke2 } = await import('@tauri-apps/api/core')
       const filename = `app-${new Date().toISOString().slice(0, 10)}.jsonl`
       // 尝试导出，如果当日文件不存在则说明没有日志
       try {
-        await invoke2('export_log_file', {
+        await invoke('export_log_file', {
           sourceFilename: filename,
           destPath,
         })
@@ -294,7 +308,7 @@ async function exportLog() {
 
         // 通过 Tauri 文件写入命令保存
         try {
-          await invoke2('append_log_entries', {
+          await invoke('append_log_entries', {
             filename: '__export_temp.jsonl',
             entries: [{
               timestamp: new Date().toISOString(),
@@ -303,7 +317,7 @@ async function exportLog() {
               message: '用户导出日志',
             }],
           })
-          await invoke2('export_log_file', {
+          await invoke('export_log_file', {
             sourceFilename: '__export_temp.jsonl',
             destPath,
           })
@@ -397,22 +411,25 @@ onUnmounted(() => {
   if (unsubCrossWindow) unsubCrossWindow()
   if (historyRefreshTimer) clearInterval(historyRefreshTimer)
   if (tickTimer.value) clearInterval(tickTimer.value)
+  if (flushRafId) cancelAnimationFrame(flushRafId)
 })
 
 // ─── 窗口控制 ─────────────────────────────────────────
 
 async function closeWindow() {
   try {
-    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
     await getCurrentWebviewWindow().close()
-  } catch { /* ignore */ }
+  } catch (e) {
+    console.warn('[LogViewer] 关闭窗口失败:', e)
+  }
 }
 
 async function minimizeWindow() {
   try {
-    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
     await getCurrentWebviewWindow().minimize()
-  } catch { /* ignore */ }
+  } catch (e) {
+    console.warn('[LogViewer] 最小化窗口失败:', e)
+  }
 }
 
 // 当用户悬停在列表上时标记为手动滚动

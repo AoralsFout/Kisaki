@@ -5,7 +5,8 @@
  * getDefinitions() 会动态注入当前角色可用值到工具参数定义中。
  */
 import type { Tool, ToolDefinition } from './types'
-import { useCharacterStore } from '../stores/character'
+import type { CharacterData } from '../character/loader'
+import { getAgentCharData } from './context'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentRegistry')
@@ -30,30 +31,26 @@ export function getTool(name: string): Tool | undefined {
 }
 
 /** 获取所有工具定义，自动注入当前角色的可用枚举值 */
-export function getDefinitions(): ToolDefinition[] {
-  let charData: any = null
-  try {
-    const store = useCharacterStore()
-    if (store.data) charData = store.data
-  } catch { /* Pinia 不可用 */ }
+export function getDefinitions(charData?: CharacterData | null): ToolDefinition[] {
+  const resolved = charData ?? getAgentCharData()
 
   const defs: ToolDefinition[] = []
   for (const t of tools.values()) {
     const def = JSON.parse(JSON.stringify(t.definition))
     const props = def.function?.parameters?.properties
 
-    if (charData && props) {
-      if (props.emotion && charData.emotions?.length) {
-        props.emotion.enum = [...charData.emotions]
-        props.emotion.description = `可选: ${charData.emotions.join('、')}`
+    if (resolved && props) {
+      if (props.emotion && resolved.emotions?.length) {
+        props.emotion.enum = [...resolved.emotions]
+        props.emotion.description = `可选: ${resolved.emotions.join('、')}`
       }
-      if (props.stance && charData.poses?.length) {
-        props.stance.enum = [...charData.poses]
-        props.stance.description = `可选: ${charData.poses.join('、')}`
+      if (props.stance && resolved.poses?.length) {
+        props.stance.enum = [...resolved.poses]
+        props.stance.description = `可选: ${resolved.poses.join('、')}`
       }
-      if (props.costume && charData.costumes?.length) {
-        props.costume.enum = [...charData.costumes]
-        props.costume.description = `可选: ${charData.costumes.join('、')}`
+      if (props.costume && resolved.costumes?.length) {
+        props.costume.enum = [...resolved.costumes]
+        props.costume.description = `可选: ${resolved.costumes.join('、')}`
       }
     }
 

@@ -3,9 +3,11 @@
  */
 import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion } from './types'
 import { createLogger } from '../utils/logger'
+import { STORAGE_COSYVOICE_CONFIG } from '../constants'
+import { encrypt, decrypt } from '../utils/crypto'
 
 const log = createLogger('TTSConfig')
-const STORAGE_KEY = 'deskpet-cosyvoice-config'
+const STORAGE_KEY = STORAGE_COSYVOICE_CONFIG
 
 /** 默认配置 */
 export const DEFAULT_COSYVOICE_CONFIG: CosyVoiceConfig = {
@@ -39,10 +41,25 @@ export const MODELS: { label: string; value: CosyVoiceModel }[] = [
   { label: 'CosyVoice v1', value: 'cosyvoice-v1' },
 ]
 
+/** 解密后的 API Key 缓存（避免每个 TTS 请求都重新解密） */
+let _decryptedApiKeyCache: string | null = null
+
+/** 设置解密缓存（由 loadCosyVoiceConfigSecure 调用） */
+export function setDecryptedApiKeyCache(key: string) {
+  _decryptedApiKeyCache = key
+}
+
 export function loadCosyVoiceConfig(): CosyVoiceConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULT_COSYVOICE_CONFIG, ...JSON.parse(raw) }
+    if (raw) {
+      const parsed = { ...DEFAULT_COSYVOICE_CONFIG, ...JSON.parse(raw) } as CosyVoiceConfig
+      // 如果有解密缓存则替换加密的 apiKey
+      if (_decryptedApiKeyCache) {
+        parsed.apiKey = _decryptedApiKeyCache
+      }
+      return parsed
+    }
   } catch { /* ignore */ }
   return { ...DEFAULT_COSYVOICE_CONFIG }
 }
@@ -54,6 +71,38 @@ export function saveCosyVoiceConfig(config: CosyVoiceConfig) {
 
 export function isCosyVoiceConfigValid(config: CosyVoiceConfig): boolean {
   return Boolean(config.apiKey)
+}
+
+/** 保存配置并加密 API Key */
+export async function saveCosyVoiceConfigSecure(config: CosyVoiceConfig) {
+  if (config.apiKey) {
+    const encrypted = await encrypt(config.apiKey)
+    saveCosyVoiceConfig({ ...config, apiKey: encrypted })
+  } else {
+    saveCosyVoiceConfig(config)
+  }
+}
+
+/** 加载配置并解密 API Key，自动迁移旧明文 */
+export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
+  const config = loadCosyVoiceConfig()
+  // 已有解密缓存
+  if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
+
+  if (config.apiKey && config.apiKey.length > 20 && !config.apiKey.startsWith('sk-')) {
+    const decrypted = await decrypt(config.apiKey)
+    if (decrypted !== config.apiKey) {
+      setDecryptedApiKeyCache(decrypted)
+      saveCosyVoiceConfig({ ...config, apiKey: decrypted })
+      return { ...config, apiKey: decrypted }
+    }
+  }
+  if (config.apiKey && config.apiKey.startsWith('sk-')) {
+    setDecryptedApiKeyCache(config.apiKey)
+    const encrypted = await encrypt(config.apiKey)
+    saveCosyVoiceConfig({ ...config, apiKey: encrypted })
+  }
+  return config
 }
 
 /** 获取当前配置的 WebSocket URL */

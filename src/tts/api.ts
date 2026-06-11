@@ -10,9 +10,11 @@ import { createLogger } from '../utils/logger'
 const log = createLogger('TTSApi')
 
 /** 从服务端查询用户创建的自定义音色列表 */
-export async function fetchVoiceList(): Promise<VoiceInfo[]> {
+export async function fetchVoiceList(overrides?: { apiKey?: string }): Promise<VoiceInfo[]> {
   const config = loadCosyVoiceConfig()
-  if (!config.apiKey) {
+  // 如果调用方传入了解密后的 apiKey，优先使用
+  const apiKey = overrides?.apiKey ?? config.apiKey
+  if (!apiKey) {
     log.warn('fetchVoiceList: API Key 未配置')
     throw new Error('请先配置 CosyVoice API Key')
   }
@@ -37,7 +39,7 @@ export async function fetchVoiceList(): Promise<VoiceInfo[]> {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),

@@ -16,6 +16,8 @@ export const useCharacterStore = defineStore('character', () => {
   const data = ref<CharacterData | null>(null)
   const loading = ref(false)
   const availableList = ref<string[]>([])
+  /** 角色 ID → 显示名称 缓存（供列表使用，避免逐个加载完整 JSON） */
+  const charNames = ref<Record<string, string>>({})
 
   // 计算当前角色的标签列表
   const poses = computed(() => data.value?.poses ?? [])
@@ -23,6 +25,11 @@ export const useCharacterStore = defineStore('character', () => {
   const costumes = computed(() => data.value?.costumes ?? [])
   const name = computed(() => data.value?.name ?? currentId.value)
   const prompt = computed(() => data.value?.prompt ?? '')
+
+  /** 获取角色的显示名称（缓存不到时 fallback 为 id 首字母大写） */
+  function getCharacterName(id: string): string {
+    return charNames.value[id] || id.charAt(0).toUpperCase() + id.slice(1)
+  }
 
   /** 获取图片的完整 URL */
   function getImageUrl(fileName: string): string {
@@ -45,11 +52,22 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
-  /** 刷新可用角色列表 */
+  /** 刷新可用角色列表（同时加载所有角色的显示名称） */
   async function refreshList() {
     const { clearCache } = await import('../character/loader')
     clearCache()
     availableList.value = await listCharacters()
+    // 异步加载每个角色的名称（静默失败，fallback 到 id）
+    const names: Record<string, string> = {}
+    await Promise.allSettled(availableList.value.map(async (id) => {
+      try {
+        const charData = await loadCharacterJson(id)
+        names[id] = charData.name
+      } catch {
+        names[id] = id.charAt(0).toUpperCase() + id.slice(1)
+      }
+    }))
+    charNames.value = names
   }
 
   /** 初始化（加载默认角色 + 扫描列表） */
@@ -63,7 +81,7 @@ export const useCharacterStore = defineStore('character', () => {
   return {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt,
-    getImageUrl,
+    getImageUrl, getCharacterName,
     loadCharacter, refreshList, init,
   }
 })
