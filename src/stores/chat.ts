@@ -372,9 +372,13 @@ export const useChatStore = defineStore('chat', () => {
       log.info('[%s] [结构化输出] 模型不支持 (model=%s)', _fn, config.model)
     }
 
-    abortController = new AbortController()
+    // 本次请求独享的 AbortController。后续始终引用 myAbort（而非可能被新请求/取消
+    // 改写的模块级 abortController），避免并发请求互相干扰。
+    const myAbort = new AbortController()
+    abortController = myAbort
     let thinkSplitDone = false
     let finalTextFromLoop: string | null = null  // 追踪循环是否产生最终文本
+    let wasCancelled = false                      // 用户主动取消标记（跳过兜底气泡）
 
     // ── 工具调用循环 ─────────────────────────────────────
     const MAX_TOOL_TURNS = 5
@@ -436,7 +440,7 @@ export const useChatStore = defineStore('chat', () => {
         let result = await chatOnce(
           chatContext.getMessages(),
           turnHasTools ? tools : [],
-          abortController.signal,
+          myAbort.signal,
           streamCallbacks,
           rf,
         )
@@ -452,7 +456,7 @@ export const useChatStore = defineStore('chat', () => {
           result = await chatOnce(
             chatContext.getMessages(),
             turnHasTools ? tools : [],
-            abortController.signal,
+            myAbort.signal,
             streamCallbacks,
             rf,
           )
@@ -472,7 +476,7 @@ export const useChatStore = defineStore('chat', () => {
           textCallsTimer.stop()
           if (textCalls.length > 0) {
             log.info('[%s] 第%d轮 ✦ 文本工具调用检测: %d 个', _fn, turn, textCalls.length)
-            const tcNames = textCalls.map(tc => tc.name || tc.function?.name || '(unnamed)').join(', ')
+            const tcNames = textCalls.map(tc => tc.name || '(unnamed)').join(', ')
             log.debug('[%s] 第%d轮 ✦ 工具列表: [%s]', _fn, turn, tcNames)
 
             isUsingTools.value = true
@@ -490,9 +494,9 @@ export const useChatStore = defineStore('chat', () => {
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
               const toolTimer = debugTimer(`${_fn} textTool#${ti} turn#${turn}`)
-              const tcName = tc.name || tc.function?.name || '?'
+              const tcName = tc.name || '?'
               log.info('[%s] 第%d轮 ✦ 执行文本工具[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tcName)
-              log.debug('[%s] 第%d轮 ✦ 工具参数: %O', _fn, turn, tc.arguments || tc.function?.arguments)
+              log.debug('[%s] 第%d轮 ✦ 工具参数: %O', _fn, turn, tc.arguments)
               const toolResult = await agentService.execute(tc)
               toolTimer.stop()
               log.debug('[%s] 第%d轮 ✦ 工具结果: %s', _fn, turn,
@@ -557,7 +561,7 @@ export const useChatStore = defineStore('chat', () => {
                 // 标记格式违规，下次请求将重新附上完整格式指令而非简短提醒
                 chatContext.markFormatViolation()
                 const repairTimer = debugTimer(`${_fn} formatRepair turn#${turn}`)
-                const repaired = await attemptFormatRepair(finalText, vLang, dLang, abortController?.signal)
+                const repaired = await attemptFormatRepair(finalText, vLang, dLang, myAbort.signal)
                 repairTimer.stop()
                 if (repaired) {
                   log.info('[%s] 第%d轮 ✓ 格式修复成功 (%d→%d字)',
@@ -660,6 +664,7 @@ export const useChatStore = defineStore('chat', () => {
         const errMsg = (err as Error).message
         const errName = (err as Error).name
         if (errName === 'AbortError') {
+          wasCancelled = true
           log.info('[%s] 第%d轮 ⏹ 请求被取消 (AbortError)', _fn, turn)
           break
         }
@@ -671,8 +676,19 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // ── 循环结束 ────────────────────────────────────────
-    // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
-    if (!currentBubbleText.value) {
+    // 若本次请求已被取消/被新请求取代（abortController 已不是 myAbort），
+    // 则跳过收尾，避免覆盖新请求的状态或弹出误导性兜底气泡。
+    if (abortController !== myAbort) {
+      log.info('[%s] ◀ 本次请求已被取消或被新请求取代，跳过收尾', _fn)
+      _timer.stop()
+      return
+    }
+
+    if (wasCancelled) {
+      // 用户主动取消：不展示兜底气泡
+      log.info('[%s] 已取消，跳过兜底提示', _fn)
+    } else if (!currentBubbleText.value) {
+      // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
       log.info('[%s] ⚠ %d 轮循环后无文本回复，展示兜底提示 (finalTextFromLoop=%s)',
         _fn, MAX_TOOL_TURNS, finalTextFromLoop ? '有' : '无')
       showBubbleText('我已经处理好了，还有什么需要帮忙的吗？', false)
@@ -698,8 +714,6 @@ export const useChatStore = defineStore('chat', () => {
       log.trace('[%s] 跳过重复播报: text === lastTtsText', _fn)
       return
     }
-    lastTtsText = text
-    log.debug('[%s] lastTtsText 已更新 (%d字)', _fn, text.length)
 
     try {
       const charStore = useCharacterStore()
@@ -714,6 +728,8 @@ export const useChatStore = defineStore('chat', () => {
       log.debug('[%s] TTS 文本: "%s"', _fn, text.slice(0, 120))
       const ttsTimer = debugTimer(_fn)
       await speakTextStreaming(text, voiceId)
+      // 仅在成功播放后记下去重文本（失败/取消时不记录，允许重试）
+      lastTtsText = text
       ttsTimer.stop()
       log.info('[%s] ✓ TTS 播报完成', _fn)
     } catch (err) {
@@ -740,6 +756,11 @@ export const useChatStore = defineStore('chat', () => {
     isProcessing.value = false
     isUsingTools.value = false
     cancelSpeak()
+    // 取消后重置 TTS 去重，以便重试时能再次播报被取消的同一段文本
+    lastTtsText = ''
+    // 隐藏正在生成的气泡与思考过程，避免残留半截内容
+    hideBubble()
+    currentThinking.value = ''
     log.info('[%s] ✓ AI 回复已取消 (isProcessing=%s isUsingTools=%s)',
       _fn, isProcessing.value, isUsingTools.value)
     log.trace('[%s] ◀', _fn)
@@ -775,6 +796,16 @@ export const useChatStore = defineStore('chat', () => {
     const _fn = 'clearMessages'
     const prevCount = messages.value.length
     log.trace('[%s] ▶ (当前消息数=%d)', _fn, prevCount)
+
+    // 先取消正在进行中的 AI 请求，避免其回调写入已被清空的上下文
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    isProcessing.value = false
+    isUsingTools.value = false
+    hideBubble()
+    currentThinking.value = ''
 
     if (prevCount > 0) {
       log.debug('[%s] 最后一条消息: role=%s text="%s"', _fn,

@@ -1,7 +1,7 @@
 /**
  * 角色模块 - 统一导出
  */
-export { loadCharacterJson, listCharacters, imageUrl, bustImageCache } from './loader'
+export { loadCharacterJson, listCharacters, imageUrl, bustImageCache, initCharacterDataDir } from './loader'
 export type { CharacterData, CharacterImageData } from './loader'
 export { findImages, pickRandomImage, FALLBACK_EMOTIONS } from './config'
 export type { PoseTag, EmotionTag, CostumeTag } from './config'

@@ -153,10 +153,6 @@ async function submitCreateForm() {
       id, filename: 'prompt.txt',
       content: `你是 ${name}，一个可爱的桌面宠物。`,
     })
-    await invoke('write_character_file', {
-      id, filename: 'images/.gitkeep',
-      content: '',
-    })
 
     await charStore.refreshList()
     showCreateForm.value = false
@@ -164,7 +160,7 @@ async function submitCreateForm() {
     saveMsg.value = `已创建角色 "${name}"`
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    createError.value = `创建失败: ${(e as Error).message}`
+    createError.value = `创建失败: ${e instanceof Error ? e.message : String(e)}`
   }
 }
 
@@ -227,9 +223,16 @@ function loadData() {
 
 async function loadPrompt() {
   try {
-    const res = await fetch(`/character/${editingId.value}/prompt.txt?_t=${Date.now()}`)
-    if (res.ok) promptText.value = await res.text()
-  } catch { /* ignore */ }
+    // 优先从 data_dir 读取（用户可能已编辑保存过）
+    const text = await invoke('read_character_file', { id: editingId.value, filename: 'prompt.txt' }) as string
+    promptText.value = text
+  } catch {
+    // 回退 web 静态路径
+    try {
+      const res = await fetch(`/characters/${editingId.value}/prompt.txt?_t=${Date.now()}`)
+      if (res.ok) promptText.value = await res.text()
+    } catch { /* ignore */ }
+  }
 }
 
 // ---- Tauri 文件 IO ----

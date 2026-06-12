@@ -76,6 +76,8 @@ export function isCosyVoiceConfigValid(config: CosyVoiceConfig): boolean {
 /** 保存配置并加密 API Key */
 export async function saveCosyVoiceConfigSecure(config: CosyVoiceConfig) {
   if (config.apiKey) {
+    // 与 AI 配置保持一致：保存时同步刷新本窗口的解密缓存
+    setDecryptedApiKeyCache(config.apiKey)
     const encrypted = await encrypt(config.apiKey)
     saveCosyVoiceConfig({ ...config, apiKey: encrypted })
   } else {
@@ -93,7 +95,7 @@ export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
     const decrypted = await decrypt(config.apiKey)
     if (decrypted !== config.apiKey) {
       setDecryptedApiKeyCache(decrypted)
-      saveCosyVoiceConfig({ ...config, apiKey: decrypted })
+      // 仅缓存解密结果，不把明文写回 localStorage（保持加密 + 避免跨窗口 storage 事件回环）
       return { ...config, apiKey: decrypted }
     }
   }
@@ -103,6 +105,15 @@ export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
     saveCosyVoiceConfig({ ...config, apiKey: encrypted })
   }
   return config
+}
+
+// 跨窗口配置同步：设置窗口保存后，其它窗口失效解密缓存并重新解密。
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== STORAGE_KEY) return
+    _decryptedApiKeyCache = null
+    loadCosyVoiceConfigSecure().catch(() => { /* 静默：下次加载会重试 */ })
+  })
 }
 
 /** 获取当前配置的 WebSocket URL */

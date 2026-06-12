@@ -80,7 +80,7 @@ export async function loadConfigSecure(): Promise<AIConfig> {
     const decrypted = await decrypt(config.apiKey)
     if (decrypted !== config.apiKey) {
       setDecryptedApiKeyCache(decrypted)
-      saveConfig({ ...config, apiKey: decrypted })
+      // 仅缓存解密结果，不把明文写回 localStorage（保持磁盘上加密 + 避免跨窗口 storage 事件回环）
       return { ...config, apiKey: decrypted }
     }
   }
@@ -90,6 +90,16 @@ export async function loadConfigSecure(): Promise<AIConfig> {
     saveConfig({ ...config, apiKey: encrypted })
   }
   return config
+}
+
+// 跨窗口配置同步：设置窗口保存配置后，其它窗口（主窗口）会收到 storage 事件。
+// 此时失效本窗口的解密缓存并立即重新解密，避免继续使用旧的 API Key。
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== STORAGE_KEY) return
+    _decryptedApiKeyCache = null
+    loadConfigSecure().catch(() => { /* 静默：下次 loadConfigSecure 会重试 */ })
+  })
 }
 
 export function isConfigValid(config: AIConfig): boolean {
@@ -132,7 +142,7 @@ export function supportsStructuredOutput(model: string): boolean {
  *
  * @param model 模型名称
  */
-export function supportsJsonMode(model: string): boolean {
+export function supportsJsonMode(_model: string): boolean {
   // deepseek 频繁触发空content异常，临时禁用
   // return /^(deepseek)/i.test(model)
   return false;
@@ -323,11 +333,20 @@ export async function chat(
 
     callbacks.onDone(fullText)
   } catch (err) {
+    clearTimeout(timeoutId)
     if ((err as Error).name === 'AbortError') {
-      callbacks.onDone('')
+      // 区分用户主动取消与全局超时：
+      // - signal 是外部（用户）取消信号；若它已 abort → 用户取消，静默结束（仍以 AbortError 通知）
+      // - 否则为 2 分钟全局超时 → 作为普通错误提示
+      if (signal?.aborted) {
+        const cancelErr = new Error('请求已取消')
+        cancelErr.name = 'AbortError'
+        callbacks.onError(cancelErr)
+      } else {
+        callbacks.onError(new Error('请求超时（已等待 2 分钟）'))
+      }
       return
     }
-    clearTimeout(timeoutId)
     callbacks.onError(err as Error)
   }
 }

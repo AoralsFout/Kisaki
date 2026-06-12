@@ -20,13 +20,18 @@ export const SUPPORTED_LANGUAGES = [
   { value: 'ru-RU', label: 'Русский' },
 ]
 
-/** 获取用户偏好的显示语言 */
-export function getDisplayLanguage(): string {
+/** 读取已保存的显示语言（未设置返回 null，供回退判断使用） */
+function getStoredDisplayLanguage(): string | null {
   try {
-    return localStorage.getItem(DISPLAY_LANG_KEY) || 'zh-CN'
+    return localStorage.getItem(DISPLAY_LANG_KEY)
   } catch {
-    return 'zh-CN'
+    return null
   }
+}
+
+/** 获取用户偏好的显示语言（未设置时回退 zh-CN，供 UI 默认值使用） */
+export function getDisplayLanguage(): string {
+  return getStoredDisplayLanguage() || 'zh-CN'
 }
 
 /** 设置用户偏好的显示语言 */
@@ -37,10 +42,12 @@ export function setDisplayLanguage(lang: string) {
 
 /**
  * 获取最终显示语言（优先级：用户设置 > 角色默认 > 'zh-CN'）
+ *
+ * 注意：读取“原始”存储值而非 getDisplayLanguage()，因为后者在未设置时
+ * 会回退到 'zh-CN'，会让 charTextLang 永远不生效。
  */
 export function resolveDisplayLanguage(charTextLang?: string): string {
-  const userLang = getDisplayLanguage()
-  return userLang || charTextLang || 'zh-CN'
+  return getStoredDisplayLanguage() || charTextLang || 'zh-CN'
 }
 
 // ─── 打字机速度 ────────────────────────────────────────

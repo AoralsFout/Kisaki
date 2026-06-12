@@ -8,7 +8,7 @@
  * - createLogger 日志创建与输出
  * - subscribe 订阅者机制
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // 注意：logger 模块有模块级状态（全局变量），
 // 在每个测试文件内重置状态以避免跨测试污染
@@ -168,7 +168,6 @@ describe('Logger - 级别过滤', () => {
 
   it('全局 enabled=false 时全部静默', async () => {
     const mod = await import('../logger')
-    const { setLogEnabled } = mod
 
     // 通过闭包设置 enabled=false
     // 由于 setLogEnabled 未导出，我们需要直接重置

@@ -96,7 +96,7 @@ function buildLangInstruction(voiceLang: string, displayLang: string): string {
 }
 
 /** 为每轮生成的简短格式提醒（利用近因偏差） */
-function buildTurnReminder(voiceLang: string, displayLang: string): string {
+function buildTurnReminder(voiceLang: string, _displayLang: string): string {
   return `[格式提醒] 请务必使用双语格式回复 — 先写【${langName(voiceLang)}】<语音内容> 再写【译文】<展示内容>，两部分都不能省略。`
 }
 

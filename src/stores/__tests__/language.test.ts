@@ -4,7 +4,7 @@
  * 覆盖 getDisplayLanguage、setDisplayLanguage、resolveDisplayLanguage、SUPPORTED_LANGUAGES
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { STORAGE_DISPLAY_LANGUAGE, DEFAULT_DISPLAY_LANGUAGE } from '../../constants'
+import { STORAGE_DISPLAY_LANGUAGE } from '../../constants'
 
 describe('Language - SUPPORTED_LANGUAGES', () => {
   it('包含常见语言', async () => {
@@ -90,12 +90,11 @@ describe('Language - resolveDisplayLanguage', () => {
     expect(mod.resolveDisplayLanguage('ja-JP')).toBe('en-US')
   })
 
-  it('无用户设置时使用角色默认语言（当前实现：userLang 总是有值，charTextLang 不生效）', async () => {
+  it('无用户设置时使用角色默认语言', async () => {
     const mod = await import('../language')
     localStorage.removeItem(STORAGE_DISPLAY_LANGUAGE)
-    // 当前实现：getDisplayLanguage() 默认返回 'zh-CN'（总是 truthy），
-    // 所以 resolveDisplayLanguage 总是优先取 userLang，charTextLang 参数暂不生效
-    expect(mod.resolveDisplayLanguage('ja-JP')).toBe('zh-CN')
+    // 未设置显示语言时，应回退到角色的默认文本语言（charTextLang）
+    expect(mod.resolveDisplayLanguage('ja-JP')).toBe('ja-JP')
   })
 
   it('无任何设置时回退到 zh-CN', async () => {

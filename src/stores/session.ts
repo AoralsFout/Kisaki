@@ -67,7 +67,7 @@ export const useSessionStore = defineStore('session', () => {
     sessions.value.find(s => s.id === currentSessionId.value) ?? null,
   )
 
-  /** 会话列表，按更新时间正序 */
+  /** 会话列表，按创建时间正序（旧→新） */
   const sessionList = computed(() =>
     [...sessions.value].sort((a, b) => a.createdAt - b.createdAt),
   )

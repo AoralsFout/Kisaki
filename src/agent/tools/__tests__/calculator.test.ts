@@ -12,7 +12,7 @@ import { calculatorTool } from '../calculator'
 
 // ─── 辅助函数：从 handler 返回值中提取结果数字 ──────────
 
-function evalExpr(expr: string): string {
+function evalExpr(expr: string): Promise<string> {
   // 由于 handler 是 async，这里用 Promise 包装
   return calculatorTool.handler({ expression: expr }) as Promise<string>
 }

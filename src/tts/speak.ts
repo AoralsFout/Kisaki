@@ -21,6 +21,7 @@ const ENABLED_KEY = STORAGE_TTS_ENABLED
 
 /** 流式音频帧事件结构（对应 Rust TtsChunk） */
 interface TtsChunk {
+  stream_id: string
   data: string
   format: string
   is_last: boolean
@@ -37,6 +38,8 @@ interface TtsCommandResult {
 
 export class TtsEngine {
   private currentController: AbortController | null = null
+  /** 流序号，用于为每次流式播报生成唯一 stream_id（过滤旧流音频帧） */
+  private streamSeq = 0
 
   /** 语音播报是否开启 */
   isEnabled(): boolean {
@@ -147,10 +150,19 @@ export class TtsEngine {
   ): Promise<void> {
     const cvConfig = loadCosyVoiceConfig()
 
+    // 本次流的唯一 id：后端会在每个音频帧里带上它，前端据此过滤掉
+    // 已被取代的旧流的帧，避免快速连发消息时新旧音频串台。
+    const streamId = String(++this.streamSeq)
+
     const mediaSource = new MediaSource()
     const audio = new Audio()
     const blobUrl = URL.createObjectURL(mediaSource)
     audio.src = blobUrl
+
+    // 取消时立即暂停播放（后端任务会因 30s 读超时或服务端结束而自行收尾）
+    controller.signal.addEventListener('abort', () => {
+      try { audio.pause() } catch { /* ignore */ }
+    }, { once: true })
 
     const sourceBuffer = await new Promise<SourceBuffer>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('MediaSource 打开超时')), 5000)
@@ -188,6 +200,8 @@ export class TtsEngine {
     sourceBuffer.addEventListener('updateend', () => { flushBuffer() })
 
     const unlisten = await listen<TtsChunk>('tts-audio-chunk', (event) => {
+      // 过滤掉非本次流（已被取代的旧流）的音频帧
+      if (event.payload.stream_id !== streamId) return
       if (controller.signal.aborted || streamError) return
       if (event.payload.is_last) {
         resolveStreamComplete?.()
@@ -208,13 +222,17 @@ export class TtsEngine {
     })
 
     const invokePromise = invoke('cosyvoice_tts_stream', {
-      apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
+      streamId, apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
     })
 
     try { await invokePromise } catch (err) { streamError = (err as Error).message }
 
     if (!controller.signal.aborted && !streamError) {
-      await streamComplete
+      // 等待全部音频帧追加完成；安全超时兜底，即便后端漏发 is_last 也不会无限等待
+      await Promise.race([
+        streamComplete,
+        new Promise<void>((resolve) => setTimeout(resolve, 60000)),
+      ])
       await new Promise<void>((resolve) => {
         if (!sourceBuffer.updating && pendingChunks.length === 0) { resolve(); return }
         const onUpdateEnd = () => {

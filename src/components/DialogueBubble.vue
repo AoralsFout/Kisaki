@@ -43,11 +43,13 @@ function startTypewriter(fullText: string) {
   isAnimating.value = true
 
   const speed = getTypingSpeed()
+  // 按 Unicode 码位遍历，避免 emoji / 代理对在动画中闪烁（UTF-16 码元会拆开）
+  const chars = [...fullText]
   let index = 0
 
   typingTimer = setInterval(() => {
-    if (index < fullText.length) {
-      displayText.value += fullText[index]
+    if (index < chars.length) {
+      displayText.value += chars[index]
       index++
     } else {
       cleanupTimer()

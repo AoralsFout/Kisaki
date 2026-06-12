@@ -5,7 +5,7 @@
  */
 import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
-import { getAgentCharData, getAgentController } from '../context'
+import { getAgentCharData, getAgentController, setAgentCharData, getOnCharacterSwitched } from '../context'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolCharacter')
@@ -273,8 +273,14 @@ export const switchCharacterTool: Tool = {
     const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     await ctrl.switchCharacter(id)
-    log.info('角色切换: %s (%s)', id, store.name)
-    return `已切换到 ${store.name}`
+    // 切换后刷新 agent 上下文的角色数据（供本轮后续工具的枚举校验使用），
+    // 并通知上层刷新对话人格（system prompt）。否则 AI 自助切换角色后
+    // 立绘/音色变了但人设仍是旧角色。
+    setAgentCharData(ctrl.charStore.data)
+    getOnCharacterSwitched()?.()
+    const newName = ctrl.charStore.name
+    log.info('角色切换: %s (%s)', id, newName)
+    return `已切换到 ${newName}`
   },
 }
 

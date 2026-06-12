@@ -173,9 +173,8 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
       // 通知 UI 订阅者
       try { cb(entry) } catch { /* ignore */ }
 
-      // 立即写入文件（不等 2 秒节流），确保跨窗口日志不丢失
-      enqueueFileWrite(entry)
-      // flushImmediately()
+      // 注意：不在此处写文件——源窗口已经在 log() 中写过了。
+      // 若接收方也写，会导致 JSONL 中每条跨窗口日志重复。
     }
   }
   bc.addEventListener('message', handler)
@@ -288,16 +287,6 @@ function scheduleFileFlush() {
     fileWriteTimer = null
     flushFileEntries()
   }, 2000)
-}
-
-/** 立即刷新待写入日志到文件（不等 2 秒节流） */
-function flushImmediately() {
-  if (!filePersistenceEnabled) return
-  if (fileWriteTimer) {
-    clearTimeout(fileWriteTimer)
-    fileWriteTimer = null
-  }
-  flushFileEntries()
 }
 
 /** 添加日志条目到待写入队列 */

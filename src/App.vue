@@ -14,12 +14,12 @@ import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
-import { useCharacterStore } from './character'
+import { useCharacterStore, initCharacterDataDir } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
-import { setAvailableCharacters } from './agent'
+import { setAvailableCharacters, setOnCharacterSwitched } from './agent'
 import { createLogger } from './utils/logger'
 import {
   WINDOW_MAIN,
@@ -58,6 +58,17 @@ function toggleTts() {
   setTtsEnabled(ttsEnabled.value)
 }
 
+/**
+ * 应用当前角色的人格到对话上下文（仅更新 system prompt，不重置历史）。
+ * 供首次初始化、UI 切角色、以及 AI 自助 switch_character 工具共用。
+ */
+function applyCharacterPersona() {
+  if (!charStore.prompt) return
+  const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
+  const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
+  chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
+}
+
 let welcomeShown = false
 
 onMounted(async () => {
@@ -69,6 +80,9 @@ onMounted(async () => {
     loadConfigSecure(),
     loadCosyVoiceConfigSecure(),
   ])
+  // 初始化 data_dir 路径（供 imageUrl / loadCharacterJson 使用），
+  // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
+  await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
   chat.init()
   await charStore.init()
   // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
@@ -77,10 +91,10 @@ onMounted(async () => {
     setAvailableCharacters(list)
   })
   if (charStore.prompt) {
-    const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
-    const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
-    chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
+    applyCharacterPersona()
   }
+  // 注入“AI 自助切换角色后刷新人格”回调（switch_character 工具会调用）
+  setOnCharacterSwitched(applyCharacterPersona)
 
   // 初始化会话管理（system prompt 设定后加载历史消息）
   sessionStore.init()
@@ -209,13 +223,11 @@ async function openLogWindow() {
 async function handleSelectCharacter(charId: string) {
   const ctrl = characterRef.value?.controller
   if (!ctrl || charId === charStore.currentId) return
+  // 先取消正在进行中的 AI 请求与 TTS，防止生成的回复被写入将被清空的上下文
+  if (chat.isProcessing) chat.cancelResponse()
   await ctrl.switchCharacter(charId)
   chat.resetContext()
-  if (charStore.prompt) {
-    const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
-    const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
-    chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
-  }
+  applyCharacterPersona()
   chat.showBubbleText(`切换到 ${charStore.name}~`, false)
 }
 </script>
@@ -246,21 +258,32 @@ async function handleSelectCharacter(charId: string) {
         @typing-end="chat.isTyping = false"
       />
 
+      <!-- 停止生成按钮（仅在 AI 生成中显示） -->
+      <button
+        v-if="chat.isProcessing"
+        class="stop-btn"
+        @click="chat.cancelResponse()"
+        aria-label="停止生成"
+      >
+        <i class="fas fa-stop"></i>
+        <span>停止</span>
+      </button>
+
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar">
         <button class="tool-btn" @click="chat.openInput()" aria-label="打开聊天输入框">
           <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
         </button>
-        <button class="tool-btn" @click="showSession = !showSession" aria-label="会话管理">
+        <button class="tool-btn" :disabled="chat.isProcessing" @click="showSession = !showSession" aria-label="会话管理">
           <i class="fas fa-comments btn-icon"></i>
           <span class="btn-label">会话</span>
         </button>
-        <button class="tool-btn" @click="showHistory = !showHistory" aria-label="打开对话历史">
+        <button class="tool-btn" :disabled="chat.isProcessing" @click="showHistory = !showHistory" aria-label="打开对话历史">
           <i class="fas fa-clipboard-list btn-icon"></i>
           <span class="btn-label">历史</span>
         </button>
-        <button class="tool-btn" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
+        <button class="tool-btn" :disabled="chat.isProcessing" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
           <i class="fas fa-rotate btn-icon"></i>
           <span class="btn-label">角色</span>
         </button>
@@ -403,7 +426,12 @@ async function handleSelectCharacter(charId: string) {
   transition: max-width 0.25s ease, background 0.15s;
 }
 
-.tool-btn:hover {
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tool-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
   max-width: 80px;
 }
@@ -431,5 +459,26 @@ async function handleSelectCharacter(charId: string) {
 
 .tool-btn.tts-off:hover {
   opacity: 0.8;
+}
+
+/* ---- 停止生成按钮 ---- */
+.stop-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 16px;
+  background: rgba(210, 60, 60, 0.88);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s;
+}
+
+.stop-btn:hover {
+  background: rgba(210, 60, 60, 1);
 }
 </style>
