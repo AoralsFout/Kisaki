@@ -133,7 +133,9 @@ export function supportsStructuredOutput(model: string): boolean {
  * @param model 模型名称
  */
 export function supportsJsonMode(model: string): boolean {
-  return /^(deepseek)/i.test(model)
+  // deepseek 频繁触发空content异常，临时禁用
+  // return /^(deepseek)/i.test(model)
+  return false;
 }
 
 /**

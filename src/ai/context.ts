@@ -13,6 +13,35 @@ const log = createLogger('ChatContext')
 /** 最大保留的对话轮数（一轮 = 一问一答） */
 const MAX_ROUNDS = 10
 
+/** 最大上下文 token 数（留出回复空间，默认模型上下文窗口通常 8k–128k） */
+const MAX_CONTEXT_TOKENS = 6000
+
+/** 单条工具结果最大字符数（超出部分截断） */
+const MAX_TOOL_RESULT_LENGTH = 1000
+
+/** CJK 字符正则 */
+const CJK_RE = /[一-鿿぀-ゟ゠-ヿ가-힯]/
+
+/**
+ * 粗略估算文本 token 数（混合 CJK/ASCII 场景）
+ *
+ * 精确值因 tokenizer 而异，此处用于裁剪决策的排序比较而非计量。
+ * CJK → 1.5t/字、ASCII → 0.35t/字符、空白 → 0.2t，外加 4t 消息结构开销。
+ */
+function estimateTokens(text: string): number {
+  let tokens = 0
+  for (const char of text) {
+    if (char === ' ' || char === '\n' || char === '\t') {
+      tokens += 0.2
+    } else if (CJK_RE.test(char)) {
+      tokens += 1.5
+    } else {
+      tokens += 0.35
+    }
+  }
+  return Math.ceil(tokens) + 4 // 消息结构 overhead
+}
+
 /** 语言代码 → 中文名称映射 */
 const LANG_NAMES: Record<string, string> = {
   'zh-CN': '中文（简体）',
@@ -62,16 +91,13 @@ function buildLangInstruction(voiceLang: string, displayLang: string): string {
 
 注意：
 - 即使调用了工具，最终回复也要遵循此格式
-- 母语内容必须是由母语文字和标点符号组合，可以被合成为语音的文本。不允许出现emoji，特殊符号，颜文字等不可语音合成内容
+- 母语内容必须是由母语文字和标点符号组合，可以被合成为语音的文本。不允许出现emoji，特殊符号，颜文字等不可语音合成内容。也不允许出现对想法或动作的描述。
 - 不要省略任一字段`
 }
 
 /** 为每轮生成的简短格式提醒（利用近因偏差） */
 function buildTurnReminder(voiceLang: string, displayLang: string): string {
-  if (voiceLang === displayLang) {
-    return `[语言提醒] 请全程使用 ${langName(voiceLang)} 回复。`
-  }
-  return `[格式提醒] 请务必使用双语格式回复 — 先写【${langName(voiceLang)}】再写【译文】，两部分都不能省略。`
+  return `[格式提醒] 请务必使用双语格式回复 — 先写【${langName(voiceLang)}】<语音内容> 再写【译文】<展示内容>，两部分都不能省略。`
 }
 
 /**
@@ -91,7 +117,7 @@ function buildJsonLangInstruction(voiceLang: string, displayLang: string): strin
 你的母语是 ${voiceLangName}，但用户使用 ${displayLangName}。
 
 每次回复你**必须**输出一个 JSON 对象，包含两个字段：
-1. "native_text": 用你的母语（${voiceLangName}）自然说出的话（用于语音合成）。必须是纯母语文字，不允许有 emoji 或特殊符号。
+1. "native_text": 用你的母语（${voiceLangName}）自然说出的话（用于语音合成）。必须是纯母语文字，不允许添加额外想法或动作，不允许有 emoji 或特殊符号。
 2. "display_text": 翻译成用户语言（${displayLangName}）的版本（用于显示）
 
 示例（母语=日语，用户语言=中文）：
@@ -110,6 +136,7 @@ const TOOL_INSTRUCTIONS = `
 2. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator
 3. 你的情绪发生变化时 → 调用 set_character_emotion
 4. 你希望改变姿势或服装时 → 调用 set_character_stance / set_character_costume
+5. 你需要改变你在屏幕的大小或位置时 → 调用 set_screen_pose
 
 ### 错误示例 ❌
 用户: "换个姿势"
@@ -140,9 +167,11 @@ export class ChatContext {
   private voiceLang: string = ''
   private displayLang: string = ''
   private structured: boolean = false
+  private maxContextTokens: number
 
-  constructor(maxRounds: number = MAX_ROUNDS) {
+  constructor(maxRounds: number = MAX_ROUNDS, maxContextTokens: number = MAX_CONTEXT_TOKENS) {
     this.maxRounds = maxRounds
+    this.maxContextTokens = maxContextTokens
     this.reset()
   }
 
@@ -160,6 +189,25 @@ export class ChatContext {
   /** 是否已启用结构化输出 */
   get isStructured(): boolean {
     return this.structured
+  }
+
+  /** 格式违规标记：下次 getMessages 调用时附加完整格式指令（而非简短提醒） */
+  private needsFullFormatReattach: boolean = false
+
+  /** 标记格式违规：下次 API 请求将重新附上完整的双语格式指令 */
+  markFormatViolation() {
+    this.needsFullFormatReattach = true
+    log.debug('格式违规已标记，下次 getMessages 将附加完整格式指令')
+  }
+
+  /** 重置格式违规标记 */
+  private resetFormatViolationMarker() {
+    this.needsFullFormatReattach = false
+  }
+
+  /** 当前上下文估计 token 总数（用于裁剪决策） */
+  get estimatedTokens(): number {
+    return this.messages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0)
   }
 
   /** 重建 system prompt（应用语言指令变更） */
@@ -193,6 +241,7 @@ export class ChatContext {
   reset() {
     const prevLen = this.messages.length
     this.messages = getDefaultMessages()
+    this.resetFormatViolationMarker()
     if (this.customPrompt) {
       this.rebuildSystemPrompt()
     }
@@ -225,30 +274,47 @@ export class ChatContext {
     log.debug('助手工具调用已添加: %d 个', toolCalls.length)
   }
 
-  /** 添加工具执行结果 */
+  /** 添加工具执行结果（自动截断过长内容） */
   addToolResult(toolCallId: string, content: string) {
+    const truncated = content.length > MAX_TOOL_RESULT_LENGTH
+      ? content.slice(0, MAX_TOOL_RESULT_LENGTH) + `\n\n...（截断，原 ${content.length} 字符）`
+      : content
     this.messages.push({
       role: 'tool',
-      content,
+      content: truncated,
       tool_call_id: toolCallId,
     })
-    log.debug('工具结果已添加: %s (长度: %d)', toolCallId, content.length)
+    log.debug('工具结果已添加: %s (长度: %d → %d)', toolCallId, content.length, truncated.length)
   }
 
   /**
    * 获取完整消息列表（供 API 调用）
    *
    * 会在末尾自动追加每轮的格式提醒（利用近因偏差），
+   * 若之前发生过格式违规，则自动附加完整格式指令（而非简短提醒），
+   * 以强化模型对双语言格式的记忆。
    * 不修改内部存储的消息列表。
    */
   getMessages(): ChatMessage[] {
     // 复制一份，注入每轮格式提醒
     const msgs = [...this.messages]
     if (this.voiceLang && this.displayLang) {
-      msgs.push({
-        role: 'system',
-        content: buildTurnReminder(this.voiceLang, this.displayLang),
-      })
+      if (this.needsFullFormatReattach) {
+        // 格式违规后重新附上完整格式指令，附带示例和注意事项
+        const langFn = this.structured ? buildJsonLangInstruction : buildLangInstruction
+        msgs.push({
+          role: 'system',
+          content: langFn(this.voiceLang, this.displayLang),
+        })
+        log.debug('格式违规恢复：已附加完整格式指令 (voice=%s display=%s structured=%s)',
+          this.voiceLang, this.displayLang, this.structured)
+        this.needsFullFormatReattach = false
+      } else {
+        msgs.push({
+          role: 'system',
+          content: buildTurnReminder(this.voiceLang, this.displayLang),
+        })
+      }
     }
     return msgs
   }
@@ -259,19 +325,36 @@ export class ChatContext {
   }
 
   /**
-   * 裁剪超出轮数的对话
-   * 保留 system prompt 和最近的 N 轮
-   * tool_call + tool_result 算一轮
+   * 裁剪超出 token 阈值的上下文
+   *
+   * 策略（按优先级）：
+   * 1. 保留 system prompt（索引 0）
+   * 2. 从最旧的非 system 消息开始移除
+   * 3. 直到估计 token 数 ≤ maxContextTokens
+   *
+   * 快速路径：消息数量 ≤ 2×maxRounds 时跳过检查（小对话无需裁剪）。
    */
   private prune() {
-    const systemMsg = this.messages[0]
-    const rest = this.messages.slice(1)
-    const total = rest.length
+    if (this.messages.length <= 1) return
 
-    if (total > this.maxRounds * 4) {
-      // 按比例裁剪，保留尾部最近的 N*4 条
-      const keep = this.maxRounds * 4
-      this.messages = [systemMsg, ...rest.slice(total - keep)]
+    // 快速路径：消息数远低于阈值时不检查 token
+    const rest = this.messages.slice(1)
+    if (rest.length <= this.maxRounds * 2) return
+
+    // Token 感知裁剪：移除最旧的非 system 消息直到 token 数低于阈值
+    let tokens = this.estimatedTokens
+    let removedCount = 0
+    while (this.messages.length > 1 && tokens > this.maxContextTokens) {
+      const removed = this.messages.splice(1, 1)[0]
+      tokens -= estimateTokens(removed.content || '')
+      removedCount++
+    }
+
+    if (this.messages.length <= 1) {
+      log.warn('上下文裁剪至仅剩 system prompt，可能丢失了有用信息')
+    } else if (removedCount > 0) {
+      log.debug('上下文裁剪完成: 移除 %d 条, 剩余 %d 条, ~%d tokens',
+        removedCount, this.messages.length, this.estimatedTokens)
     }
   }
 }

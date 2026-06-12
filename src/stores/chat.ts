@@ -1,5 +1,17 @@
 /**
  * 对话状态管理（Pinia）
+ *
+ * ═══ 调试信息说明 ═══
+ * 本文件包含完整的执行过程调试日志，按级别分类：
+ *   log.trace() — 最细粒度追踪（函数入口/出口、循环迭代、每步状态快照）
+ *   log.debug() — 详细调试信息（解析过程、工具调用细节、计时数据）
+ *   log.info()  — 重要流程节点（消息收发、配置变更、错误恢复）
+ *   log.warn()  — 异常但不中断（降级、修复尝试、边界情况）
+ *   log.error() — 可恢复错误（API异常、解析失败、执行异常）
+ *
+ * 调试信息统一格式：
+ *   [函数名] 操作描述 — 关键数据摘要
+ *   ▶ 函数入口 / ◀ 函数出口 / ⚡ 状态变更 / ⏱ 耗时 / ⚠ 警告
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -10,10 +22,42 @@ import type { ToolCall } from '../agent'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
+import { useSessionStore } from './session'
 import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
 
 const log = createLogger('ChatStore')
+
+// ─── 调试计时器工具 ────────────────────────────────────
+/**
+ * 创建一个命名的计时器，用于测量异步操作耗时。
+ * 调用 stop() 返回毫秒数并自动 log。
+ *
+ * @example
+ *   const timer = debugTimer('AI回复')
+ *   const result = await someAsyncOp()
+ *   timer.stop()                // → trace: "[AI回复] 耗时: 1234ms"
+ *   timer.stop('含重试')        // → trace: "[AI回复] 含重试 耗时: 1234ms"
+ */
+function debugTimer(label: string) {
+  const start = performance.now()
+  let stopped = false
+  return {
+    stop: (suffix?: string) => {
+      if (stopped) return 0
+      stopped = true
+      const elapsed = Math.round(performance.now() - start)
+      const tag = suffix ? ` ${suffix}` : ''
+      log.trace('[⏱Timer] %s%s: %dms', label, tag, elapsed)
+      return elapsed
+    },
+    lap: (tag: string) => {
+      const elapsed = Math.round(performance.now() - start)
+      log.trace('[⏱Lap] %s — %s: %dms', label, tag, elapsed)
+      return elapsed
+    },
+  }
+}
 
 export interface ChatMessage {
   id: string
@@ -148,6 +192,10 @@ async function attemptFormatRepair(
 【${voiceName}】<角色母语内容>
 【译文】<用户语言内容>
 
+注意：
+1 - 角色母语内容只包含可以直接读出的自然语言，不能有特殊符号，不能有描述性语言。
+2 - 译文保留完整内容。
+
 请将以下回复重新组织成上面的格式。只输出修正后的文本，不要任何额外说明。`,
         },
         { role: 'user', content: originalText },
@@ -216,158 +264,283 @@ export const useChatStore = defineStore('chat', () => {
   let abortController: AbortController | null = null
 
   function init() {
-    configReady.value = isConfigValid(loadConfig())
-    log.info('ChatStore 初始化, 配置%s就绪', configReady.value ? '' : '未')
+    log.trace('[init] ▶')
+    const timer = debugTimer('init')
+    const cfg = loadConfig()
+    const valid = isConfigValid(cfg)
+    configReady.value = valid
+    log.info('[init] ChatStore 初始化, 配置%s就绪', valid ? '' : '未')
+    log.debug('[init] 配置详情: model=%s baseURL=%s hasKey=%s',
+      cfg.model || '(未设置)',
+      cfg.baseURL || '(默认)',
+      cfg.apiKey ? '✓' : '✗')
+    log.trace('[init] configReady → %s', valid)
+    timer.stop()
+    log.trace('[init] ◀')
   }
 
   /** 发送消息给 AI（支持工具调用循环） */
   async function sendMessage(text: string) {
-    if (isProcessing.value) return
-    if (!text.trim()) return
+    const _fn = 'sendMessage'
+    const _timer = debugTimer(_fn)
+    log.trace('[%s] ▶ text="%s"', _fn, text?.slice(0, 50))
+
+    // ── 守卫条件检查 ────────────────────────────────────
+    if (isProcessing.value) {
+      log.warn('[%s] ⚠ 正在处理中，忽略重复请求 (text=%s)', _fn, text?.slice(0, 30))
+      return
+    }
+    if (!text || !text.trim()) {
+      log.warn('[%s] ⚠ 收到空消息，忽略', _fn)
+      return
+    }
 
     const userText = text.trim()
     isProcessing.value = true
+    log.debug('[%s] isProcessing → true', _fn)
 
     // 用户发送新消息时，取消正在播放的语音
+    log.trace('[%s] 取消正在播放的语音', _fn)
     cancelSpeak()
 
     if (!navigator.onLine) {
-      log.warn('网络不可用，无法发送消息')
+      log.warn('[%s] ✗ 网络不可用，无法发送消息', _fn)
+      log.debug('[%s] navigator.onLine=%s', _fn, navigator.onLine)
       showBubbleText('网络似乎断开了，联网后重试吧~', false)
       isProcessing.value = false
+      log.trace('[%s] ◀ (网络不可用)', _fn)
       return
     }
 
-    if (!isConfigValid(loadConfig())) {
-      log.warn('API 未配置，无法发送消息')
+    const cfgCheck = loadConfig()
+    if (!isConfigValid(cfgCheck)) {
+      log.warn('[%s] ✗ API 未配置 (model=%s baseURL=%s hasKey=%s)',
+        _fn, cfgCheck.model || '?', cfgCheck.baseURL || '?', cfgCheck.apiKey ? '✓' : '✗')
       showBubbleText('请先配置 API~ → 设置 填写 API 信息', false)
       isProcessing.value = false
+      log.trace('[%s] ◀ (配置无效)', _fn)
       return
     }
 
-    log.info('用户消息: "%s"', userText.slice(0, 100))
+    log.info('[%s] 用户消息: "%s"', _fn, userText.slice(0, 100))
+    log.debug('[%s] 消息长度: %d 字符', _fn, userText.length)
 
-    // 添加用户消息
+    // ── 添加用户消息 ────────────────────────────────────
     addMessage('user', userText)
     chatContext.addUserMessage(userText)
+    log.trace('[%s] 用户消息已加入 ChatContext', _fn)
 
-    // 准备气泡
+    // ── 准备气泡 ────────────────────────────────────────
     showBubble.value = true
     currentBubbleText.value = ""
     isTyping.value = false
     currentThinking.value = ''
+    log.trace('[%s] 气泡状态: showBubble=true text="" isTyping=false', _fn)
 
-    // 同步角色数据到 agent 上下文（替代 agent 直接 import Pinia）
+    // ── 同步角色数据到 agent 上下文 ─────────────────────
     {
       const charStore = useCharacterStore()
-      if (charStore.data) agentService.syncCharacterData(charStore.data)
+      if (charStore.data) {
+        agentService.syncCharacterData(charStore.data)
+        log.trace('[%s] 角色数据已同步到 agent 上下文 (voice=%s lang=%s)',
+          _fn, charStore.data.voice || '?', charStore.data.voiceLanguage || '?')
+      } else {
+        log.trace('[%s] 无角色数据可同步', _fn)
+      }
     }
 
-    // 收集工具定义
+    // ── 收集工具定义 ────────────────────────────────────
     const tools = agentService.getToolDefinitions()
+    log.debug('[%s] 工具定义数量: %d', _fn, tools.length)
+    if (tools.length > 0) {
+      const toolNames = tools.map(t => t.function?.name || '(unnamed)').join(', ')
+      log.debug('[%s] 工具列表: [%s]', _fn, toolNames)
+    }
 
-    // 检测当前模型是否支持 JSON 格式输出（strict json_schema 或 json_object）
+    // ── 检测 JSON 格式支持 ───────────────────────────────
     const config = loadConfig()
     const strictOk = supportsStructuredOutput(config.model)
     const jsonOk = supportsJsonMode(config.model)
     const canUseJson = strictOk || jsonOk
+    log.debug('[%s] 模型=%s strict=%s json=%s canUseJson=%s',
+      _fn, config.model, strictOk, jsonOk, canUseJson)
     if (canUseJson) {
       const mode = strictOk ? 'json_schema(严格)' : 'json_object(宽松)'
-      log.info('📐 [结构化输出] 模型=%s 模式=%s', config.model, mode)
-      // 启用 JSON 格式的系统提示词（即使有工具定义，工具轮次后的文本回复仍然需要 JSON）
+      log.info('[%s] [结构化输出] 模型=%s 模式=%s', _fn, config.model, mode)
       chatContext.setStructuredOutput(true)
     } else {
-      log.info('📐 [结构化输出] 模型不支持 (model=%s)', config.model)
+      log.info('[%s] [结构化输出] 模型不支持 (model=%s)', _fn, config.model)
     }
 
     abortController = new AbortController()
     let thinkSplitDone = false
+    let finalTextFromLoop: string | null = null  // 追踪循环是否产生最终文本
 
-    // 工具调用循环，最多 5 轮防止死循环
+    // ── 工具调用循环 ─────────────────────────────────────
     const MAX_TOOL_TURNS = 5
+    log.trace('[%s] 工具循环开始 MAX_TOOL_TURNS=%d', _fn, MAX_TOOL_TURNS)
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+      log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, MAX_TOOL_TURNS)
+      const turnTimer = debugTimer(`${_fn} turn#${turn}`)
+
       // 结构化输出与 tools 互斥：只在无工具轮次启用
       const turnHasTools = turn === 0 && tools.length > 0
       const rf = !turnHasTools && canUseJson ? getBilingualResponseFormat(config.model) : undefined
+
+      log.trace('[%s] 第%d轮: turnHasTools=%s rf=%s', _fn, turn, turnHasTools, rf?.type || 'none')
       if (rf) {
-        log.info('📐 第%d轮: 使用 response_format=%s', turn, rf.type)
+        log.info('[%s] 第%d轮: 使用 response_format=%s schema=%s', _fn, turn, rf.type,
+          (rf as any).json_schema?.name || '-')
       } else if (turnHasTools) {
-        log.info('📐 第%d轮: tools 启用 → 跳过 response_format', turn)
+        log.info('[%s] 第%d轮: tools=%d 个启用 → 跳过 response_format', _fn, turn, tools.length)
+      } else {
+        log.info('[%s] 第%d轮: 纯文本模式（无 tools 无 response_format）', _fn, turn)
       }
+
       try {
         let contentBuffer = ""  // 单轮缓冲区：累积完整内容后统一解析
-        const result = await chatOnce(
+        const chatTimer = debugTimer(`${_fn} chatOnce turn#${turn}`)
+        log.trace('[%s] 第%d轮 chat() 发起请求...', _fn, turn)
+
+        // 流式回调（提取出来以便重试时复用）
+        const streamCallbacks = {
+          onChunk: (delta: string) => {
+            contentBuffer += delta
+            // 仍从内容中提取 thinking（如 <think> 标签）用于实时显示
+            if (!thinkSplitDone) {
+              const full = contentBuffer
+              const match = full.match(/^([\s\S]*?)<\/think>\s*([\s\S]*)$/)
+              if (match) {
+                const think = match[1].replace(/^<think>\s*/, '')
+                if (think) {
+                  currentThinking.value = think
+                  log.debug('[%s] 第%d轮 <think> 标签检测到，提取 %d 字符', _fn, turn, think.length)
+                }
+                thinkSplitDone = true
+                log.trace('[%s] 第%d轮 thinkSplitDone → true', _fn, turn)
+                return
+              }
+              if (full.includes('<think>') && !full.includes('</think>')) {
+                currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
+                log.trace('[%s] 第%d轮 thinking 累积中 (%d 字符)', _fn, turn, currentThinking.value.length)
+                return
+              }
+            }
+          },
+          onThinking: (t: string) => {
+            currentThinking.value += t
+            log.trace('[%s] onThinking 收到 %d 字符，累积 %d 字符', _fn, t.length, currentThinking.value.length)
+          },
+        }
+
+        let result = await chatOnce(
           chatContext.getMessages(),
           turnHasTools ? tools : [],
           abortController.signal,
-          {
-            onChunk: (delta) => {
-              // 缓冲内容，不直接更新气泡（等待结构化解析后以打字机形式显示）
-              contentBuffer += delta
-              // 仍从内容中提取 thinking（如 <think> 标签）用于实时显示
-              if (!thinkSplitDone) {
-                const full = contentBuffer
-                const match = full.match(/^([\s\S]*?)<\/think>\s*([\s\S]*)$/)
-                if (match) {
-                  const think = match[1].replace(/^<think>\s*/, '')
-                  if (think) currentThinking.value = think
-                  thinkSplitDone = true
-                  return
-                }
-                if (full.includes('<think>') && !full.includes('</think>')) {
-                  currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
-                  return
-                }
-              }
-            },
-            onThinking: (t) => {
-              currentThinking.value += t
-            },
-          },
+          streamCallbacks,
           rf,
         )
+        chatTimer.stop()
+
+        // DeepSeek JSON 模式空 content 重试（一次）
+        // DeepSeek 在使用 json_object 时有概率返回空的 content 字段
+        // 参考：https://api-docs.deepseek.com/guides/json_mode
+        if (result.type === 'done' && !result.text?.trim() && jsonOk) {
+          log.warn('[%s] 第%d轮 ⚠ DeepSeek JSON 模式返回空内容，重试一次...', _fn, turn)
+          contentBuffer = ''
+          thinkSplitDone = false
+          result = await chatOnce(
+            chatContext.getMessages(),
+            turnHasTools ? tools : [],
+            abortController.signal,
+            streamCallbacks,
+            rf,
+          )
+          chatTimer.stop('含重试')
+        }
 
         if (result.type === 'done') {
           const finalText = result.text
+          finalTextFromLoop = finalText
+
+          log.info('[%s] 第%d轮 AI 回复完成, 长度=%d', _fn, turn, finalText?.length || 0)
+          log.debug('[%s] AI 回复前200字: "%s"', _fn, (finalText || '').slice(0, 200))
 
           // 兜底：检测 AI 文本中是否包含工具调用（不支持原生 FC 的模型会把调用写在文字里）
+          const textCallsTimer = debugTimer(`${_fn} textToolCalls turn#${turn}`)
           const textCalls = agentService.extractTextToolCalls(finalText)
+          textCallsTimer.stop()
           if (textCalls.length > 0) {
+            log.info('[%s] 第%d轮 ✦ 文本工具调用检测: %d 个', _fn, turn, textCalls.length)
+            const tcNames = textCalls.map(tc => tc.name || tc.function?.name || '(unnamed)').join(', ')
+            log.debug('[%s] 第%d轮 ✦ 工具列表: [%s]', _fn, turn, tcNames)
+
             isUsingTools.value = true
             currentBubbleText.value = ""
             // 将 AI 回复（不含工具调用部分）加入上下文
             const cleanText = agentService.stripTextToolCalls(finalText)
+            log.trace('[%s] 第%d轮 strip 后文本长度=%d', _fn, turn, cleanText?.length || 0)
             if (cleanText) {
               chatContext.addAssistantMessage(cleanText)
+              log.trace('[%s] 第%d轮 清洗后文本已加入 ChatContext', _fn, turn)
             }
+
             // 依次执行工具
-            for (const tc of textCalls) {
-              const result = await agentService.execute(tc)
-              chatContext.addToolResult(tc.id, result.content)
+            log.trace('[%s] 第%d轮 ✦ 开始顺序执行 %d 个文本工具', _fn, turn, textCalls.length)
+            for (let ti = 0; ti < textCalls.length; ti++) {
+              const tc = textCalls[ti]
+              const toolTimer = debugTimer(`${_fn} textTool#${ti} turn#${turn}`)
+              const tcName = tc.name || tc.function?.name || '?'
+              log.info('[%s] 第%d轮 ✦ 执行文本工具[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tcName)
+              log.debug('[%s] 第%d轮 ✦ 工具参数: %O', _fn, turn, tc.arguments || tc.function?.arguments)
+              const toolResult = await agentService.execute(tc)
+              toolTimer.stop()
+              log.debug('[%s] 第%d轮 ✦ 工具结果: %s', _fn, turn,
+                (toolResult?.content || '').slice(0, 150))
+              chatContext.addToolResult(tc.id, toolResult.content)
+              log.trace('[%s] 第%d轮 ✦ 工具结果已加入 ChatContext', _fn, turn)
             }
             isUsingTools.value = false
+            turnTimer.stop(`tools → continue`)
+            log.info('[%s] 第%d轮 ✦ 文本工具执行完毕，进入下一轮', _fn, turn)
             continue // 继续请求 AI 生成最终回复
           }
+          log.trace('[%s] 第%d轮 无文本工具调用', _fn, turn)
 
           // 正常文本回复 — 解析双语内容
           if (finalText) {
             // 如果启用了 JSON 格式输出，优先尝试 JSON 解析
             let parsed: { nativeText: string; displayText: string } | null = null
             let parseMethod = '标记格式【】'
+            const parseTimer = debugTimer(`${_fn} parse turn#${turn}`)
+
             if (canUseJson) {
+              log.trace('[%s] 第%d轮 尝试 JSON 结构化解析...', _fn, turn)
               parsed = tryParseStructuredOutput(finalText)
+              parseTimer.lap('JSON解析')
               if (parsed) {
                 parseMethod = 'JSON结构化输出'
-                log.info('📐 解析成功: %s', parseMethod)
+                log.info('[%s] 第%d轮 ✓ JSON 结构化解析成功: native=%d字 display=%d字',
+                  _fn, turn, parsed.nativeText.length, parsed.displayText.length)
               } else {
-                log.warn('📐 JSON解析失败，降级到标记格式解析 (文本前60字: %s)', finalText.slice(0, 60))
+                log.warn('[%s] 第%d轮 ✗ JSON 解析失败，降级到标记格式 (文本前60字: "%s")',
+                  _fn, turn, finalText.slice(0, 60))
               }
             }
+
             // JSON 解析失败或未启用结构化 → 降级到标记格式解析
             if (!parsed) {
+              log.trace('[%s] 第%d轮 尝试标记格式解析【】...', _fn, turn)
               parsed = parseBilingualResponse(finalText)
+              parseTimer.lap('标记解析')
+              log.debug('[%s] 第%d轮 标记解析结果: native="%s" display="%s"',
+                _fn, turn, (parsed.nativeText || '').slice(0, 40), (parsed.displayText || '').slice(0, 40))
             }
+
             let { nativeText, displayText } = parsed
+            parseTimer.stop()
+            log.debug('[%s] 第%d轮 解析结果: native=%d字 display=%d字 parseMethod=%s',
+              _fn, turn, nativeText.length, displayText.length, parseMethod)
 
             // 格式恢复：当语言不同但解析结果相同时（AI 忘记双语格式），
             // 自动发起一次修复请求
@@ -375,137 +548,371 @@ export const useChatStore = defineStore('chat', () => {
               const charStore = useCharacterStore()
               const vLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
               const dLang = resolveDisplayLanguage(charStore.data?.textLanguage)
+              log.info('[%s] 第%d轮 ⚠ nativeText === displayText (%d字), 检查是否需修复 (语音=%s, 显示=%s)',
+                _fn, turn, nativeText.length, vLang, dLang)
               if (vLang !== dLang) {
-                log.warn('双语格式未遵守，尝试修复 (语音=%s, 显示=%s)', vLang, dLang)
+                log.warn('[%s] 第%d轮 ⚠ 双语格式未遵守，尝试修复 (语音=%s, 显示=%s)',
+                  _fn, turn, vLang, dLang)
+                log.debug('[%s] 第%d轮 原始文本: "%s"', _fn, turn, finalText.slice(0, 200))
+                // 标记格式违规，下次请求将重新附上完整格式指令而非简短提醒
+                chatContext.markFormatViolation()
+                const repairTimer = debugTimer(`${_fn} formatRepair turn#${turn}`)
                 const repaired = await attemptFormatRepair(finalText, vLang, dLang, abortController?.signal)
+                repairTimer.stop()
                 if (repaired) {
-                  // 修复结果也尝试 JSON 解析优先
+                  log.info('[%s] 第%d轮 ✓ 格式修复成功 (%d→%d字)',
+                    _fn, turn, finalText.length, repaired.length)
+                  log.trace('[%s] 第%d轮 修复后文本: "%s"', _fn, turn, repaired.slice(0, 150))
                   const repairedParsed = tryParseStructuredOutput(repaired) ?? parseBilingualResponse(repaired)
                   nativeText = repairedParsed.nativeText
                   displayText = repairedParsed.displayText
+                  log.debug('[%s] 第%d轮 修复后解析: native=%d字 display=%d字',
+                    _fn, turn, nativeText.length, displayText.length)
+                } else {
+                  log.warn('[%s] 第%d轮 ✗ 格式修复失败或无效，使用原始文本', _fn, turn)
                 }
+              } else {
+                log.debug('[%s] 第%d轮 语言相同(v=%s d=%s)，跳过修复', _fn, turn, vLang, dLang)
               }
             }
 
             chatContext.addAssistantMessage(displayText)
             addMessage('assistant', displayText, currentThinking.value)
-            log.info('📐 AI 回复完成 [解析:%s] (显示:%d字, TTS:%d字)', parseMethod, displayText.length, nativeText.length)
+            log.info('[%s] 第%d轮 ✓ AI 回复完成 [解析:%s] (显示:%d字, TTS:%d字)',
+              _fn, turn, parseMethod, displayText.length, nativeText.length)
+            log.debug('[%s] 第%d轮 显示文本: "%s"', _fn, turn, displayText.slice(0, 100))
+            log.debug('[%s] 第%d轮 TTS文本: "%s"', _fn, turn, nativeText.slice(0, 100))
+            if (currentThinking.value) {
+              log.debug('[%s] 第%d轮 thinking: "%s"', _fn, turn, currentThinking.value.slice(0, 100))
+            }
+
             // TTS 播报使用角色母语文本
             triggerTts(nativeText)
+
             // 气泡输出：非流式，等待结构化解析成功后以打字机动画显示文本
             currentBubbleText.value = displayText
             isTyping.value = true
+            log.trace('[%s] 第%d轮 气泡文本已设置 (%d字) typing=%s',
+              _fn, turn, displayText.length, isTyping.value)
+          } else {
+            log.warn('[%s] 第%d轮 ⚠ AI 返回空文本', _fn, turn)
           }
+          turnTimer.stop('done — break')
+          log.trace('[%s] 第%d轮 ◀ (break from loop)', _fn, turn)
           break
         }
 
         if (result.type === 'tools') {
+          const toolCalls = result.calls
+          log.info('[%s] 第%d轮 ★ 原生工具调用: %d 个', _fn, turn, toolCalls.length)
+          const tcNames = toolCalls.map(tc => tc.function?.name || '(unnamed)').join(', ')
+          log.debug('[%s] 第%d轮 ★ 工具列表: [%s]', _fn, turn, tcNames)
+
           // 执行工具
           isUsingTools.value = true
           currentBubbleText.value = ""
+          log.trace('[%s] 第%d轮 isUsingTools=true bubble=clear', _fn, turn)
 
           // 将 tool_calls 加入上下文
           chatContext.addAssistantToolCall(result.calls)
+          log.trace('[%s] 第%d轮 ★ %d 个 tool_calls 已加入 ChatContext', _fn, turn, toolCalls.length)
 
           // 按顺序执行工具（大部分工具串行执行更安全）
-          for (const tc of result.calls) {
-            const toolCall: ToolCall = {
-              id: tc.id,
-              name: tc.function.name,
-              arguments: JSON.parse(tc.function.arguments || '{}'),
+          log.trace('[%s] 第%d轮 ★ 开始顺序执行 %d 个工具', _fn, turn, toolCalls.length)
+          for (let ti = 0; ti < toolCalls.length; ti++) {
+            const tc = toolCalls[ti]
+            const toolTimer = debugTimer(`${_fn} tool#${ti} turn#${turn}`)
+            const tcName = tc.function?.name || '?'
+            log.info('[%s] 第%d轮 ★ 执行工具[%d/%d]: %s (id=%s)',
+              _fn, turn, ti + 1, toolCalls.length, tcName, tc.id)
+            log.debug('[%s] 第%d轮 ★ 工具参数: %s', _fn, turn,
+              (tc.function?.arguments || '{}').slice(0, 300))
+            let toolCall: ToolCall
+            try {
+              toolCall = {
+                id: tc.id,
+                name: tc.function.name,
+                arguments: JSON.parse(tc.function.arguments || '{}'),
+              }
+              log.trace('[%s] 第%d轮 ★ 参数 JSON 解析成功', _fn, turn)
+            } catch (parseErr) {
+              log.error('[%s] 第%d轮 ★ 工具参数 JSON 解析失败: %s', _fn, turn, (parseErr as Error).message)
+              log.debug('[%s] 第%d轮 ★ 原始参数: "%s"', _fn, turn, tc.function.arguments)
+              throw parseErr
             }
             const toolResult = await agentService.execute(toolCall)
+            toolTimer.stop()
+            log.debug('[%s] 第%d轮 ★ 工具结果(%s): content=%s',
+              _fn, turn, tcName, (toolResult?.content || '').slice(0, 200))
             chatContext.addToolResult(tc.id, toolResult.content)
+            log.trace('[%s] 第%d轮 ★ 工具结果已加入 ChatContext', _fn, turn)
           }
 
           isUsingTools.value = false
           currentBubbleText.value = ""
+          turnTimer.stop(`tools — continue`)
+          log.info('[%s] 第%d轮 ★ 所有工具执行完毕，继续下一轮 AI 请求', _fn, turn)
+          log.trace('[%s] 第%d轮 ◀ (continue to turn %d)', _fn, turn, turn + 1)
           // 继续循环，用工具结果再请求 AI
           continue
         }
       } catch (err) {
-        if ((err as Error).name === 'AbortError') break
-        showBubbleText(`出错了: ${(err as Error).message}`, false)
+        const errMsg = (err as Error).message
+        const errName = (err as Error).name
+        if (errName === 'AbortError') {
+          log.info('[%s] 第%d轮 ⏹ 请求被取消 (AbortError)', _fn, turn)
+          break
+        }
+        log.error('[%s] 第%d轮 ✗ 错误: [%s] %s', _fn, turn, errName, errMsg)
+        log.debug('[%s] 第%d轮 ✗ 错误堆栈: %s', _fn, turn, (err as Error).stack || '(无堆栈)')
+        showBubbleText(`出错了: ${errMsg}`, false)
         break
       }
     }
 
+    // ── 循环结束 ────────────────────────────────────────
     // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
     if (!currentBubbleText.value) {
-        showBubbleText('我已经处理好了，还有什么需要帮忙的吗？', false)
+      log.info('[%s] ⚠ %d 轮循环后无文本回复，展示兜底提示 (finalTextFromLoop=%s)',
+        _fn, MAX_TOOL_TURNS, finalTextFromLoop ? '有' : '无')
+      showBubbleText('我已经处理好了，还有什么需要帮忙的吗？', false)
+    } else {
+      log.debug('[%s] 循环结束，气泡已设置 (%d字)', _fn, currentBubbleText.value.length)
     }
 
     isProcessing.value = false
     abortController = null
+    log.debug('[%s] isProcessing → false abortController → null', _fn)
+    _timer.stop()
+    log.trace('[%s] ◀ (正常结束)', _fn)
   }
 
   /** 触发角色 TTS 语音播报 */
   let lastTtsText = ''
   async function triggerTts(text: string) {
+    const _fn = 'triggerTts'
+    log.trace('[%s] ▶ text="%s"', _fn, text?.slice(0, 50))
+
     // 去重：连续播报相同文本跳过
-    if (text === lastTtsText) return
+    if (text === lastTtsText) {
+      log.trace('[%s] 跳过重复播报: text === lastTtsText', _fn)
+      return
+    }
     lastTtsText = text
+    log.debug('[%s] lastTtsText 已更新 (%d字)', _fn, text.length)
 
     try {
       const charStore = useCharacterStore()
       const voiceId = charStore.data?.voice
-      if (!voiceId) return
+      if (!voiceId) {
+        log.trace('[%s] 无 voiceId 配置，跳过 TTS', _fn)
+        return
+      }
+      const voiceLang = charStore.data?.voiceLanguage || '?'
+      log.info('[%s] 开始 TTS 播报: voiceId=%s lang=%s text=%d字',
+        _fn, voiceId, voiceLang, text.length)
+      log.debug('[%s] TTS 文本: "%s"', _fn, text.slice(0, 120))
+      const ttsTimer = debugTimer(_fn)
       await speakTextStreaming(text, voiceId)
-    } catch {
-      // 静默失败
+      ttsTimer.stop()
+      log.info('[%s] ✓ TTS 播报完成', _fn)
+    } catch (err) {
+      log.warn('[%s] ⚠ TTS 播报失败 (静默): %s', _fn, (err as Error).message)
     }
+    log.trace('[%s] ◀', _fn)
   }
 
   function cancelResponse() {
-    abortController?.abort()
-    abortController = null
+    const _fn = 'cancelResponse'
+    log.trace('[%s] ▶', _fn)
+    log.debug('[%s] 取消前状态: isProcessing=%s isUsingTools=%s abortController=%s',
+      _fn, isProcessing.value, isUsingTools.value, abortController ? '存在' : 'null')
+
+    if (abortController) {
+      log.trace('[%s] 调用 abortController.abort()', _fn)
+      abortController.abort()
+      abortController = null
+      log.trace('[%s] abortController → null', _fn)
+    } else {
+      log.trace('[%s] abortController 已为 null', _fn)
+    }
+
     isProcessing.value = false
     isUsingTools.value = false
     cancelSpeak()
-    log.info('AI 回复已取消')
+    log.info('[%s] ✓ AI 回复已取消 (isProcessing=%s isUsingTools=%s)',
+      _fn, isProcessing.value, isUsingTools.value)
+    log.trace('[%s] ◀', _fn)
   }
 
   function addMessage(role: ChatMessage['role'], text: string, thinking?: string) {
+    const _fn = 'addMessage'
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const msgLen = text.length
+    const thinkLen = thinking?.length || 0
+
+    log.trace('[%s] ▶ role=%s text=%d字 thinking=%d字', _fn, role, msgLen, thinkLen)
+    log.debug('[%s] 消息ID=%s role=%s text="%s"', _fn, id, role, text.slice(0, 60))
+
     messages.value.push({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id,
       role,
       text,
       thinking: thinking || undefined,
       timestamp: Date.now(),
     })
+
+    log.debug('[%s] ✓ 已添加: 当前消息总数=%d 最新ID=%s', _fn, messages.value.length, id)
+
+    // 保存到当前会话
+    const saveTimer = debugTimer(`${_fn} saveSession`)
+    useSessionStore().saveCurrentSession()
+    saveTimer.stop()
+    log.trace('[%s] ◀', _fn)
   }
 
   function clearMessages() {
+    const _fn = 'clearMessages'
+    const prevCount = messages.value.length
+    log.trace('[%s] ▶ (当前消息数=%d)', _fn, prevCount)
+
+    if (prevCount > 0) {
+      log.debug('[%s] 最后一条消息: role=%s text="%s"', _fn,
+        messages.value[prevCount - 1]?.role || '?',
+        (messages.value[prevCount - 1]?.text || '').slice(0, 50))
+    }
+
     messages.value = []
+    log.trace('[%s] messages → []', _fn)
+
     chatContext = new ChatContext()
-    log.info('聊天记录已清空')
+    log.trace('[%s] chatContext → new ChatContext()', _fn)
+
+    // 保存清空状态到当前会话
+    useSessionStore().saveCurrentSession()
+    log.info('[%s] ✓ 已清空 %d 条聊天记录', _fn, prevCount)
+    log.trace('[%s] ◀', _fn)
   }
 
   function resetContext() {
+    const _fn = 'resetContext'
+    log.trace('[%s] ▶', _fn)
+    const oldContext = chatContext
     chatContext = new ChatContext()
-    log.debug('对话上下文已重置')
+    log.debug('[%s] ✓ 对话上下文已重置 (old context=%s)', _fn, oldContext.constructor.name)
+    log.trace('[%s] ◀', _fn)
+  }
+
+  /**
+   * 加载历史消息（会话切换时使用）
+   * 保留 system prompt，清除当前消息并用历史消息重建 AI 上下文
+   */
+  function loadMessages(msgs: ChatMessage[]) {
+    const _fn = 'loadMessages'
+    log.trace('[%s] ▶ msgs.length=%d', _fn, msgs.length)
+
+    // 统计消息组成
+    const userCount = msgs.filter(m => m.role === 'user').length
+    const asstCount = msgs.filter(m => m.role === 'assistant').length
+    log.debug('[%s] 消息组成: user=%d assistant=%d 总计=%d', _fn, userCount, asstCount, msgs.length)
+
+    if (msgs.length > 0) {
+      log.debug('[%s] 首条消息: role=%s text="%s"', _fn, msgs[0].role, msgs[0].text.slice(0, 50))
+      log.debug('[%s] 末条消息: role=%s text="%s"', _fn, msgs[msgs.length - 1].role, msgs[msgs.length - 1].text.slice(0, 50))
+    }
+
+    messages.value = [...msgs]
+    log.trace('[%s] messages 已替换（当前 %d 条）', _fn, messages.value.length)
+
+    // 重置气泡和 AI 上下文
+    hideBubble()
+    showInput.value = false
+    currentThinking.value = ''
+    isProcessing.value = false
+    isUsingTools.value = false
+    log.trace('[%s] 气泡状态已重置: hideBubble showInput=false thinking=""', _fn)
+
+    if (abortController) {
+      log.trace('[%s] 取消进行中的请求 (abortController.abort())', _fn)
+      abortController.abort()
+      abortController = null
+    }
+    chatContext.reset()
+    log.trace('[%s] ChatContext 已重置', _fn)
+
+    // 重放消息到 AI 上下文（仅 user/assistant，工具调用已过期）
+    log.trace('[%s] 开始重放 %d 条消息到 ChatContext...', _fn, msgs.length)
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]
+      if (msg.role === 'user') {
+        chatContext.addUserMessage(msg.text)
+        log.trace('[%s]   [%d/%d] user → context: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
+      } else if (msg.role === 'assistant') {
+        chatContext.addAssistantMessage(msg.text)
+        log.trace('[%s]   [%d/%d] assistant → context: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
+      }
+    }
+    log.debug('[%s] ✓ 消息重放完成', _fn)
+
+    // 会话切换后，气泡显示目标会话的最后一条 AI 消息（含思考过程）
+    const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
+    if (lastAssistant) {
+      currentThinking.value = lastAssistant.thinking || ''
+      showBubbleText(lastAssistant.text, false)
+      log.debug('[%s] ✓ 显示最后AI消息: text="%s" thinking=%s',
+        _fn, lastAssistant.text.slice(0, 40), lastAssistant.thinking ? `${lastAssistant.thinking.length}字` : '无')
+    } else {
+      log.trace('[%s] 无历史 AI 消息，气泡保持隐藏', _fn)
+    }
+    log.info('[%s] ✓ 已加载会话消息: %d 条 (user=%d asst=%d), 最后AI消息: %s',
+      _fn, msgs.length, userCount, asstCount,
+      lastAssistant ? `"${lastAssistant.text.slice(0, 30)}..."` : '无')
+    log.trace('[%s] ◀', _fn)
   }
 
   /** 更新角色 system prompt（含语言配置） */
   function setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string) {
+    const _fn = 'setSystemPrompt'
+    log.trace('[%s] ▶ prompt=%d字 voiceLang=%s displayLang=%s',
+      _fn, prompt?.length || 0, voiceLang || '?', displayLang || '?')
+    log.debug('[%s] prompt前50字: "%s"', _fn, (prompt || '').slice(0, 50))
     chatContext.setSystemPrompt(prompt, voiceLang, displayLang)
+    log.debug('[%s] ✓ system prompt 已更新', _fn)
+    log.trace('[%s] ◀', _fn)
   }
 
   function showBubbleText(text: string, typing: boolean = true) {
+    const _fn = 'showBubbleText'
+    log.trace('[%s] text=%d字 typing=%s text="%s"', _fn, text.length, typing, text.slice(0, 50))
     currentBubbleText.value = text
     isTyping.value = typing
     showBubble.value = true
+    log.debug('[%s] ✓ showBubble=%s isTyping=%s', _fn, showBubble.value, isTyping.value)
   }
 
   function hideBubble() {
+    const _fn = 'hideBubble'
+    log.trace('[%s] ▶ (当前文本=%d字)', _fn, currentBubbleText.value.length)
     currentBubbleText.value = ""
     isTyping.value = false
     showBubble.value = false
+    log.trace('[%s] ◀ 气泡已隐藏', _fn)
   }
 
-  function toggleInput() { showInput.value = !showInput.value }
-  function openInput() { showInput.value = true }
-  function closeInput() { showInput.value = false }
+  function toggleInput() {
+    showInput.value = !showInput.value
+    log.trace('[toggleInput] showInput → %s', showInput.value)
+  }
+
+  function openInput() {
+    showInput.value = true
+    log.trace('[openInput] showInput → true')
+  }
+
+  function closeInput() {
+    showInput.value = false
+    log.trace('[closeInput] showInput → false')
+  }
 
   return {
     messages,
@@ -523,6 +930,7 @@ export const useChatStore = defineStore('chat', () => {
     addMessage,
     clearMessages,
     resetContext,
+    loadMessages,
     setSystemPrompt,
     showBubbleText,
     hideBubble,

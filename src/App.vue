@@ -9,9 +9,11 @@ import InputBox from './components/InputBox.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
+import SessionList from './components/SessionList.vue'
 import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
+import { useSessionStore } from './stores/session'
 import { useCharacterStore } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure } from './ai'
@@ -40,12 +42,14 @@ const isSettings = new URLSearchParams(window.location.search).has(QUERY_SETTING
 const isLogs = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 
 const chat = useChatStore()
+const sessionStore = useSessionStore()
 const charStore = useCharacterStore()
 
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
 const bubbleRef = ref<InstanceType<typeof DialogueBubble> | null>(null)
 
 const showHistory = ref(false)
+const showSession = ref(false)
 const showCharacterSelect = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
 
@@ -78,8 +82,11 @@ onMounted(async () => {
     chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
   }
 
+  // 初始化会话管理（system prompt 设定后加载历史消息）
+  sessionStore.init()
+
   setTimeout(() => {
-    if (!welcomeShown) {
+    if (!welcomeShown && chat.messages.length === 0) {
       welcomeShown = true
       chat.showBubbleText('嘿嘿', true)
     }
@@ -245,6 +252,10 @@ async function handleSelectCharacter(charId: string) {
           <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
         </button>
+        <button class="tool-btn" @click="showSession = !showSession" aria-label="会话管理">
+          <i class="fas fa-comments btn-icon"></i>
+          <span class="btn-label">会话</span>
+        </button>
         <button class="tool-btn" @click="showHistory = !showHistory" aria-label="打开对话历史">
           <i class="fas fa-clipboard-list btn-icon"></i>
           <span class="btn-label">历史</span>
@@ -280,6 +291,7 @@ async function handleSelectCharacter(charId: string) {
 
     <!-- 面板 -->
     <ChatHistory :visible="showHistory" @close="showHistory = false" />
+    <SessionList :visible="showSession" @close="showSession = false" />
     <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false" @select="handleSelectCharacter" />
   </main>
 </template>

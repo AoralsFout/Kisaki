@@ -1,15 +1,26 @@
 /**
  * 角色数据 Store (Pinia)
  *
- * 管理当前角色的 JSON 数据加载和切换。
+ * 管理当前角色的 JSON 数据加载、切换，以及角色的实时视觉状态。
+ * 视觉状态（情绪/姿势/服装/屏幕位置）存放在此，供 controller 和
+ * session 管理共享读写。
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { loadCharacterJson, listCharacters, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
+import { DEFAULT_POSE } from '../character/poses'
+import type { PoseKey } from '../character/poses'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('CharacterStore')
+
+export interface CharacterVisualState {
+  emotion: string
+  stance: string
+  costume: string
+  screenPose: PoseKey
+}
 
 export const useCharacterStore = defineStore('character', () => {
   const currentId = ref('kisaki')
@@ -18,6 +29,12 @@ export const useCharacterStore = defineStore('character', () => {
   const availableList = ref<string[]>([])
   /** 角色 ID → 显示名称 缓存（供列表使用，避免逐个加载完整 JSON） */
   const charNames = ref<Record<string, string>>({})
+
+  // ── 角色视觉状态（供 controller + session 共享） ──
+  const currentEmotion = ref('')
+  const currentStance = ref('')
+  const currentCostume = ref('')
+  const currentScreenPose = ref<PoseKey>(DEFAULT_POSE)
 
   // 计算当前角色的标签列表
   const poses = computed(() => data.value?.poses ?? [])
@@ -78,10 +95,32 @@ export const useCharacterStore = defineStore('character', () => {
     ])
   }
 
+  // ── 视觉状态操作 ──
+
+  /** 应用一组视觉状态（会话恢复时使用） */
+  function applyVisualState(state: Partial<CharacterVisualState>) {
+    if (state.emotion !== undefined) currentEmotion.value = state.emotion
+    if (state.stance !== undefined) currentStance.value = state.stance
+    if (state.costume !== undefined) currentCostume.value = state.costume
+    if (state.screenPose !== undefined) currentScreenPose.value = state.screenPose
+  }
+
+  /** 获取当前视觉状态快照（会话保存时使用） */
+  function getVisualStateSnapshot(): CharacterVisualState {
+    return {
+      emotion: currentEmotion.value,
+      stance: currentStance.value,
+      costume: currentCostume.value,
+      screenPose: currentScreenPose.value,
+    }
+  }
+
   return {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt,
+    currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName,
+    applyVisualState, getVisualStateSnapshot,
     loadCharacter, refreshList, init,
   }
 })

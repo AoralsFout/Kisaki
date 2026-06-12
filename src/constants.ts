@@ -66,3 +66,9 @@ export const DEFAULT_TEXT_LANGUAGE = 'zh-CN'
 /** 打字机显示速度（ms/字符） */
 export const STORAGE_TYPING_SPEED = 'deskpet-typing-speed'
 export const DEFAULT_TYPING_SPEED = 50
+
+/** 会话列表存储键 */
+export const STORAGE_SESSIONS = 'deskpet-sessions'
+
+/** 当前会话 ID 存储键 */
+export const STORAGE_CURRENT_SESSION = 'deskpet-current-session'
