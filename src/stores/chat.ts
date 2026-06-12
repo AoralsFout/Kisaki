@@ -240,7 +240,7 @@ export const useChatStore = defineStore('chat', () => {
 
     if (!isConfigValid(loadConfig())) {
       log.warn('API 未配置，无法发送消息')
-      showBubbleText('请先配置 API~ 右键菜单 → 设置 填写 API 信息', false)
+      showBubbleText('请先配置 API~ → 设置 填写 API 信息', false)
       isProcessing.value = false
       return
     }

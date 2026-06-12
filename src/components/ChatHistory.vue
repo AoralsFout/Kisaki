@@ -276,8 +276,8 @@ watch(
 .thinking-block {
   margin: 4px 0 6px;
   font-size: 12px;
-  border-left: 2px solid rgba(255, 255, 255, 0.1);
-  padding-left: 8px;
+  /* border-left: 2px solid rgba(255, 255, 255, 0.1);
+  padding-left: 8px; */
 }
 
 .thinking-summary {
@@ -286,7 +286,7 @@ watch(
   cursor: pointer;
   user-select: none;
   outline: none;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .thinking-text {
@@ -295,7 +295,7 @@ watch(
   font-style: italic;
   line-height: 1.5;
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .list-end {

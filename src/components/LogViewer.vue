@@ -424,6 +424,23 @@ async function closeWindow() {
   }
 }
 
+async function maximizeWindow() {
+  let maximized = await getCurrentWebviewWindow().isMaximized()
+  if (maximized) {
+    try {
+      await getCurrentWebviewWindow().unmaximize()
+    } catch (e) {
+      console.warn('[LogViewer] 取消最大化窗口失败:', e)
+    }
+  } else {
+    try {
+      await getCurrentWebviewWindow().maximize()
+    } catch (e) {
+      console.warn('[LogViewer] 最大化窗口失败:', e)
+    }
+  }
+}
+
 async function minimizeWindow() {
   try {
     await getCurrentWebviewWindow().minimize()
@@ -446,6 +463,7 @@ function onWheel() {
       <span class="topbar-title"><i class="fas fa-receipt"></i> 日志</span>
       <div class="window-controls">
         <button class="win-btn" @click="minimizeWindow" title="最小化">─</button>
+        <button class="win-btn" @click="maximizeWindow" title="最大化">□</button>
         <button class="win-btn win-close" @click="closeWindow" title="关闭">✕</button>
       </div>
     </header>
@@ -455,35 +473,21 @@ function onWheel() {
       <!-- 左区：模式切换 + 级别过滤 -->
       <div class="toolbar-left">
         <div class="mode-tabs">
-          <button
-            :class="['mode-tab', { active: mode === 'realtime' }]"
-            @click="switchMode('realtime')"
-          >
+          <button :class="['mode-tab', { active: mode === 'realtime' }]" @click="switchMode('realtime')">
             <i class="fas fa-bolt"></i> 实时
           </button>
-          <button
-            :class="['mode-tab', { active: mode === 'history' }]"
-            @click="switchMode('history')"
-          >
+          <button :class="['mode-tab', { active: mode === 'history' }]" @click="switchMode('history')">
             <i class="fas fa-clock-rotate"></i> 历史
           </button>
         </div>
 
         <div class="level-filters">
-          <button
-            v-for="lvl in ALL_LEVELS"
-            :key="lvl"
-            :class="['level-btn', lvl, { active: enabledLevels.has(lvl) }]"
-            :style="{ '--lvl-color': LEVEL_BG[lvl] }"
-            @click="toggleLevel(lvl)"
-          >
+          <button v-for="lvl in ALL_LEVELS" :key="lvl" :class="['level-btn', lvl, { active: enabledLevels.has(lvl) }]"
+            :style="{ '--lvl-color': LEVEL_BG[lvl] }" @click="toggleLevel(lvl)">
             {{ LEVEL_LABELS[lvl] }}
           </button>
-          <button
-            class="level-btn all"
-            :class="{ active: enabledLevels.size === ALL_LEVELS.length }"
-            @click="toggleAllLevels"
-          >
+          <button class="level-btn all" :class="{ active: enabledLevels.size === ALL_LEVELS.length }"
+            @click="toggleAllLevels">
             全部
           </button>
         </div>
@@ -497,33 +501,18 @@ function onWheel() {
       <!-- 右区：搜索 + 操作 -->
       <div class="toolbar-right">
         <!-- 历史模式文件选择 -->
-        <select
-          v-if="mode === 'history'"
-          v-model="selectedLogFile"
-          class="file-select"
-          @change="loadHistory"
-        >
+        <select v-if="mode === 'history'" v-model="selectedLogFile" class="file-select" @change="loadHistory">
           <option v-for="f in availableLogFiles" :key="f" :value="f">{{ f }}</option>
         </select>
 
         <div class="search-box">
           <i class="fas fa-circle-nodes search-icon"></i>
-          <input
-            v-model="namespaceFilter"
-            class="search-input"
-            placeholder="命名空间..."
-            title="按命名空间过滤"
-          />
+          <input v-model="namespaceFilter" class="search-input" placeholder="命名空间..." title="按命名空间过滤" />
         </div>
 
         <div class="search-box">
           <i class="fas fa-magnifying-glass search-icon"></i>
-          <input
-            v-model="searchFilter"
-            class="search-input"
-            placeholder="搜索..."
-            title="按消息内容搜索"
-          />
+          <input v-model="searchFilter" class="search-input" placeholder="搜索..." title="按消息内容搜索" />
         </div>
 
         <button class="toolbar-btn" title="刷新（仅历史模式）" @click="refreshLogFileList(); loadHistory()">
@@ -533,24 +522,14 @@ function onWheel() {
           <i class="fas fa-download"></i>
         </button>
 
-        <button
-          v-if="mode === 'realtime'"
-          class="toolbar-btn"
-          title="清空当前日志"
-          @click="handleClear"
-        >
+        <button v-if="mode === 'realtime'" class="toolbar-btn" title="清空当前日志" @click="handleClear">
           <i class="fas fa-trash-can"></i>
         </button>
       </div>
     </div>
 
     <!-- ===== 日志列表 ===== -->
-    <div
-      ref="logListRef"
-      class="log-list"
-      @scroll="handleScroll"
-      @wheel="onWheel"
-    >
+    <div ref="logListRef" class="log-list" @scroll="handleScroll" @wheel="onWheel">
       <!-- 空态 -->
       <div v-if="filteredEntries.length === 0 && !historyLoading" class="empty-state">
         <i class="fas fa-inbox empty-icon"></i>
@@ -573,18 +552,11 @@ function onWheel() {
       </div>
 
       <!-- 日志行 -->
-      <div
-        v-for="entry in filteredEntries"
-        :key="entry.id"
-        :class="['log-row', { expanded: entry.expanded }]"
-        @click="toggleExpand(entry)"
-      >
+      <div v-for="entry in filteredEntries" :key="entry.id" :class="['log-row', { expanded: entry.expanded }]"
+        @click="toggleExpand(entry)">
         <div class="log-line">
           <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
-          <span
-            class="log-level"
-            :style="{ background: LEVEL_BG[entry.level] }"
-          >
+          <span class="log-level" :style="{ background: LEVEL_BG[entry.level] }">
             {{ LEVEL_LABELS[entry.level] }}
           </span>
           <span class="log-namespace">{{ entry.namespace }}</span>
@@ -602,11 +574,7 @@ function onWheel() {
     </div>
 
     <!-- ===== 底部新日志提示 ===== -->
-    <div
-      v-if="hasNewLogs && !autoScroll"
-      class="new-logs-bar"
-      @click="scrollToBottom"
-    >
+    <div v-if="hasNewLogs && !autoScroll" class="new-logs-bar" @click="scrollToBottom">
       <i class="fas fa-arrow-down"></i> 新日志
     </div>
   </div>
@@ -756,11 +724,30 @@ function onWheel() {
   background: color-mix(in srgb, var(--lvl-color) 15%, transparent);
 }
 
-.level-btn.trace.active { color: #888; border-color: #888; }
-.level-btn.debug.active { color: #4fc3f7; border-color: #4fc3f7; }
-.level-btn.info.active { color: #81c784; border-color: #81c784; }
-.level-btn.warn.active { color: #ffb74d; border-color: #ffb74d; }
-.level-btn.error.active { color: #ef5350; border-color: #ef5350; }
+.level-btn.trace.active {
+  color: #888;
+  border-color: #888;
+}
+
+.level-btn.debug.active {
+  color: #4fc3f7;
+  border-color: #4fc3f7;
+}
+
+.level-btn.info.active {
+  color: #81c784;
+  border-color: #81c784;
+}
+
+.level-btn.warn.active {
+  color: #ffb74d;
+  border-color: #ffb74d;
+}
+
+.level-btn.error.active {
+  color: #ef5350;
+  border-color: #ef5350;
+}
 
 .level-btn.all.active {
   border-color: #aaa;
@@ -904,8 +891,13 @@ function onWheel() {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 错误态 */

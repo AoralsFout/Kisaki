@@ -144,8 +144,8 @@ defineExpose({ skipTyping })
 .thinking-block {
   margin-bottom: 8px;
   font-size: 12px;
-  border-left: 3px solid rgba(0, 0, 0, 0.12);
-  padding-left: 8px;
+  /* border-left: 3px solid rgba(0, 0, 0, 0.12); */
+  /* padding-left: 8px; */
 }
 
 .thinking-summary {

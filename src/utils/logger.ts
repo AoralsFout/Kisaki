@@ -175,7 +175,7 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
 
       // 立即写入文件（不等 2 秒节流），确保跨窗口日志不丢失
       enqueueFileWrite(entry)
-      flushImmediately()
+      // flushImmediately()
     }
   }
   bc.addEventListener('message', handler)
