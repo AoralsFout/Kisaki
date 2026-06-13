@@ -52,6 +52,11 @@ export const CHANNEL_DESKPET_DEV = 'deskpet-dev'
 /** 跨窗口日志同步广播通道 */
 export const CHANNEL_DESKPET_LOGS = 'deskpet-logs'
 
+// ─── Tauri 事件名（跨窗口，经 Rust 中转） ──────────────
+
+/** 角色增删改后广播：通知主窗口刷新角色列表（设置窗口 → 主窗口） */
+export const EVENT_CHARACTERS_CHANGED = 'characters-changed'
+
 // ─── 默认值 ───────────────────────────────────────────
 
 /** 默认显示语言 */

@@ -9,6 +9,8 @@ import { bustImageCache } from '../character/loader'
 import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid } from '../tts'
 import { createLogger } from '../utils/logger'
 import { invoke } from '@tauri-apps/api/core'
+import { save, open } from '@tauri-apps/plugin-dialog'
+import { emit } from '@tauri-apps/api/event'
 import { speakTextStreaming, cancelSpeak } from '../tts/speak'
 
 const log = createLogger('CharacterMgr')
@@ -17,7 +19,7 @@ import type { VoiceInfo } from '../tts/types'
 import { SUPPORTED_LANGUAGES } from '../stores/language'
 import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
-import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE } from '../constants'
+import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
 
 const charStore = useCharacterStore()
 
@@ -155,6 +157,7 @@ async function submitCreateForm() {
     })
 
     await charStore.refreshList()
+    emit(EVENT_CHARACTERS_CHANGED)
     showCreateForm.value = false
     enterEditor(id)
     saveMsg.value = `已创建角色 "${name}"`
@@ -223,15 +226,11 @@ function loadData() {
 
 async function loadPrompt() {
   try {
-    // 优先从 data_dir 读取（用户可能已编辑保存过）
     const text = await invoke('read_character_file', { id: editingId.value, filename: 'prompt.txt' }) as string
     promptText.value = text
   } catch {
-    // 回退 web 静态路径
-    try {
-      const res = await fetch(`/characters/${editingId.value}/prompt.txt?_t=${Date.now()}`)
-      if (res.ok) promptText.value = await res.text()
-    } catch { /* ignore */ }
+    // data_dir 中无 prompt.txt（新角色）
+    promptText.value = ''
   }
 }
 
@@ -257,6 +256,7 @@ async function deleteCharacter() {
   try {
     await invoke('delete_character', { id: editingId.value })
     await charStore.refreshList()
+    emit(EVENT_CHARACTERS_CHANGED)
     // 如果删除的是当前正在使用的角色，刷新 store
     if (charStore.currentId === editingId.value) {
       const list = charStore.availableList
@@ -449,10 +449,67 @@ async function saveAll() {
   await charStore.loadCharacter(editingId.value, true)
   loadData()
   bustImageCache()  // 递增缓存版本，下次图片请求使用新 URL
+  emit(EVENT_CHARACTERS_CHANGED) // 通知主窗口刷新（角色内容已变）
   saveMsg.value = '保存成功！文件已更新'
   hasChanges.value = false
   pendingExit.value = false
   setTimeout(() => { saveMsg.value = '' }, 3000)
+}
+
+// ---- 角色包导入 / 导出 ----
+
+const packBusy = ref(false)
+
+/** 导出当前编辑的角色为 .zip 角色包（dialog 选保存路径 → 后端打包） */
+async function exportPack() {
+  if (!editingId.value || packBusy.value) return
+  packBusy.value = true
+  saveMsg.value = ''
+  saveError.value = ''
+  try {
+    const destPath = await save({
+      title: '导出角色包',
+      defaultPath: `${editingId.value}.zip`,
+      filters: [{ name: '角色包', extensions: ['zip'] }],
+    })
+    if (!destPath) return // 用户取消
+    await invoke('export_character_pack', { id: editingId.value, destPath })
+    saveMsg.value = '角色包已导出'
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  } catch (e) {
+    saveError.value = `导出失败: ${(e as Error).message}`
+  } finally {
+    packBusy.value = false
+  }
+}
+
+/** 导入 .zip 角色包（dialog 选文件 → 后端解压，跳过已存在角色） */
+async function importPack() {
+  if (packBusy.value) return
+  packBusy.value = true
+  saveMsg.value = ''
+  saveError.value = ''
+  try {
+    const selected = await open({
+      title: '导入角色包',
+      multiple: false,
+      filters: [{ name: '角色包', extensions: ['zip'] }],
+    })
+    if (typeof selected !== 'string') return // 用户取消
+    const result = await invoke('import_character_pack', { srcPath: selected }) as { imported: string[]; skipped: string[] }
+    await charStore.refreshList()
+    bustImageCache()
+    emit(EVENT_CHARACTERS_CHANGED)
+    const parts: string[] = []
+    if (result.imported.length) parts.push(`导入 ${result.imported.length} 个角色`)
+    if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 个（已存在）`)
+    saveMsg.value = parts.length ? parts.join('，') : '角色包中没有可导入的角色'
+    setTimeout(() => { saveMsg.value = '' }, 4000)
+  } catch (e) {
+    saveError.value = `导入失败: ${(e as Error).message}`
+  } finally {
+    packBusy.value = false
+  }
 }
 </script>
 
@@ -460,10 +517,34 @@ async function saveAll() {
   <div class="char-mgr">
     <!-- ===== 角色卡片列表 ===== -->
     <div v-if="view === 'list'">
-      <div class="mgr-header">
+      <div class="mgr-header mgr-header-row">
         <h2 class="section-title"><i class="fas fa-masks-theater"></i> 选择角色</h2>
+        <button class="btn-import" :disabled="packBusy" @click="importPack">
+          <i class="fas fa-file-import"></i> 导入角色包
+        </button>
       </div>
+      <div class="list-status">
+        <span v-if="saveMsg" class="save-msg"><i class="fas fa-check-circle"></i> {{ saveMsg }}</span>
+        <span v-if="saveError" class="save-err"><i class="fas fa-xmark-circle"></i> {{ saveError }}</span>
+      </div>
+
+      <!-- 零角色空状态引导 -->
+      <div v-if="displayList.length === 0" class="empty-guide">
+        <i class="fas fa-masks-theater empty-guide-icon"></i>
+        <p class="empty-guide-title">还没有任何角色</p>
+        <p class="empty-guide-hint">导入一个角色包，或新建一个角色开始</p>
+        <div class="empty-guide-actions">
+          <button class="btn-import-lg" :disabled="packBusy" @click="importPack">
+            <i class="fas fa-file-import"></i> 导入角色包
+          </button>
+          <button class="btn-create-lg" @click="openCreateForm">
+            <i class="fas fa-plus"></i> 新建角色
+          </button>
+        </div>
+      </div>
+
       <CharacterList
+        v-else
         :available-list="displayList"
         :current-id="charStore.currentId"
         :get-character-name="charStore.getCharacterName"
@@ -531,6 +612,7 @@ async function saveAll() {
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
                 <i v-if="hasChanges" class="fas fa-floppy-disk"></i> 保存
               </button>
+              <button class="btn-export" :disabled="packBusy" @click="exportPack" title="导出角色包"><i class="fas fa-file-export"></i></button>
               <button class="btn-delete" @click="showDeleteConfirm = true" title="删除角色"><i class="fas fa-trash-can"></i></button>
             </div>
           </div>
@@ -1199,15 +1281,129 @@ async function saveAll() {
   transform: scale(0.95);
 }
 
+/* ---- 角色包导入 / 空状态 ---- */
+.mgr-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-import {
+  margin: 16px 16px 0 0;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #4a7aff;
+  background: rgba(74, 122, 255, 0.12);
+  color: #6f9bff;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-import:hover:not(:disabled) {
+  background: rgba(74, 122, 255, 0.22);
+}
+.btn-import:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.list-status {
+  min-height: 16px;
+  padding: 4px 16px 0;
+}
+
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 16px;
+  text-align: center;
+}
+.empty-guide-icon {
+  font-size: 48px;
+  color: #3a3a5a;
+  margin-bottom: 16px;
+}
+.empty-guide-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ccc;
+  margin: 0 0 6px;
+}
+.empty-guide-hint {
+  font-size: 13px;
+  color: #777;
+  margin: 0 0 20px;
+}
+.empty-guide-actions {
+  display: flex;
+  gap: 12px;
+}
+.btn-import-lg,
+.btn-create-lg {
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-import-lg {
+  border: none;
+  background: #4a7aff;
+  color: white;
+}
+.btn-import-lg:hover:not(:disabled) {
+  opacity: 0.85;
+}
+.btn-import-lg:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-create-lg {
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
+}
+.btn-create-lg:hover {
+  border-color: #4a7aff;
+  color: #ccc;
+}
+
+/* ---- 导出角色包按钮 ---- */
+.btn-export {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #aaa;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0.6;
+  transition: all 0.15s;
+}
+.btn-export:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(74, 122, 255, 0.15);
+  color: #6f9bff;
+}
+.btn-export:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* ---- 删除按钮 ---- */
 .btn-delete {
   background: none;
   border: none;
   font-size: 16px;
+  color: #aaa;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  opacity: 0.4;
+  opacity: 0.6;
   transition: all 0.15s;
 }
 
