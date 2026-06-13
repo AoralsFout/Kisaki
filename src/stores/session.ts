@@ -28,6 +28,8 @@ export interface Session {
   id: string
   name: string
   messages: ChatMessage[]
+  /** 会话关联的角色 ID（切回会话时自动切到该角色） */
+  characterId?: string
   /** 会话关联的角色视觉状态（情绪/姿势/服装/屏幕位置） */
   characterState?: CharacterVisualState
   createdAt: number
@@ -78,8 +80,9 @@ export const useSessionStore = defineStore('session', () => {
    * 从 localStorage 加载数据并恢复上次会话
    * 应在 ChatStore 初始化且 system prompt 设定后调用
    */
-  function init() {
+  async function init() {
     const saved = loadJSON<Session[]>(STORAGE_SESSIONS, [])
+    let toRestore: Session | null = null
 
     if (saved.length > 0) {
       sessions.value = saved
@@ -101,7 +104,7 @@ export const useSessionStore = defineStore('session', () => {
         if (curr.messages.length > 0) {
           chatStore.loadMessages(curr.messages)
         }
-        applySessionCharacterState(curr)
+        toRestore = curr
       }
     } else {
       // 首次使用：创建默认会话
@@ -124,6 +127,9 @@ export const useSessionStore = defineStore('session', () => {
       sessions.value.length,
       currentSession.value?.name ?? '无',
     )
+
+    // 恢复当前会话绑定的角色与视觉状态（可能异步切角色，不阻塞 ready）
+    if (toRestore) await restoreSessionState(toRestore)
   }
 
   // ── 持久化 ──
@@ -141,10 +147,12 @@ export const useSessionStore = defineStore('session', () => {
    */
   function createSession(name?: string): Session {
     const count = sessions.value.length + 1
+    const charStore = useCharacterStore()
     const session: Session = {
       id: generateId(),
       name: name || `新对话 ${count}`,
       messages: [],
+      characterId: charStore.currentId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -160,7 +168,7 @@ export const useSessionStore = defineStore('session', () => {
    * 切换到指定会话
    * 自动保存当前会话 → 加载目标会话的消息到 ChatStore
    */
-  function switchSession(sessionId: string) {
+  async function switchSession(sessionId: string) {
     if (sessionId === currentSessionId.value) return
     const target = sessions.value.find(s => s.id === sessionId)
     if (!target) {
@@ -171,14 +179,15 @@ export const useSessionStore = defineStore('session', () => {
     // 保存当前会话
     saveCurrentSession()
 
-    // 切换 ID
+    // 切换 ID（同步更新，UI 立即反映）
     currentSessionId.value = target.id
     persistSessions()
 
-    // 加载目标会话消息和角色状态
+    // 加载目标会话消息（同步）
     const chatStore = useChatStore()
     chatStore.loadMessages(target.messages)
-    applySessionCharacterState(target)
+    // 恢复目标会话的角色与视觉状态（可能异步切角色）
+    await restoreSessionState(target)
 
     log.info('已切换到会话: "%s" (%d 条消息)', target.name, target.messages.length)
   }
@@ -192,8 +201,9 @@ export const useSessionStore = defineStore('session', () => {
 
     const chatStore = useChatStore()
     session.messages = [...chatStore.messages]
-    // 保存角色当前视觉状态
+    // 保存角色身份与当前视觉状态
     const charStore = useCharacterStore()
+    session.characterId = charStore.currentId
     session.characterState = charStore.getVisualStateSnapshot()
     session.updatedAt = Date.now()
     persistSessions()
@@ -222,7 +232,8 @@ export const useSessionStore = defineStore('session', () => {
       currentSessionId.value = next.id
       const chatStore = useChatStore()
       chatStore.loadMessages(next.messages)
-      applySessionCharacterState(next)
+      // 恢复角色/视觉状态（可能异步切角色，fire-and-forget）
+      void restoreSessionState(next)
     }
 
     persistSessions()
@@ -252,15 +263,32 @@ export const useSessionStore = defineStore('session', () => {
   // ── 角色状态恢复 ──
 
   /**
-   * 将会话保存的角色视觉状态应用到 characterStore。
-   * 若该会话没有保存的状态（新/空会话），则重置为角色默认值。
+   * 恢复会话关联的角色与视觉状态。
+   * 1. 若会话绑定了不同的角色（characterId），先切到该角色（异步加载）。
+   * 2. 应用保存的视觉状态；无则重置为该角色默认值。
    *
-   * characterStore 变更后，controller 的 watch 会自动同步立绘和位置。
+   * characterStore 变更后，controller 的 watch 会自动同步立绘和位置；
+   * App.vue 监听 currentId 变化刷新人设（system prompt）。
    */
-  function applySessionCharacterState(session: Session) {
+  async function restoreSessionState(session: Session) {
     const charStore = useCharacterStore()
+
+    // 1. 切换到会话绑定的角色（若不同且存在）
+    if (
+      session.characterId &&
+      session.characterId !== charStore.currentId &&
+      charStore.availableList.includes(session.characterId)
+    ) {
+      try {
+        await charStore.loadCharacter(session.characterId, true)
+      } catch (err) {
+        log.warn('恢复会话角色失败（保持当前角色）: %s', (err as Error).message)
+      }
+    }
+
+    // 2. 恢复视觉状态
     if (!session.characterState) {
-      // 新会话 → 重置为角色默认状态（首项标签 + 居中全屏）
+      // 新/空会话 → 重置为角色默认状态（首项标签 + 居中全屏）
       const d = charStore.data
       if (d) {
         charStore.applyVisualState({

@@ -89,6 +89,9 @@ async function onCharactersChanged() {
   applyCharacterPersona()
 }
 
+// 角色切换后（UI / agent / 会话恢复任一路径）统一刷新人设（system prompt）
+watch(() => charStore.currentId, () => applyCharacterPersona())
+
 let welcomeShown = false
 
 onMounted(async () => {
@@ -118,7 +121,7 @@ onMounted(async () => {
   setOnCharacterSwitched(applyCharacterPersona)
 
   // 初始化会话管理（system prompt 设定后加载历史消息）
-  sessionStore.init()
+  await sessionStore.init()
 
   setTimeout(() => {
     if (!welcomeShown && chat.messages.length === 0) {

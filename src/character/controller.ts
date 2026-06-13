@@ -9,6 +9,7 @@
 import { ref, computed, watch } from 'vue'
 import { pickRandomImage } from './config'
 import { useCharacterStore } from '../stores/character'
+import { useSessionStore } from '../stores/session'
 import type { CharacterImageData } from './config'
 import {
   DEFAULT_POSE, getPose, ALL_POSE_KEYS,
@@ -63,6 +64,28 @@ export function useCharacterController() {
       costume: currentCostume.value,
       screenPose: currentScreenPose.value,
     })
+  }
+
+  /**
+   * 选图（带兜底）：精确匹配失败时回退到角色默认标签重选，
+   * 再不行用角色首图，确保只要角色有图就不会白屏。
+   * 用于跨角色切换/会话恢复时标签可能与当前角色不匹配的场景。
+   */
+  function selectImageWithFallback(): CharacterImageData | null {
+    const exact = selectCurrentImage()
+    if (exact) return exact
+    const d = charStore.data
+    if (!d || d.images.length === 0) return null
+    // 标签与当前角色不匹配 → 重置为角色默认标签后重选
+    currentPoseTag.value = d.poses[0] ?? ''
+    currentEmotion.value = d.emotions[0] ?? ''
+    currentCostume.value = d.costumes[0] ?? ''
+    syncToStore()
+    const byDefault = selectCurrentImage()
+    if (byDefault) return byDefault
+    // 仍无匹配 → 用首图兜底
+    log.warn('立绘兜底：标签无匹配，回退首图 %s', d.images[0].file)
+    return d.images[0]
   }
 
   // ======== 对外方法 ========
@@ -157,8 +180,10 @@ export function useCharacterController() {
     currentEmotion.value = ''
     currentCostume.value = ''
     syncDefaultsFromData()
-    currentImage.value = selectCurrentImage()
+    currentImage.value = selectImageWithFallback()
     syncToStore()
+    // 将新角色写回当前会话（切回该会话时能恢复此角色）
+    useSessionStore().saveCurrentSession()
     log.info('角色切换完成: %s (%s)', charId, charStore.name)
   }
 
@@ -188,20 +213,23 @@ export function useCharacterController() {
         currentScreenPose.value = screenPose
       }
 
-      // 如果有标签变化，重新选图
+      // 如果有标签变化，重新选图（带兜底，避免跨角色标签不匹配导致白屏）
       if (changed.emotion || changed.stance || changed.costume) {
-        currentImage.value = selectCurrentImage()
+        currentImage.value = selectImageWithFallback()
       }
     },
     { deep: false },
   )
 
   // ======== 监听数据加载 ========
-  watch(() => charStore.data, (newData) => {
+  watch(() => charStore.data, (newData, oldData) => {
     if (!newData) return
     syncDefaultsFromData()
-    if (!currentImage.value) {
-      currentImage.value = selectCurrentImage()
+    // 角色切换（data.id 变）时旧立绘不属于新角色，必须强制重选——
+    // 即使新旧角色标签同名（visual-watch 会因全等跳过），也要在此重选。
+    const charChanged = !!oldData && newData.id !== oldData.id
+    if (charChanged || !currentImage.value) {
+      currentImage.value = selectImageWithFallback()
     }
   })
 
@@ -218,7 +246,7 @@ export function useCharacterController() {
     } else {
       syncDefaultsFromData()
     }
-    currentImage.value = selectCurrentImage()
+    currentImage.value = selectImageWithFallback()
     ready.value = true
     log.info('控制器初始化完成, 角色: %s (%s预制状态)',
       charStore.name, hasStoredState ? '有' : '无')
