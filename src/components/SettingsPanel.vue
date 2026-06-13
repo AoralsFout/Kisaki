@@ -22,6 +22,8 @@ import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../
 import { getTypingSpeed, setTypingSpeed } from '../stores/language'
 import { WINDOW_LOGS, QUERY_SETTINGS, QUERY_LOGS } from '../constants'
 import { getAllWindows } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
 const selfWindow = ref<WebviewWindow | null>(null)
@@ -47,7 +49,7 @@ function onTypingSpeedInput(e: Event) {
 }
 
 // ---- 导航 ----
-type Tab = 'api' | 'character' | 'tts' | 'dev' | 'shortcuts' | 'about'
+type Tab = 'api' | 'character' | 'tts' | 'dev' | 'about'
 const activeTab = ref<Tab>('api')
 
 const PRESETS = [
@@ -60,6 +62,12 @@ const PRESETS = [
 onMounted(async () => {
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
+  }
+  // 支持通过 URL ?tab=character 定位标签页（如从主窗口「添加角色」引导进入）
+  const tabParam = new URLSearchParams(window.location.search).get('tab')
+  const validTabs: Tab[] = ['api', 'character', 'tts', 'dev', 'about']
+  if (tabParam && (validTabs as string[]).includes(tabParam)) {
+    activeTab.value = tabParam as Tab
   }
   config.value = { ...await loadConfigSecure() }
   cvConfig.value = { ...await loadCosyVoiceConfigSecure() }
@@ -114,6 +122,24 @@ async function maximizeWindow() {
 }
 function closeWindow() {
   selfWindow.value?.close()
+}
+
+async function openCharacterFolder() {
+  try {
+    const dirs = await invoke<{ characters: string }>('get_data_dirs')
+    await revealItemInDir(dirs.characters)
+  } catch (e) {
+    console.error('打开角色数据文件夹失败:', e)
+  }
+}
+
+async function exitApp() {
+  try {
+    const all = await getAllWindows()
+    for (const w of all) {
+      try { await w.close() } catch {}
+    }
+  } catch {}
 }
 
 async function openLogWindow() {
@@ -171,10 +197,6 @@ async function openLogWindow() {
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
           <span>Dev</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'shortcuts' }]" @click="activeTab = 'shortcuts'">
-          <i class="fas fa-keyboard nav-icon"></i>
-          <span>快捷键</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
           <i class="fas fa-circle-info nav-icon"></i>
@@ -344,58 +366,35 @@ async function openLogWindow() {
           <DevPanel />
         </div>
 
-        <!-- ===== 快捷键 ===== -->
-        <div v-if="activeTab === 'shortcuts'" class="content-section">
-          <h2 class="section-title"><i class="fas fa-keyboard"></i> 快捷键</h2>
-          <p class="section-desc">全局快捷键，在应用后台时也可使用。</p>
-
-          <div class="shortcut-list">
-            <div class="shortcut-item">
-              <div class="shortcut-info">
-                <span class="shortcut-label">打开日志窗口</span>
-                <span class="shortcut-desc">随时查看应用日志</span>
-              </div>
-              <kbd class="shortcut-keys">
-                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">L</span>
-              </kbd>
-            </div>
-            <div class="shortcut-item">
-              <div class="shortcut-info">
-                <span class="shortcut-label">打开设置窗口</span>
-                <span class="shortcut-desc">配置 API、TTS、角色管理</span>
-              </div>
-              <kbd class="shortcut-keys">
-                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">S</span>
-              </kbd>
-            </div>
-            <div class="shortcut-item">
-              <div class="shortcut-info">
-                <span class="shortcut-label">切换语音播报</span>
-                <span class="shortcut-desc">开启/关闭 TTS 语音朗读</span>
-              </div>
-              <kbd class="shortcut-keys">
-                <span class="key">Ctrl</span><span class="key-plus">+</span><span class="key">Shift</span><span class="key-plus">+</span><span class="key">T</span>
-              </kbd>
-            </div>
-          </div>
-
-          <hr class="section-divider" />
-          <p class="shortcut-footnote">快捷键通过 Tauri 全局快捷方式注册，可在系统任意窗口中使用。</p>
-        </div>
-
         <!-- ===== 关于 ===== -->
         <div v-if="activeTab === 'about'" class="content-section">
           <h2 class="section-title">关于</h2>
           <p class="section-desc">Kisaki v0.1</p>
           <div class="about-card">
-            <p>基于 Tauri + Vue 3 构建</p>
-            <p>支持 AI 对话、角色切换、工具调用</p>
+            <p>基于 Tauri + Vue 3 构建的桌面桌宠应用</p>
+            <p>支持 AI 对话、角色切换、工具调用、TTS 语音播报</p>
             <p style="margin-top:12px;color:#999;font-size:12px;">
               数据仅保存在本地，API Key 不会上传到任何第三方服务器。
             </p>
             <hr class="section-divider" />
+            <div class="about-links">
+              <a class="about-link" href="https://github.com/AoralsFout/Kisaki" target="_blank" rel="noopener noreferrer">
+                <i class="fab fa-github"></i> GitHub
+              </a>
+              <a class="about-link" href="https://kisaki.aoralsfout.top" target="_blank" rel="noopener noreferrer">
+                <i class="fas fa-globe"></i> 官网
+              </a>
+            </div>
+            <hr class="section-divider" />
+            <button class="btn-open-logs" @click="openCharacterFolder">
+              <i class="fas fa-folder-open"></i> 打开角色数据文件夹
+            </button>
             <button class="btn-open-logs" @click="openLogWindow">
               <i class="fas fa-receipt"></i> 打开日志查看器
+            </button>
+            <hr class="section-divider" />
+            <button class="btn-exit-app" @click="exitApp">
+              <i class="fas fa-power-off"></i> 退出应用
             </button>
           </div>
         </div>
@@ -850,81 +849,6 @@ async function openLogWindow() {
   color: #aaa;
 }
 
-/* ===== 快捷键（深色） ===== */
-.shortcut-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.shortcut-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: #16162a;
-  border: 1px solid #2a2a4a;
-  border-radius: 10px;
-  transition: border-color 0.12s;
-}
-
-.shortcut-item:hover {
-  border-color: #3a3a5a;
-}
-
-.shortcut-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.shortcut-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #e0e0e0;
-}
-
-.shortcut-desc {
-  font-size: 11px;
-  color: #888;
-}
-
-.shortcut-keys {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.shortcut-keys .key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 26px;
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 500;
-  background: #2a2a4a;
-  border: 1px solid #3a3a5a;
-  border-radius: 6px;
-  color: #ddd;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.2);
-}
-
-.shortcut-keys .key-plus {
-  margin: 0 4px;
-  font-size: 13px;
-  color: #666;
-}
-
-.shortcut-footnote {
-  font-size: 12px;
-  color: #777;
-  margin: 0;
-}
-
 .btn-open-logs {
   width: 100%;
   padding: 10px 16px;
@@ -940,12 +864,68 @@ async function openLogWindow() {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  margin-bottom: 8px;
+}
+
+.btn-open-logs:last-child {
+  margin-bottom: 0;
 }
 
 .btn-open-logs:hover {
   border-color: #4a7aff;
   color: #4a7aff;
   background: rgba(74, 122, 255, 0.1);
+}
+
+.about-links {
+  display: flex;
+  gap: 8px;
+}
+
+.about-link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid #2a2a4a;
+  background: #1e1e38;
+  color: #aaa;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.about-link:hover {
+  border-color: #4a7aff;
+  color: #4a7aff;
+  background: rgba(74, 122, 255, 0.1);
+}
+
+.btn-exit-app {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-exit-app:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #f87171;
 }
 
 	/* ===== 打字机速度滑块 ===== */

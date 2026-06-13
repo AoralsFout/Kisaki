@@ -87,12 +87,22 @@ export const useCharacterStore = defineStore('character', () => {
     charNames.value = names
   }
 
-  /** 初始化（加载默认角色 + 扫描列表） */
+  /** 初始化（扫描列表 + 加载一个角色；零角色时保持 data=null 不崩） */
   async function init() {
-    await Promise.all([
-      loadCharacter('kisaki'),
-      refreshList(),
-    ])
+    // 先扫描可用角色，再决定加载哪个
+    await refreshList()
+    const list = availableList.value
+    if (list.length === 0) {
+      // 干净安装 / 数据被清空：无角色，UI 显示空白桌宠 + 引导用户导入角色包
+      log.warn('未发现任何角色，等待用户导入角色包')
+      return
+    }
+    const target = list.includes('kisaki') ? 'kisaki' : list[0]
+    try {
+      await loadCharacter(target, true)
+    } catch (err) {
+      log.error('加载角色失败', err)
+    }
   }
 
   // ── 视觉状态操作 ──

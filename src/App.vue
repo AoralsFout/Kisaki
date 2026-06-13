@@ -2,7 +2,7 @@
 /**
  * 桌宠 - 主应用组件
  */
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Character from './components/Character.vue'
 import DialogueBubble from './components/DialogueBubble.vue'
 import InputBox from './components/InputBox.vue'
@@ -30,10 +30,11 @@ import {
   QUERY_LOGS,
   CHANNEL_DESKPET_DEV,
   DEFAULT_VOICE_LANGUAGE,
+  EVENT_CHARACTERS_CHANGED,
 } from './constants'
-import { register } from '@tauri-apps/plugin-global-shortcut'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
+import { listen } from '@tauri-apps/api/event'
 
 const log = createLogger('App')
 
@@ -44,6 +45,10 @@ const isLogs = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 const chat = useChatStore()
 const sessionStore = useSessionStore()
 const charStore = useCharacterStore()
+
+// 角色就绪标记 + 零角色判断：无任何角色时禁止聊天、引导用户去添加
+const charReady = ref(false)
+const noCharacter = computed(() => charReady.value && charStore.availableList.length === 0)
 
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
 const bubbleRef = ref<InstanceType<typeof DialogueBubble> | null>(null)
@@ -69,6 +74,21 @@ function applyCharacterPersona() {
   chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
 }
 
+/**
+ * 收到「角色已变更」跨窗口通知后刷新主窗口状态：
+ * 重新扫描角色列表，并确保有一个有效的当前角色（处理零→有、当前角色被删/被改）。
+ */
+async function onCharactersChanged() {
+  await charStore.refreshList()
+  setAvailableCharacters(charStore.availableList)
+  const list = charStore.availableList
+  if (list.length === 0) return // 角色被删空：noCharacter 自动恢复为 true
+  const cur = charStore.currentId
+  const target = list.includes(cur) ? cur : (list.includes('kisaki') ? 'kisaki' : list[0])
+  await charStore.loadCharacter(target, true).catch((e) => log.error('刷新角色失败', e))
+  applyCharacterPersona()
+}
+
 let welcomeShown = false
 
 onMounted(async () => {
@@ -84,7 +104,8 @@ onMounted(async () => {
   // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
   await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
   chat.init()
-  await charStore.init()
+  await charStore.init().catch((e) => log.error('角色初始化失败', e))
+  charReady.value = true
   // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
   setAvailableCharacters(charStore.availableList)
   watch(() => charStore.availableList, (list) => {
@@ -131,26 +152,17 @@ onMounted(async () => {
     } catch (e) { log.warn('BroadcastChannel 初始化失败', e) }
   }
 
-  // 注册全局快捷键
-  if (!isDev && !isSettings && !isLogs) {
-    try {
-      await register('Ctrl+Shift+L', (event) => {
-        if (event.state === 'Pressed') openLogWindow()
-      })
-      await register('Ctrl+Shift+S', (event) => {
-        if (event.state === 'Pressed') openSettingsWindow()
-      })
-      await register('Ctrl+Shift+T', (event) => {
-        if (event.state === 'Pressed') toggleTts()
-      })
-      log.info('全局快捷键已注册 (Ctrl+Shift+L=日志, S=设置, T=静音)')
-    } catch (e) { log.warn('全局快捷键注册失败', e) }
-  }
+  // 监听其它窗口（设置窗口）的角色变更通知，刷新主窗口角色状态
+  await listen(EVENT_CHARACTERS_CHANGED, () => { onCharactersChanged() })
 })
 
 // ---- 交互 ----
 
 function handleCharacterClick() {
+  if (noCharacter.value) {
+    openSettingsWindow('character')
+    return
+  }
   if (chat.showBubble && chat.isTyping) {
     bubbleRef.value?.skipTyping()
     return
@@ -159,12 +171,13 @@ function handleCharacterClick() {
 }
 
 function handleSend(text: string) {
+  if (noCharacter.value) return
   if (!characterRef.value?.controller) return
   chat.closeInput()
   chat.sendMessage(text)
 }
 
-async function openSettingsWindow() {
+async function openSettingsWindow(tab?: string) {
   try {
     // 检查是否已有设置窗口
     const all = await getAllWindows()
@@ -176,8 +189,9 @@ async function openSettingsWindow() {
       return
     }
 
+    const tabQuery = tab ? `&tab=${tab}` : ''
     new WebviewWindow(WINDOW_SETTINGS, {
-      url: `/?${QUERY_SETTINGS}=1`,
+      url: `/?${QUERY_SETTINGS}=1${tabQuery}`,
       title: '设置',
       width: 1000,
       height: 600,
@@ -244,6 +258,16 @@ async function handleSelectCharacter(charId: string) {
     <!-- 角色区 -->
     <div class="character-area">
       <Character ref="characterRef" @click="handleCharacterClick" />
+
+      <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
+      <div v-if="noCharacter" class="no-char-guide">
+        <i class="fas fa-masks-theater no-char-icon"></i>
+        <p class="no-char-title">还没有角色</p>
+        <p class="no-char-hint">先添加一个角色才能开始聊天</p>
+        <button class="no-char-btn" @click="openSettingsWindow('character')">
+          <i class="fas fa-plus"></i> 添加角色
+        </button>
+      </div>
     </div>
 
     <!-- 底部交互区 -->
@@ -271,19 +295,19 @@ async function handleSelectCharacter(charId: string) {
 
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar">
-        <button class="tool-btn" @click="chat.openInput()" aria-label="打开聊天输入框">
+        <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()" aria-label="打开聊天输入框">
           <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing" @click="showSession = !showSession" aria-label="会话管理">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession" aria-label="会话管理">
           <i class="fas fa-comments btn-icon"></i>
           <span class="btn-label">会话</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing" @click="showHistory = !showHistory" aria-label="打开对话历史">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory" aria-label="打开对话历史">
           <i class="fas fa-clipboard-list btn-icon"></i>
           <span class="btn-label">历史</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
           <i class="fas fa-rotate btn-icon"></i>
           <span class="btn-label">角色</span>
         </button>
@@ -326,6 +350,54 @@ async function handleSelectCharacter(charId: string) {
   height: 100vh;
   overflow: hidden;
   background: transparent;
+}
+
+/* ---- 零角色引导 ---- */
+.no-char-guide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  background: rgba(20, 20, 35, 0.55);
+  backdrop-filter: blur(3px);
+  border-radius: 12px;
+  z-index: 60;
+}
+.no-char-icon {
+  font-size: 40px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 6px;
+}
+.no-char-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
+.no-char-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 12px;
+}
+.no-char-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  border: none;
+  border-radius: 18px;
+  background: #4a7aff;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.no-char-btn:hover {
+  opacity: 0.88;
 }
 
 .drag-region {
