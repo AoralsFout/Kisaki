@@ -835,6 +835,7 @@ function onWheel() {
   flex: 1;
   overflow-y: auto;
   padding: 4px 0;
+  user-select: text;
 }
 
 .log-list::-webkit-scrollbar {
