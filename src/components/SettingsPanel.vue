@@ -111,14 +111,14 @@ async function handleFetchVoices() {
 }
 
 async function minimizeWindow() {
-  try { await selfWindow.value?.minimize() } catch {}
+  try { await selfWindow.value?.minimize() } catch { }
 }
 async function maximizeWindow() {
   try {
     const isMax = await selfWindow.value?.isMaximized()
     if (isMax) await selfWindow.value?.unmaximize()
     else await selfWindow.value?.maximize()
-  } catch {}
+  } catch { }
 }
 function closeWindow() {
   selfWindow.value?.close()
@@ -137,9 +137,9 @@ async function exitApp() {
   try {
     const all = await getAllWindows()
     for (const w of all) {
-      try { await w.close() } catch {}
+      try { await w.close() } catch { }
     }
-  } catch {}
+  } catch { }
 }
 
 async function openLogWindow() {
@@ -255,12 +255,8 @@ async function openLogWindow() {
                 <span class="toggle-label-text">启用语音播报</span>
                 <span class="toggle-label-desc">AI 回复时自动朗读对话</span>
               </label>
-              <button
-                :class="['toggle-switch', { active: ttsEnabled }]"
-                @click="ttsEnabled = !ttsEnabled; setTtsEnabled(ttsEnabled)"
-                role="switch"
-                :aria-checked="ttsEnabled"
-              >
+              <button :class="['toggle-switch', { active: ttsEnabled }]"
+                @click="ttsEnabled = !ttsEnabled; setTtsEnabled(ttsEnabled)" role="switch" :aria-checked="ttsEnabled">
                 <span class="toggle-knob"></span>
               </button>
             </div>
@@ -338,17 +334,12 @@ async function openLogWindow() {
           <div class="form-group">
             <label class="form-label">打字机速度</label>
             <div class="speed-slider-row">
-              <input
-                type="range"
-                min="10" max="200" step="5"
-                :value="typingSpeed"
-                @input="onTypingSpeedInput"
-                class="speed-slider"
-              />
+              <input type="range" min="10" max="200" step="5" :value="typingSpeed" @input="onTypingSpeedInput"
+                class="speed-slider" />
               <span class="speed-value">{{ typingSpeed }}ms</span>
-              <span class="speed-tag" :class="{ fast: typingSpeed <= 20, medium: typingSpeed > 20 && typingSpeed <= 60, slow: typingSpeed > 60 }">
-                {{ typingSpeed <= 20 ? '快速' : typingSpeed <= 60 ? '中等' : '慢速' }}
-              </span>
+              <span class="speed-tag"
+                :class="{ fast: typingSpeed <= 20, medium: typingSpeed > 20 && typingSpeed <= 60, slow: typingSpeed > 60 }">
+                {{ typingSpeed <= 20 ? '快速' : typingSpeed <= 60 ? '中等' : '慢速' }} </span>
             </div>
             <p class="form-hint">每显示一个字符的间隔时间。（10ms=极快，200ms=极慢，默认50ms）</p>
           </div>
@@ -371,6 +362,8 @@ async function openLogWindow() {
           <h2 class="section-title">关于</h2>
           <p class="section-desc">Kisaki v0.1</p>
           <div class="about-card">
+            <img src="/images/kisaki_alpha.png" height="100" />
+            <img src="/images/kisaki_logo_alpha.png" height="70" />
             <p>基于 Tauri + Vue 3 构建的桌面桌宠应用</p>
             <p>支持 AI 对话、角色切换、工具调用、TTS 语音播报</p>
             <p style="margin-top:12px;color:#999;font-size:12px;">
@@ -378,7 +371,8 @@ async function openLogWindow() {
             </p>
             <hr class="section-divider" />
             <div class="about-links">
-              <a class="about-link" href="https://github.com/AoralsFout/Kisaki" target="_blank" rel="noopener noreferrer">
+              <a class="about-link" href="https://github.com/AoralsFout/Kisaki" target="_blank"
+                rel="noopener noreferrer">
                 <i class="fab fa-github"></i> GitHub
               </a>
               <a class="about-link" href="https://kisaki.aoralsfout.top" target="_blank" rel="noopener noreferrer">
@@ -423,7 +417,6 @@ async function openLogWindow() {
   align-items: center;
   padding: 12px 20px;
   background: #16162a;
-  border-bottom: 1px solid #2a2a4a;
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -473,7 +466,6 @@ async function openLogWindow() {
   width: 180px;
   flex-shrink: 0;
   background: #16162a;
-  border-right: 1px solid #2a2a4a;
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
@@ -516,6 +508,8 @@ async function openLogWindow() {
   flex: 1;
   overflow-y: auto;
   padding: 28px 32px;
+  border: 1px solid #2a2a4a;
+  border-radius: 24px 0px 0px 0px;
 }
 
 /* 深色滚动条 */
@@ -523,15 +517,18 @@ async function openLogWindow() {
 .sidebar::-webkit-scrollbar {
   width: 6px;
 }
+
 .content::-webkit-scrollbar-track,
 .sidebar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .content::-webkit-scrollbar-thumb,
 .sidebar::-webkit-scrollbar-thumb {
   background: #2a2a4a;
   border-radius: 3px;
 }
+
 .content::-webkit-scrollbar-thumb:hover,
 .sidebar::-webkit-scrollbar-thumb:hover {
   background: #3a3a5a;
@@ -762,7 +759,7 @@ async function openLogWindow() {
   height: 20px;
   border-radius: 50%;
   background: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: left 0.2s;
 }
 
@@ -775,8 +772,13 @@ async function openLogWindow() {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .voice-error {
@@ -928,69 +930,69 @@ async function openLogWindow() {
   color: #f87171;
 }
 
-	/* ===== 打字机速度滑块 ===== */
-	.speed-slider-row {
-	  display: flex;
-	  align-items: center;
-	  gap: 12px;
-	}
+/* ===== 打字机速度滑块 ===== */
+.speed-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
-	.speed-slider {
-	  flex: 1;
-	  max-width: 240px;
-	  -webkit-appearance: none;
-	  appearance: none;
-	  height: 6px;
-	  border-radius: 3px;
-	  background: #2a2a4a;
-	  outline: none;
-	  cursor: pointer;
-	}
+.speed-slider {
+  flex: 1;
+  max-width: 240px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2a4a;
+  outline: none;
+  cursor: pointer;
+}
 
-	.speed-slider::-webkit-slider-thumb {
-	  -webkit-appearance: none;
-	  appearance: none;
-	  width: 18px;
-	  height: 18px;
-	  border-radius: 50%;
-	  background: #4a7aff;
-	  border: 2px solid #1a1a2e;
-	  cursor: pointer;
-	  transition: transform 0.1s;
-	}
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4a7aff;
+  border: 2px solid #1a1a2e;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
 
-	.speed-slider::-webkit-slider-thumb:hover {
-	  transform: scale(1.15);
-	}
+.speed-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
 
-	.speed-value {
-	  font-size: 13px;
-	  color: #ddd;
-	  font-weight: 500;
-	  min-width: 40px;
-	  font-family: monospace;
-	}
+.speed-value {
+  font-size: 13px;
+  color: #ddd;
+  font-weight: 500;
+  min-width: 40px;
+  font-family: monospace;
+}
 
-	.speed-tag {
-	  font-size: 11px;
-	  padding: 2px 8px;
-	  border-radius: 10px;
-	  font-weight: 600;
-	  text-transform: uppercase;
-	}
+.speed-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
 
-	.speed-tag.fast {
-	  color: #30b94e;
-	  background: rgba(48, 185, 78, 0.12);
-	}
+.speed-tag.fast {
+  color: #30b94e;
+  background: rgba(48, 185, 78, 0.12);
+}
 
-	.speed-tag.medium {
-	  color: #ffa726;
-	  background: rgba(255, 167, 38, 0.12);
-	}
+.speed-tag.medium {
+  color: #ffa726;
+  background: rgba(255, 167, 38, 0.12);
+}
 
-	.speed-tag.slow {
-	  color: #ef5350;
-	  background: rgba(239, 83, 80, 0.12);
-	}
+.speed-tag.slow {
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.12);
+}
 </style>
