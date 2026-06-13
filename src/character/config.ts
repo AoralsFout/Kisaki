@@ -1,7 +1,7 @@
 /**
  * 角色配置 - 类型定义 + 工具函数
  *
- * 实际数据从 public/characters/<id>/character.json 动态加载。
+ * 实际数据从 data_dir 的 <id>/character.json 动态加载。
  */
 import type { CharacterData, CharacterImageData } from './loader'
 export type { CharacterData, CharacterImageData }

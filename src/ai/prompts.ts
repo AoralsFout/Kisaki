@@ -2,7 +2,7 @@
  * 角色人设提示词 - 后备默认值
  *
  * 仅在角色 JSON 未提供 prompt.txt 时使用。
- * 实际提示词从 public/characters/<id>/prompt.txt 加载。
+ * 实际提示词从 data_dir 的 <id>/prompt.txt 加载。
  */
 
 /** 后备默认提示词（简短通用） */
