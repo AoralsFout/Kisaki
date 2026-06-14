@@ -96,7 +96,7 @@ defineExpose({ skipTyping })
 </script>
 
 <template>
-  <div v-show="visible" class="bubble-wrapper">
+  <div v-show="visible" class="bubble-wrapper" data-pet-solid>
     <div class="bubble-body" @click="skipTyping">
       <!-- 思考内容（灰色斜体，折叠样式） -->
       <details v-if="thinking" class="thinking-block" @click.stop>

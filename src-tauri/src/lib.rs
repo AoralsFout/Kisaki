@@ -972,6 +972,14 @@ fn list_log_files() -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+/// 全局光标位置事件 payload（物理屏幕坐标）——前端鼠标穿透命中测试用
+#[cfg(windows)]
+#[derive(Clone, Serialize)]
+struct CursorPos {
+    x: i32,
+    y: i32,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1009,6 +1017,30 @@ pub fn run() {
                 CHARACTERS_DIR.set(chars_dir).map_err(|_| "CHARACTERS_DIR already set")?;
                 LOGS_DIR.set(logs_dir).map_err(|_| "LOGS_DIR already set")?;
             }
+
+            // ─── 全局光标轮询（主窗口鼠标穿透命中测试） ───
+            // 主窗口透明，透明区域需让鼠标穿透到下方窗口。穿透开启后 WebView
+            // 收不到 mousemove，无法判断何时切回，故独立轮询全局光标位置 emit
+            // 给前端，由前端命中测试后切换 set_ignore_cursor_events。仅 Windows。
+            #[cfg(windows)]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    use windows_sys::Win32::Foundation::POINT;
+                    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+                    let mut last = (i32::MIN, i32::MIN);
+                    loop {
+                        let mut p = POINT { x: 0, y: 0 };
+                        // SAFETY: GetCursorPos 仅写入 p，无其他副作用
+                        if unsafe { GetCursorPos(&mut p) } != 0 && (p.x, p.y) != last {
+                            last = (p.x, p.y);
+                            let _ = handle.emit_to("main", "cursor-pos", CursorPos { x: p.x, y: p.y });
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(32));
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

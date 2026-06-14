@@ -67,7 +67,7 @@ function handleClose() {
 
 <template>
   <div class="input-overlay" @click.self="handleClose">
-      <div class="input-container" @click.stop>
+      <div class="input-container" @click.stop data-pet-solid>
         <div class="input-header">
           <span class="input-title"><i class="fas fa-comment"></i> 对话</span>
           <button class="btn-close" @click="handleClose" aria-label="关闭输入框">✕</button>

@@ -41,7 +41,7 @@ function handleSelect(id: string) {
 
 <template>
   <Transition name="panel-slide">
-    <div v-if="visible" class="overlay">
+    <div v-if="visible" class="overlay" data-pet-solid>
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title"><i class="fas fa-masks-theater"></i> 切换角色</span>

@@ -49,7 +49,7 @@ watch(
 
 <template>
   <Transition name="panel-slide">
-    <div v-if="visible" class="history-overlay">
+    <div v-if="visible" class="history-overlay" data-pet-solid>
       <div class="history-panel">
         <!-- 头部 -->
         <div class="history-header">

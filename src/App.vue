@@ -35,6 +35,7 @@ import {
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
+import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled, isIgnoring } from './passthrough'
 
 const log = createLogger('App')
 
@@ -61,6 +62,14 @@ const ttsEnabled = ref(isTtsEnabled())
 function toggleTts() {
   ttsEnabled.value = !ttsEnabled.value
   setTtsEnabled(ttsEnabled.value)
+}
+
+// 鼠标穿透开关（透明区域点击穿透到下方窗口）
+const passthroughOn = ref(isPassthroughEnabled())
+
+function togglePassthrough() {
+  passthroughOn.value = !passthroughOn.value
+  setPassthroughEnabled(passthroughOn.value)
 }
 
 /**
@@ -157,6 +166,11 @@ onMounted(async () => {
 
   // 监听其它窗口（设置窗口）的角色变更通知，刷新主窗口角色状态
   await listen(EVENT_CHARACTERS_CHANGED, () => { onCharactersChanged() })
+
+  // 初始化鼠标穿透（仅主窗口；设置窗口跳过，logs/dev 已在前面 return）
+  if (!isSettings) {
+    await initPassthrough()
+  }
 })
 
 // ---- 交互 ----
@@ -256,14 +270,14 @@ async function handleSelectCharacter(charId: string) {
 
   <main v-else class="app-container">
     <!-- 拖拽区域 -->
-    <div class="drag-region" data-tauri-drag-region></div>
+    <div class="drag-region" data-tauri-drag-region data-pet-solid></div>
 
     <!-- 角色区 -->
-    <div class="character-area">
+    <div class="character-area" :class="{ 'is-passthrough': isIgnoring }">
       <Character ref="characterRef" @click="handleCharacterClick" />
 
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
-      <div v-if="noCharacter" class="no-char-guide">
+      <div v-if="noCharacter" class="no-char-guide" data-pet-solid>
         <i class="fas fa-masks-theater no-char-icon"></i>
         <p class="no-char-title">还没有角色</p>
         <p class="no-char-hint">先添加一个角色才能开始聊天</p>
@@ -289,6 +303,7 @@ async function handleSelectCharacter(charId: string) {
       <button
         v-if="chat.isProcessing"
         class="stop-btn"
+        data-pet-solid
         @click="chat.cancelResponse()"
         aria-label="停止生成"
       >
@@ -297,7 +312,7 @@ async function handleSelectCharacter(charId: string) {
       </button>
 
       <!-- 工具按钮行（悬停展开文字） -->
-      <div class="toolbar">
+      <div class="toolbar" data-pet-solid>
         <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()" aria-label="打开聊天输入框">
           <i class="fas fa-comment btn-icon"></i>
           <span class="btn-label">聊天</span>
@@ -317,6 +332,10 @@ async function handleSelectCharacter(charId: string) {
         <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts" :aria-label="ttsEnabled ? '关闭语音播报' : '开启语音播报'">
           <i class="fas fa-volume-high btn-icon"></i>
           <span class="btn-label">{{ ttsEnabled ? '语音' : '静音' }}</span>
+        </button>
+        <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough" :aria-label="passthroughOn ? '关闭鼠标穿透' : '开启鼠标穿透'">
+          <i class="fas fa-arrow-pointer btn-icon"></i>
+          <span class="btn-label">{{ passthroughOn ? '穿透' : '实体' }}</span>
         </button>
         <button class="tool-btn" @click="openLogWindow()" aria-label="打开日志窗口">
           <i class="fas fa-receipt btn-icon"></i>
@@ -442,6 +461,12 @@ async function handleSelectCharacter(charId: string) {
   width: calc(100% - 2px);
   height: calc(100% - 2px);
   border: 1px dashed #f00;
+}
+
+/* 穿透态（鼠标在透明区）隐藏调试边框；实体态（可交互）显示红色虚线边框作状态指示。
+   用 transparent 而非 none，保留 1px 占位避免布局抖动。 */
+.character-area.is-passthrough {
+  border-color: transparent;
 }
 
 /* ---- 输入框展开动画（缓慢抬升工具栏/气泡） ---- */

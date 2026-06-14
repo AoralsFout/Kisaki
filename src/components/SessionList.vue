@@ -97,7 +97,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 
 <template>
   <Transition name="panel-slide">
-    <div v-if="visible" class="session-overlay">
+    <div v-if="visible" class="session-overlay" data-pet-solid>
       <div class="session-panel">
         <!-- 头部 -->
         <div class="session-header">

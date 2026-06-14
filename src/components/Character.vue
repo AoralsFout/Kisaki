@@ -17,6 +17,7 @@ import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { useCharacterController, registerCharacterController } from '../character'
 import type { CharacterImageData } from '../character'
 import { setAgentController } from '../agent'
+import { buildMask } from '../passthrough/alphaMask'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('Character')
@@ -45,6 +46,8 @@ function preloadImage(file: string | undefined) {
   const img = new Image()
   img.decoding = 'async'
   img.src = url
+  // 同步构建 alpha 掩码（鼠标穿透像素命中用），失败时自动退回矩形命中
+  void buildMask(url)
 }
 
 /** 监听当前图片变更，预加载新图 */

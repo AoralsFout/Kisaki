@@ -19,6 +19,9 @@ export const STORAGE_TTS_ENABLED = 'deskpet-tts-enabled'
 /** 用户显示语言偏好 */
 export const STORAGE_DISPLAY_LANGUAGE = 'deskpet-display-language'
 
+/** 鼠标穿透开关（透明区域点击穿透到下方窗口） */
+export const STORAGE_PASSTHROUGH_ENABLED = 'deskpet-passthrough-enabled'
+
 // ─── Tauri Webview 窗口标签 ──────────────────────────
 
 /** 主窗口 */
@@ -56,6 +59,9 @@ export const CHANNEL_DESKPET_LOGS = 'deskpet-logs'
 
 /** 角色增删改后广播：通知主窗口刷新角色列表（设置窗口 → 主窗口） */
 export const EVENT_CHARACTERS_CHANGED = 'characters-changed'
+
+/** Rust 端轮询的全局光标位置（物理屏幕坐标），主窗口据此做鼠标穿透命中测试 */
+export const EVENT_CURSOR_POS = 'cursor-pos'
 
 // ─── 默认值 ───────────────────────────────────────────
 
