@@ -5,6 +5,7 @@
  * 测试立绘的姿势、情绪、服装和屏幕位置控制。
  */
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCharacterController, POSE_PRESETS, useCharacterStore, findImages } from './character'
@@ -13,6 +14,8 @@ import { createLogger } from './utils/logger'
 import { CHANNEL_DESKPET_DEV } from './constants'
 
 const log = createLogger('DevPanel')
+
+const { t } = useI18n()
 
 const charStore = useCharacterStore()
 const controller = useCharacterController()
@@ -63,9 +66,9 @@ onUnmounted(() => {
 // ---- 屏幕姿态 ----
 const activeScale = ref<'full' | 'half' | 'headshot'>('full')
 const poseGroups = [
-  { key: 'full' as const, label: '全身', poses: ['full-left', 'full-center', 'full-right'] as PoseKey[] },
-  { key: 'half' as const, label: '半身', poses: ['half-left', 'half-center', 'half-right'] as PoseKey[] },
-  { key: 'headshot' as const, label: '头像', poses: ['headshot-left', 'headshot-center', 'headshot-right'] as PoseKey[] },
+  { key: 'full' as const, poses: ['full-left', 'full-center', 'full-right'] as PoseKey[] },
+  { key: 'half' as const, poses: ['half-left', 'half-center', 'half-right'] as PoseKey[] },
+  { key: 'headshot' as const, poses: ['headshot-left', 'headshot-center', 'headshot-right'] as PoseKey[] },
 ]
 
 function setScreenPose(key: PoseKey) {
@@ -121,9 +124,9 @@ function setEmotion(emotion: string) {
   <div class="dev-panel" :class="{ 'embedded': !isDevWindow }">
     <!-- === 身体姿势 === -->
     <section class="section">
-      <h2 class="section-title"><i class="fas fa-person"></i> 姿势</h2>
+      <h2 class="section-title"><i class="fas fa-person"></i> {{ t('dev.pose') }}</h2>
       <div class="status-bar">
-        <span class="status-label">当前：</span>
+        <span class="status-label">{{ t('dev.current') }}</span>
         <span class="status-value">{{ controller.currentPoseTag.value || '-' }}</span>
       </div>
       <div class="btn-row">
@@ -131,15 +134,15 @@ function setEmotion(emotion: string) {
           :class="['tag-btn', { active: controller.currentPoseTag.value === p, disabled: !hasImage(p) }]"
           :disabled="!hasImage(p)" @click="setStance(p)">{{ p }}<sup class="cnt" v-if="countImages(p) > 0">{{
             countImages(p) }}</sup></button>
-        <span v-if="charStore.poses.length === 0" class="no-data">无可用姿势</span>
+        <span v-if="charStore.poses.length === 0" class="no-data">{{ t('dev.noPose') }}</span>
       </div>
     </section>
 
     <!-- === 服装 === -->
     <section class="section">
-      <h2 class="section-title"><i class="fas fa-shirt"></i> 服装</h2>
+      <h2 class="section-title"><i class="fas fa-shirt"></i> {{ t('dev.costume') }}</h2>
       <div class="status-bar">
-        <span class="status-label">当前：</span>
+        <span class="status-label">{{ t('dev.current') }}</span>
         <span class="status-value">{{ controller.currentCostume.value || '-' }}</span>
       </div>
       <div class="btn-row">
@@ -147,15 +150,15 @@ function setEmotion(emotion: string) {
           :class="['tag-btn', { active: controller.currentCostume.value === c, disabled: !hasImage(undefined, undefined, c) }]"
           :disabled="!hasImage(undefined, undefined, c)" @click="setCostume(c)">{{ c }}<sup class="cnt"
             v-if="countImages(undefined, undefined, c) > 0">{{ countImages(undefined, undefined, c) }}</sup></button>
-        <span v-if="charStore.costumes.length === 0" class="no-data">无可用服装</span>
+        <span v-if="charStore.costumes.length === 0" class="no-data">{{ t('dev.noCostume') }}</span>
       </div>
     </section>
 
     <!-- === 情绪 === -->
     <section class="section">
-      <h2 class="section-title"><i class="fas fa-face-smile"></i> 情绪</h2>
+      <h2 class="section-title"><i class="fas fa-face-smile"></i> {{ t('dev.emotion') }}</h2>
       <div class="status-bar">
-        <span class="status-label">当前：</span>
+        <span class="status-label">{{ t('dev.current') }}</span>
         <span class="status-value">{{ controller.currentEmotion.value || '-' }}</span>
       </div>
       <div class="emotion-grid">
@@ -163,20 +166,20 @@ function setEmotion(emotion: string) {
           :class="['tag-btn', { active: controller.currentEmotion.value === e, disabled: !hasImage(undefined, e) }]"
           :disabled="!hasImage(undefined, e)" @click="setEmotion(e)">{{ e }}<sup class="cnt"
             v-if="countImages(undefined, e) > 0">{{ countImages(undefined, e) }}</sup></button>
-        <span v-if="charStore.emotions.length === 0" class="no-data">无可用情绪</span>
+        <span v-if="charStore.emotions.length === 0" class="no-data">{{ t('dev.noEmotion') }}</span>
       </div>
     </section>
 
     <!-- === 屏幕姿态 === -->
     <section class="section">
-      <h2 class="section-title"><i class="fas fa-display"></i> 屏幕位置</h2>
+      <h2 class="section-title"><i class="fas fa-display"></i> {{ t('dev.screenPos') }}</h2>
       <div class="status-bar">
-        <span class="status-label">当前：</span>
+        <span class="status-label">{{ t('dev.current') }}</span>
         <span class="status-value">{{ POSE_PRESETS[controller.currentScreenPose.value]?.label ?? '-' }}</span>
       </div>
       <div class="tab-bar">
         <button v-for="g in poseGroups" :key="g.key" :class="['tab', { active: activeScale === g.key }]"
-          @click="activeScale = g.key">{{ g.label }}</button>
+          @click="activeScale = g.key">{{ t('dev.' + g.key) }}</button>
       </div>
       <div class="pose-grid">
         <button v-for="key in (poseGroups.find(g => g.key === activeScale)?.poses ?? [])" :key="key"

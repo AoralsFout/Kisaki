@@ -6,6 +6,7 @@
  * 作为独立 Tauri 窗口打开（?settings=1）。
  */
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid } from '../ai'
 import type { AIConfig } from '../ai'
@@ -20,10 +21,13 @@ import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../stores/language'
 import { getTypingSpeed, setTypingSpeed } from '../stores/language'
+import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../i18n'
 import { WINDOW_LOGS, QUERY_SETTINGS, QUERY_LOGS } from '../constants'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+
+const { t } = useI18n()
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
 const selfWindow = ref<WebviewWindow | null>(null)
@@ -40,6 +44,7 @@ const loadingVoices = ref(false)
 const voiceError = ref('')
 const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
+const uiLang = ref(getUiLanguage())
 const typingSpeed = ref(getTypingSpeed())
 
 function onTypingSpeedInput(e: Event) {
@@ -49,8 +54,8 @@ function onTypingSpeedInput(e: Event) {
 }
 
 // ---- 导航 ----
-type Tab = 'api' | 'character' | 'tts' | 'dev' | 'about'
-const activeTab = ref<Tab>('api')
+type Tab = 'general' | 'api' | 'character' | 'tts' | 'dev' | 'about'
+const activeTab = ref<Tab>('general')
 
 const PRESETS = [
   { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -65,7 +70,7 @@ onMounted(async () => {
   }
   // 支持通过 URL ?tab=character 定位标签页（如从主窗口「添加角色」引导进入）
   const tabParam = new URLSearchParams(window.location.search).get('tab')
-  const validTabs: Tab[] = ['api', 'character', 'tts', 'dev', 'about']
+  const validTabs: Tab[] = ['general', 'api', 'character', 'tts', 'dev', 'about']
   if (tabParam && (validTabs as string[]).includes(tabParam)) {
     activeTab.value = tabParam as Tab
   }
@@ -101,7 +106,7 @@ async function handleFetchVoices() {
     const list = await fetchVoiceList({ apiKey: cvConfig.value.apiKey })
     voices.value = list
     if (list.length === 0) {
-      voiceError.value = '暂无自定义音色，请先在阿里云百炼平台创建音色'
+      voiceError.value = t('settings.tts.noVoices')
     }
   } catch (e) {
     voiceError.value = (e as Error).message
@@ -155,7 +160,7 @@ async function openLogWindow() {
 
     new WebviewWindow(WINDOW_LOGS, {
       url: `/?${QUERY_LOGS}=1`,
-      title: '日志',
+      title: t('window.logs'),
       width: 800,
       height: 500,
       decorations: false,
@@ -171,48 +176,66 @@ async function openLogWindow() {
   <div class="settings-window" :class="{ standalone: isSettingsWindow }">
     <!-- 标题栏 -->
     <header class="topbar" data-tauri-drag-region>
-      <span class="topbar-title"><i class="fas fa-gear"></i> 设置</span>
+      <span class="topbar-title"><i class="fas fa-gear"></i> {{ t('settings.title') }}</span>
       <div v-if="isSettingsWindow" class="window-controls">
-        <button class="win-btn" @click="minimizeWindow" title="最小化" aria-label="最小化窗口">─</button>
-        <button class="win-btn" @click="maximizeWindow" title="最大化" aria-label="最大化或还原窗口">□</button>
-        <button class="win-btn win-close" @click="closeWindow" title="关闭" aria-label="关闭设置窗口">✕</button>
+        <button class="win-btn" @click="minimizeWindow" :title="t('settings.win.minimize')" :aria-label="t('settings.winAria.minimize')">─</button>
+        <button class="win-btn" @click="maximizeWindow" :title="t('settings.win.maximize')" :aria-label="t('settings.winAria.maximize')">□</button>
+        <button class="win-btn win-close" @click="closeWindow" :title="t('settings.win.close')" :aria-label="t('settings.winAria.close')">✕</button>
       </div>
     </header>
 
     <div class="layout">
       <!-- 左侧导航 -->
       <nav class="sidebar">
+        <button :class="['nav-item', { active: activeTab === 'general' }]" @click="activeTab = 'general'">
+          <i class="fas fa-sliders nav-icon"></i>
+          <span>{{ t('settings.nav.general') }}</span>
+        </button>
         <button :class="['nav-item', { active: activeTab === 'api' }]" @click="activeTab = 'api'">
           <i class="fas fa-plug nav-icon"></i>
-          <span>API 配置</span>
+          <span>{{ t('settings.nav.api') }}</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
           <i class="fas fa-masks-theater nav-icon"></i>
-          <span>角色管理</span>
+          <span>{{ t('settings.nav.character') }}</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'tts' }]" @click="activeTab = 'tts'">
           <i class="fas fa-microphone nav-icon"></i>
-          <span>语音合成</span>
+          <span>{{ t('settings.nav.tts') }}</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
-          <span>Dev</span>
+          <span>{{ t('settings.nav.dev') }}</span>
         </button>
         <button :class="['nav-item', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
           <i class="fas fa-circle-info nav-icon"></i>
-          <span>关于</span>
+          <span>{{ t('settings.nav.about') }}</span>
         </button>
       </nav>
 
       <!-- 右侧内容 -->
       <main :class="['content', { 'content-flush': activeTab === 'character' }]">
-        <!-- ===== API 配置 ===== -->
-        <div v-if="activeTab === 'api'" class="content-section">
-          <h2 class="section-title">API 配置</h2>
-          <p class="section-desc">配置 AI 对话接口，所有数据仅保存在本地。</p>
+        <!-- ===== 通用 ===== -->
+        <div v-if="activeTab === 'general'" class="content-section">
+          <h2 class="section-title">{{ t('settings.general.title') }}</h2>
+          <p class="section-desc">{{ t('settings.general.desc') }}</p>
 
           <div class="form-group">
-            <label class="form-label">快速选择</label>
+            <label class="form-label">{{ t('settings.general.uiLang') }}</label>
+            <select v-model="uiLang" class="form-select" @change="setUiLanguage(uiLang)">
+              <option v-for="l in UI_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+            </select>
+            <p class="form-hint">{{ t('settings.general.uiLangHint') }}</p>
+          </div>
+        </div>
+
+        <!-- ===== API 配置 ===== -->
+        <div v-if="activeTab === 'api'" class="content-section">
+          <h2 class="section-title">{{ t('settings.api.title') }}</h2>
+          <p class="section-desc">{{ t('settings.api.desc') }}</p>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.api.quickSelect') }}</label>
             <div class="preset-row">
               <button v-for="p in PRESETS" :key="p.label" class="preset-btn" @click="applyPreset(p)">
                 {{ p.label }}
@@ -221,39 +244,39 @@ async function openLogWindow() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">API 地址</label>
+            <label class="form-label">{{ t('settings.api.baseURL') }}</label>
             <input v-model="config.baseURL" class="form-input" placeholder="https://api.openai.com/v1" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">API Key</label>
+            <label class="form-label">{{ t('settings.api.apiKey') }}</label>
             <input v-model="config.apiKey" class="form-input" type="password" placeholder="sk-..." />
           </div>
 
           <div class="form-group">
-            <label class="form-label">模型</label>
+            <label class="form-label">{{ t('settings.api.model') }}</label>
             <input v-model="config.model" class="form-input" placeholder="gpt-4o-mini" />
           </div>
 
           <div class="form-actions">
             <button class="btn-save" @click="handleSave">
-              {{ saved ? '✓ 已保存' : '保存' }}
+              {{ saved ? t('common.saved') : t('common.save') }}
             </button>
-            <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> 配置可用</span>
+            <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.configOk') }}</span>
           </div>
         </div>
 
         <!-- ===== 语音合成 (CosyVoice) ===== -->
         <div v-if="activeTab === 'tts'" class="content-section">
-          <h2 class="section-title"><i class="fas fa-microphone"></i> 语音合成</h2>
-          <p class="section-desc">配置阿里云 CosyVoice 实时语音合成，用于角色语音朗读。</p>
+          <h2 class="section-title"><i class="fas fa-microphone"></i> {{ t('settings.tts.title') }}</h2>
+          <p class="section-desc">{{ t('settings.tts.desc') }}</p>
 
           <!-- TTS 总开关 -->
           <div class="form-group">
             <div class="toggle-row">
               <label class="toggle-label">
-                <span class="toggle-label-text">启用语音播报</span>
-                <span class="toggle-label-desc">AI 回复时自动朗读对话</span>
+                <span class="toggle-label-text">{{ t('settings.tts.enableTitle') }}</span>
+                <span class="toggle-label-desc">{{ t('settings.tts.enableDesc') }}</span>
               </label>
               <button :class="['toggle-switch', { active: ttsEnabled }]"
                 @click="ttsEnabled = !ttsEnabled; setTtsEnabled(ttsEnabled)" role="switch" :aria-checked="ttsEnabled">
@@ -265,45 +288,45 @@ async function openLogWindow() {
           <hr class="section-divider" />
 
           <div class="form-group">
-            <label class="form-label">API Key（DashScope）</label>
+            <label class="form-label">{{ t('settings.tts.apiKeyLabel') }}</label>
             <input v-model="cvConfig.apiKey" class="form-input" type="password" placeholder="sk-..." />
-            <p class="form-hint">阿里云百炼平台的 API Key，用于声音复刻和语音合成</p>
+            <p class="form-hint">{{ t('settings.tts.apiKeyHint') }}</p>
           </div>
 
           <div class="form-group">
-            <label class="form-label">语音合成模型</label>
+            <label class="form-label">{{ t('settings.tts.modelLabel') }}</label>
             <select v-model="cvConfig.model" class="form-select">
               <option v-for="m in MODELS" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
-            <p class="form-hint">不同模型支持的音色和语言不同，v3.5 系列仅支持自定义音色</p>
+            <p class="form-hint">{{ t('settings.tts.modelHint') }}</p>
           </div>
 
           <div class="form-group">
-            <label class="form-label">地域</label>
+            <label class="form-label">{{ t('settings.tts.region') }}</label>
             <select v-model="cvConfig.region" class="form-select">
               <option v-for="(r, k) in REGIONS" :key="k" :value="k">{{ r.label }}</option>
             </select>
           </div>
 
           <div v-if="cvConfig.region === 'singapore'" class="form-group">
-            <label class="form-label">WorkspaceId</label>
-            <input v-model="REGIONS.singapore.workspaceId" class="form-input" placeholder="输入业务空间 ID" />
-            <p class="form-hint">新加坡地域需要填写业务空间 ID</p>
+            <label class="form-label">{{ t('settings.tts.workspaceId') }}</label>
+            <input v-model="REGIONS.singapore.workspaceId" class="form-input" :placeholder="t('settings.tts.workspaceIdPlaceholder')" />
+            <p class="form-hint">{{ t('settings.tts.workspaceIdHint') }}</p>
           </div>
 
           <div class="form-actions">
             <button class="btn-save" @click="handleCvSave">
-              {{ cvSaved ? '✓ 已保存' : '保存配置' }}
+              {{ cvSaved ? t('common.saved') : t('settings.tts.saveConfig') }}
             </button>
           </div>
 
           <hr class="section-divider" />
 
           <div class="form-group">
-            <label class="form-label">我的音色</label>
+            <label class="form-label">{{ t('settings.tts.myVoices') }}</label>
             <button class="btn-secondary" :disabled="loadingVoices || !cvConfig.apiKey" @click="handleFetchVoices">
               <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
-              {{ loadingVoices ? '查询中...' : '获取音色列表' }}
+              {{ loadingVoices ? t('settings.tts.fetching') : t('settings.tts.fetchVoices') }}
             </button>
 
             <div v-if="voiceError" class="voice-error">{{ voiceError }}</div>
@@ -313,7 +336,7 @@ async function openLogWindow() {
                 <div class="voice-item-icon"><i class="fas fa-user-mic"></i></div>
                 <div class="voice-item-info">
                   <div class="voice-item-id">{{ v.voiceId }}</div>
-                  <div class="voice-item-meta">创建于 {{ v.gmtCreate }} · {{ v.status }}</div>
+                  <div class="voice-item-meta">{{ t('settings.tts.voiceMeta', { date: v.gmtCreate, status: v.status }) }}</div>
                 </div>
               </div>
             </div>
@@ -323,25 +346,25 @@ async function openLogWindow() {
 
           <!-- 用户显示语言偏好 -->
           <div class="form-group">
-            <label class="form-label">显示语言</label>
+            <label class="form-label">{{ t('settings.tts.displayLang') }}</label>
             <select v-model="displayLang" class="form-select" @change="setDisplayLanguage(displayLang)">
               <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
             </select>
-            <p class="form-hint">AI 回复的文本将翻译为你选择的语言显示。角色语音始终使用其母语合成。</p>
+            <p class="form-hint">{{ t('settings.tts.displayLangHint') }}</p>
           </div>
 
           <!-- 打字机速度 -->
           <div class="form-group">
-            <label class="form-label">打字机速度</label>
+            <label class="form-label">{{ t('settings.tts.typingSpeed') }}</label>
             <div class="speed-slider-row">
               <input type="range" min="10" max="200" step="5" :value="typingSpeed" @input="onTypingSpeedInput"
                 class="speed-slider" />
               <span class="speed-value">{{ typingSpeed }}ms</span>
               <span class="speed-tag"
                 :class="{ fast: typingSpeed <= 20, medium: typingSpeed > 20 && typingSpeed <= 60, slow: typingSpeed > 60 }">
-                {{ typingSpeed <= 20 ? '快速' : typingSpeed <= 60 ? '中等' : '慢速' }} </span>
+                {{ typingSpeed <= 20 ? t('settings.tts.speedFast') : typingSpeed <= 60 ? t('settings.tts.speedMedium') : t('settings.tts.speedSlow') }} </span>
             </div>
-            <p class="form-hint">每显示一个字符的间隔时间。（10ms=极快，200ms=极慢，默认50ms）</p>
+            <p class="form-hint">{{ t('settings.tts.typingSpeedHint') }}</p>
           </div>
         </div>
 
@@ -352,43 +375,43 @@ async function openLogWindow() {
 
         <!-- ===== Dev 面板 ===== -->
         <div v-if="activeTab === 'dev'" class="content-section content-dev">
-          <h2 class="section-title"><i class="fas fa-screwdriver-wrench"></i> Dev 面板</h2>
-          <p class="section-desc">姿态、情绪等功能的本地测试。</p>
+          <h2 class="section-title"><i class="fas fa-screwdriver-wrench"></i> {{ t('settings.dev.title') }}</h2>
+          <p class="section-desc">{{ t('settings.dev.desc') }}</p>
           <DevPanel />
         </div>
 
         <!-- ===== 关于 ===== -->
         <div v-if="activeTab === 'about'" class="content-section">
-          <h2 class="section-title">关于</h2>
-          <p class="section-desc">Kisaki v0.1</p>
+          <h2 class="section-title">{{ t('settings.about.title') }}</h2>
+          <p class="section-desc">{{ t('settings.about.version') }}</p>
           <div class="about-card">
             <img src="/images/kisaki_alpha.png" height="100" />
             <img src="/images/kisaki_logo_alpha.png" height="70" />
-            <p>基于 Tauri + Vue 3 构建的桌面桌宠应用</p>
-            <p>支持 AI 对话、角色切换、工具调用、TTS 语音播报</p>
+            <p>{{ t('settings.about.desc1') }}</p>
+            <p>{{ t('settings.about.desc2') }}</p>
             <p style="margin-top:12px;color:#999;font-size:12px;">
-              数据仅保存在本地，API Key 不会上传到任何第三方服务器。
+              {{ t('settings.about.privacy') }}
             </p>
             <hr class="section-divider" />
             <div class="about-links">
               <a class="about-link" href="https://github.com/AoralsFout/Kisaki" target="_blank"
                 rel="noopener noreferrer">
-                <i class="fab fa-github"></i> GitHub
+                <i class="fab fa-github"></i> {{ t('settings.about.github') }}
               </a>
               <a class="about-link" href="https://kisaki.aoralsfout.top" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-globe"></i> 官网
+                <i class="fas fa-globe"></i> {{ t('settings.about.website') }}
               </a>
             </div>
             <hr class="section-divider" />
             <button class="btn-open-logs" @click="openCharacterFolder">
-              <i class="fas fa-folder-open"></i> 打开角色数据文件夹
+              <i class="fas fa-folder-open"></i> {{ t('settings.about.openCharFolder') }}
             </button>
             <button class="btn-open-logs" @click="openLogWindow">
-              <i class="fas fa-receipt"></i> 打开日志查看器
+              <i class="fas fa-receipt"></i> {{ t('settings.about.openLogs') }}
             </button>
             <hr class="section-divider" />
             <button class="btn-exit-app" @click="exitApp">
-              <i class="fas fa-power-off"></i> 退出应用
+              <i class="fas fa-power-off"></i> {{ t('settings.about.exitApp') }}
             </button>
           </div>
         </div>

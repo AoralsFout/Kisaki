@@ -8,7 +8,10 @@
  * - 打字速度可在设置面板中调整（localStorage: deskpet-typing-speed）
  */
 import { ref, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getTypingSpeed } from '../stores/language'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   text?: string
@@ -100,7 +103,7 @@ defineExpose({ skipTyping })
     <div class="bubble-body" @click="skipTyping">
       <!-- 思考内容（灰色斜体，折叠样式） -->
       <details v-if="thinking" class="thinking-block" @click.stop>
-        <summary class="thinking-summary">Thinking</summary>
+        <summary class="thinking-summary">{{ t('chat.bubble.thinking') }}</summary>
         <div class="thinking-text">{{ thinking }}</div>
       </details>
 

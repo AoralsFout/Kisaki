@@ -9,7 +9,10 @@
  * - 重命名会话（双击或点击编辑按钮）
  */
 import { ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/session'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -102,21 +105,21 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
         <!-- 头部 -->
         <div class="session-header">
           <span class="session-title">
-            <i class="fas fa-comments"></i> 会话管理
+            <i class="fas fa-comments"></i> {{ t('session.title') }}
           </span>
           <div class="header-actions">
-            <button class="btn-new" @click="handleCreate" title="新建会话">
-              <i class="fas fa-plus"></i> 新建
+            <button class="btn-new" @click="handleCreate" :title="t('session.newTitle')">
+              <i class="fas fa-plus"></i> {{ t('session.new') }}
             </button>
-            <span class="session-count">{{ sessionStore.sessionList.length }} 个会话</span>
-            <button class="btn-close" @click="emit('close')" aria-label="关闭">&times;</button>
+            <span class="session-count">{{ t('session.count', { n: sessionStore.sessionList.length }) }}</span>
+            <button class="btn-close" @click="emit('close')" :aria-label="t('session.closeAria')">&times;</button>
           </div>
         </div>
 
         <!-- 会话列表 -->
         <div class="session-list">
           <div v-if="sessionStore.sessionList.length === 0" class="empty-hint">
-            暂无会话
+            {{ t('session.empty') }}
           </div>
 
           <div
@@ -147,7 +150,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
               <template v-else>
                 <div class="session-name">{{ s.name }}</div>
                 <div class="session-meta">
-                  <span class="session-msg-count">{{ s.messages.length }} 条消息</span>
+                  <span class="session-msg-count">{{ t('session.msgCount', { n: s.messages.length }) }}</span>
                   <span class="session-time">{{ new Date(s.updatedAt).toLocaleString() }}</span>
                 </div>
               </template>
@@ -159,7 +162,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
               <template v-if="editingId !== s.id">
                 <button
                   class="btn-icon-only"
-                  title="重命名"
+                  :title="t('session.rename')"
                   @click="startRename(s.id)"
                 >
                   <i class="fas fa-pen"></i>
@@ -167,7 +170,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
                 <button
                   v-if="sessionStore.sessionList.length > 1"
                   class="btn-icon-only btn-danger"
-                  title="删除"
+                  :title="t('session.delete')"
                   @click="handleDelete(s.id)"
                 >
                   <i class="fas fa-trash-can"></i>

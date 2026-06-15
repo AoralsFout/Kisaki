@@ -6,12 +6,15 @@
  * 命名空间搜索、关键词搜索和导出功能。
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getBuffer, clearBuffer, subscribe, subscribeCrossWindow } from '../utils/logger'
 import type { LogEntry, LogLevel } from '../utils/logger'
 import { QUERY_LOGS } from '../constants'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+
+const { t } = useI18n()
 
 // ─── 窗口模式 ─────────────────────────────────────────
 
@@ -275,10 +278,10 @@ async function refreshLogFileList() {
 async function exportLog() {
   try {
     const destPath = await save({
-      title: '导出日志文件',
+      title: t('dialogs.exportLog'),
       defaultPath: 'kisaki-logs-' + new Date().toISOString().slice(0, 10) + '.log',
       filters: [
-        { name: '日志文件', extensions: ['log', 'txt'] },
+        { name: t('dialogs.logFilterName'), extensions: ['log', 'txt'] },
       ],
     })
 
@@ -460,11 +463,11 @@ function onWheel() {
   <div class="log-viewer" :class="{ standalone: isStandalone }">
     <!-- ===== 标题栏（独立窗口） ===== -->
     <header v-if="isStandalone" class="topbar" data-tauri-drag-region>
-      <span class="topbar-title"><i class="fas fa-receipt"></i> 日志</span>
+      <span class="topbar-title"><i class="fas fa-receipt"></i> {{ t('logs.title') }}</span>
       <div class="window-controls">
-        <button class="win-btn" @click="minimizeWindow" title="最小化">─</button>
-        <button class="win-btn" @click="maximizeWindow" title="最大化">□</button>
-        <button class="win-btn win-close" @click="closeWindow" title="关闭">✕</button>
+        <button class="win-btn" @click="minimizeWindow" :title="t('logs.win.minimize')">─</button>
+        <button class="win-btn" @click="maximizeWindow" :title="t('logs.win.maximize')">□</button>
+        <button class="win-btn win-close" @click="closeWindow" :title="t('logs.win.close')">✕</button>
       </div>
     </header>
 
@@ -474,10 +477,10 @@ function onWheel() {
       <div class="toolbar-left">
         <div class="mode-tabs">
           <button :class="['mode-tab', { active: mode === 'realtime' }]" @click="switchMode('realtime')">
-            <i class="fas fa-bolt"></i> 实时
+            <i class="fas fa-bolt"></i> {{ t('logs.realtime') }}
           </button>
           <button :class="['mode-tab', { active: mode === 'history' }]" @click="switchMode('history')">
-            <i class="fas fa-clock-rotate"></i> 历史
+            <i class="fas fa-clock-rotate"></i> {{ t('logs.history') }}
           </button>
         </div>
 
@@ -488,12 +491,12 @@ function onWheel() {
           </button>
           <button class="level-btn all" :class="{ active: enabledLevels.size === ALL_LEVELS.length }"
             @click="toggleAllLevels">
-            全部
+            {{ t('logs.all') }}
           </button>
         </div>
 
         <!-- 统计 -->
-        <span class="stats-text" :title="`显示 ${filteredStats.total} / 共 ${stats.total} 条`">
+        <span class="stats-text" :title="t('logs.statsTitle', { shown: filteredStats.total, total: stats.total })">
           {{ filteredStats.total }}/{{ stats.total }}
         </span>
       </div>
@@ -507,22 +510,22 @@ function onWheel() {
 
         <div class="search-box">
           <i class="fas fa-circle-nodes search-icon"></i>
-          <input v-model="namespaceFilter" class="search-input" placeholder="命名空间..." title="按命名空间过滤" />
+          <input v-model="namespaceFilter" class="search-input" :placeholder="t('logs.namespacePlaceholder')" :title="t('logs.namespaceTitle')" />
         </div>
 
         <div class="search-box">
           <i class="fas fa-magnifying-glass search-icon"></i>
-          <input v-model="searchFilter" class="search-input" placeholder="搜索..." title="按消息内容搜索" />
+          <input v-model="searchFilter" class="search-input" :placeholder="t('logs.searchPlaceholder')" :title="t('logs.searchTitle')" />
         </div>
 
-        <button class="toolbar-btn" title="刷新（仅历史模式）" @click="refreshLogFileList(); loadHistory()">
+        <button class="toolbar-btn" :title="t('logs.refreshTitle')" @click="refreshLogFileList(); loadHistory()">
           <i class="fas fa-rotate"></i>
         </button>
-        <button class="toolbar-btn" title="导出日志" @click="exportLog">
+        <button class="toolbar-btn" :title="t('logs.exportTitle')" @click="exportLog">
           <i class="fas fa-download"></i>
         </button>
 
-        <button v-if="mode === 'realtime'" class="toolbar-btn" title="清空当前日志" @click="handleClear">
+        <button v-if="mode === 'realtime'" class="toolbar-btn" :title="t('logs.clearTitle')" @click="handleClear">
           <i class="fas fa-trash-can"></i>
         </button>
       </div>
@@ -533,22 +536,22 @@ function onWheel() {
       <!-- 空态 -->
       <div v-if="filteredEntries.length === 0 && !historyLoading" class="empty-state">
         <i class="fas fa-inbox empty-icon"></i>
-        <p class="empty-text">暂无日志记录</p>
-        <p v-if="mode === 'history'" class="empty-hint">选择左侧的日志文件以查看历史记录</p>
-        <p v-else class="empty-hint">应用运行时产生的日志将在此显示</p>
+        <p class="empty-text">{{ t('logs.emptyText') }}</p>
+        <p v-if="mode === 'history'" class="empty-hint">{{ t('logs.emptyHistoryHint') }}</p>
+        <p v-else class="empty-hint">{{ t('logs.emptyRealtimeHint') }}</p>
       </div>
 
       <!-- 加载中 -->
       <div v-if="historyLoading" class="loading-state">
         <i class="fas fa-spinner spinning"></i>
-        <span>加载中...</span>
+        <span>{{ t('common.loading') }}</span>
       </div>
 
       <!-- 错误 -->
       <div v-if="historyError" class="error-state">
         <i class="fas fa-triangle-exclamation"></i>
-        <span>加载失败: {{ historyError }}</span>
-        <button class="retry-btn" @click="loadHistory">重试</button>
+        <span>{{ t('logs.loadError', { msg: historyError }) }}</span>
+        <button class="retry-btn" @click="loadHistory">{{ t('common.retry') }}</button>
       </div>
 
       <!-- 日志行 -->
@@ -575,7 +578,7 @@ function onWheel() {
 
     <!-- ===== 底部新日志提示 ===== -->
     <div v-if="hasNewLogs && !autoScroll" class="new-logs-bar" @click="scrollToBottom">
-      <i class="fas fa-arrow-down"></i> 新日志
+      <i class="fas fa-arrow-down"></i> {{ t('logs.newLogs') }}
     </div>
   </div>
 </template>

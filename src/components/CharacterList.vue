@@ -4,6 +4,10 @@
  *
  * 展示所有可用角色，支持选择进入编辑和创建新角色。
  */
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps<{
   availableList: string[]
   currentId: string
@@ -33,7 +37,7 @@ const emit = defineEmits<{
     </div>
     <div class="char-card char-card-add" @click="emit('create')">
       <div class="card-icon" style="font-size:32px;color:#aaa;">+</div>
-      <div class="card-name" style="color:#999;">添加角色</div>
+      <div class="card-name" style="color:#999;">{{ t('character.list.add') }}</div>
     </div>
   </div>
 </template>

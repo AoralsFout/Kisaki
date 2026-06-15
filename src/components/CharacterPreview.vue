@@ -5,7 +5,10 @@
  * 展示选中立绘的大图，支持编辑姿势/服装/情绪标签。
  */
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { CharacterImageData } from '../character/loader'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   image: CharacterImageData | null
@@ -42,8 +45,8 @@ function handleEmotionKeydown(e: KeyboardEvent) {
       <div class="preview-header">
         <span class="preview-filename">{{ image.file }}</span>
         <div class="preview-actions">
-          <button class="preview-btn preview-btn-del" @click="emit('delete', image.file)" title="删除此立绘"><i class="fas fa-trash-can"></i></button>
-          <button class="preview-btn" @click="emit('close')" title="关闭">✕</button>
+          <button class="preview-btn preview-btn-del" @click="emit('delete', image.file)" :title="t('character.preview.deleteTitle')"><i class="fas fa-trash-can"></i></button>
+          <button class="preview-btn" @click="emit('close')" :title="t('common.close')">✕</button>
         </div>
       </div>
 
@@ -53,7 +56,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 
       <div class="preview-editor">
         <div class="edit-row">
-          <label>姿势</label>
+          <label>{{ t('character.preview.pose') }}</label>
           <select
             :value="image.pose"
             @change="emit('update-pose', image.file, ($event.target as HTMLSelectElement).value)"
@@ -63,7 +66,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
         </div>
 
         <div class="edit-row">
-          <label>服装</label>
+          <label>{{ t('character.preview.costume') }}</label>
           <select
             :value="image.costume"
             @change="emit('update-costume', image.file, ($event.target as HTMLSelectElement).value)"
@@ -73,27 +76,27 @@ function handleEmotionKeydown(e: KeyboardEvent) {
         </div>
 
         <div class="edit-row">
-          <label>情绪</label>
+          <label>{{ t('character.preview.emotion') }}</label>
           <div class="emotion-edit">
             <code
               v-for="(em, ei) in image.emotions"
               :key="ei"
               class="em-tag"
               @click="emit('remove-emotion', image.file, ei)"
-              title="点击移除"
+              :title="t('character.preview.clickToRemove')"
             >{{ em }} ✕</code>
             <input
               v-model="emotionInput"
               class="emotion-input"
               @keydown="handleEmotionKeydown"
-              placeholder="输入后按空格添加"
+              :placeholder="t('character.preview.emotionPlaceholder')"
             />
           </div>
         </div>
       </div>
     </template>
     <div v-else class="preview-empty">
-      ← 从左侧选择一张立绘
+      {{ t('character.preview.empty') }}
     </div>
   </div>
 </template>

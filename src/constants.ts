@@ -16,8 +16,11 @@ export const STORAGE_COSYVOICE_CONFIG = 'deskpet-cosyvoice-config'
 /** TTS 开关状态 */
 export const STORAGE_TTS_ENABLED = 'deskpet-tts-enabled'
 
-/** 用户显示语言偏好 */
+/** 用户显示语言偏好（AI 回复文本翻译语言，区别于 UI 界面语言） */
 export const STORAGE_DISPLAY_LANGUAGE = 'deskpet-display-language'
+
+/** 用户界面语言偏好（UI 文案，区别于 AI 回复翻译语言） */
+export const STORAGE_UI_LANGUAGE = 'deskpet-ui-language'
 
 /** 鼠标穿透开关（透明区域点击穿透到下方窗口） */
 export const STORAGE_PASSTHROUGH_ENABLED = 'deskpet-passthrough-enabled'
@@ -55,6 +58,9 @@ export const CHANNEL_DESKPET_DEV = 'deskpet-dev'
 /** 跨窗口日志同步广播通道 */
 export const CHANNEL_DESKPET_LOGS = 'deskpet-logs'
 
+/** 界面语言切换广播通道（设置窗口切换后通知其它窗口实时联动） */
+export const CHANNEL_DESKPET_UI_LANG = 'deskpet-ui-lang'
+
 // ─── Tauri 事件名（跨窗口，经 Rust 中转） ──────────────
 
 /** 角色增删改后广播：通知主窗口刷新角色列表（设置窗口 → 主窗口） */
@@ -67,6 +73,9 @@ export const EVENT_CURSOR_POS = 'cursor-pos'
 
 /** 默认显示语言 */
 export const DEFAULT_DISPLAY_LANGUAGE = 'zh-CN'
+
+/** 默认界面语言（UI 文案） */
+export const DEFAULT_UI_LANGUAGE = 'zh-CN'
 
 /** 默认 TTS 语音语言 */
 export const DEFAULT_VOICE_LANGUAGE = 'ja-JP'

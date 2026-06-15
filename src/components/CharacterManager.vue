@@ -3,6 +3,7 @@
  * 角色管理 - 角色列表 + 编辑器
  */
 import { ref, onMounted, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
@@ -22,6 +23,8 @@ import CharacterPreview from './CharacterPreview.vue'
 import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
 
 const charStore = useCharacterStore()
+
+const { t } = useI18n()
 
 // ---- 页面状态 ----
 type ViewMode = 'list' | 'editor'
@@ -124,15 +127,15 @@ async function submitCreateForm() {
   createError.value = ''
 
   if (!id) {
-    createError.value = '请输入角色 ID'
+    createError.value = t('character.msg.errEnterId')
     return
   }
   if (!/^[a-z][a-z0-9_]*$/.test(id)) {
-    createError.value = 'ID 必须是小写字母开头，仅含字母数字下划线'
+    createError.value = t('character.msg.errIdFormat')
     return
   }
   if (charStore.availableList.includes(id)) {
-    createError.value = `角色 "${id}" 已存在`
+    createError.value = t('character.msg.errCharExists', { id })
     return
   }
 
@@ -160,10 +163,10 @@ async function submitCreateForm() {
     emit(EVENT_CHARACTERS_CHANGED)
     showCreateForm.value = false
     enterEditor(id)
-    saveMsg.value = `已创建角色 "${name}"`
+    saveMsg.value = t('character.msg.createdCharacter', { name })
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    createError.value = `创建失败: ${e instanceof Error ? e.message : String(e)}`
+    createError.value = t('character.msg.errCreateFailed', { msg: e instanceof Error ? e.message : String(e) })
   }
 }
 
@@ -182,7 +185,7 @@ const pendingExit = ref(false)
 function backToList() {
   if (hasChanges.value && !pendingExit.value) {
     pendingExit.value = true
-    saveMsg.value = '有未保存的更改，再次点击「← 返回」确认退出'
+    saveMsg.value = t('character.msg.unsavedExit')
     setTimeout(() => { if (!pendingExit.value) return; pendingExit.value = false; saveMsg.value = '' }, 4000)
     return
   }
@@ -266,10 +269,10 @@ async function deleteCharacter() {
     }
     showDeleteConfirm.value = false
     backToList()
-    saveMsg.value = `已删除角色`
+    saveMsg.value = t('character.msg.deletedCharacter')
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = `删除失败: ${(e as Error).message}`
+    saveError.value = t('character.msg.errDeleteFailed', { msg: (e as Error).message })
   } finally {
     isDeleting.value = false
   }
@@ -365,7 +368,7 @@ async function onFilePicked(event: Event) {
   if (files.length === 0) return
 
   const images = files.filter(f => f.type.startsWith('image/'))
-  if (images.length === 0) { saveError.value = '请选择图片文件'; return }
+  if (images.length === 0) { saveError.value = t('character.msg.errSelectImage'); return }
 
   const defaultPose = editablePoses.value[0] ?? ''
   const defaultCostume = editableCostumes.value[0] ?? ''
@@ -383,10 +386,10 @@ async function onFilePicked(event: Event) {
       })
     }
     markChanged()
-    saveMsg.value = `已添加 ${images.length} 张立绘`
+    saveMsg.value = t('character.msg.addedImages', { n: images.length })
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = `添加失败: ${(e as Error).message}`
+    saveError.value = t('character.msg.errAddFailed', { msg: (e as Error).message })
   }
 
   input.value = ''
@@ -417,7 +420,7 @@ async function saveAll() {
   const orphaned = [...oldFiles].filter(f => !newFiles.has(f))
 
   const promptOk = await tauriWrite('prompt.txt', promptText.value)
-  if (!promptOk) { saveError.value = '保存提示词失败'; return }
+  if (!promptOk) { saveError.value = t('character.msg.errSavePrompt'); return }
 
   const collectedEmotions = [...new Set(editableImages.value.flatMap(img => img.emotions))]
   const newData: Record<string, any> = {
@@ -437,7 +440,7 @@ async function saveAll() {
   newData.textLanguage = selectedTextLang.value
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
-  if (!jsonOk) { saveError.value = '保存角色配置失败'; return }
+  if (!jsonOk) { saveError.value = t('character.msg.errSaveConfig'); return }
 
   if (orphaned.length > 0) {
     await Promise.all(orphaned.map(f =>
@@ -450,7 +453,7 @@ async function saveAll() {
   loadData()
   bustImageCache()  // 递增缓存版本，下次图片请求使用新 URL
   emit(EVENT_CHARACTERS_CHANGED) // 通知主窗口刷新（角色内容已变）
-  saveMsg.value = '保存成功！文件已更新'
+  saveMsg.value = t('character.msg.saveSuccess')
   hasChanges.value = false
   pendingExit.value = false
   setTimeout(() => { saveMsg.value = '' }, 3000)
@@ -468,16 +471,16 @@ async function exportPack() {
   saveError.value = ''
   try {
     const destPath = await save({
-      title: '导出角色包',
+      title: t('dialogs.exportPack'),
       defaultPath: `${editingId.value}.zip`,
-      filters: [{ name: '角色包', extensions: ['zip'] }],
+      filters: [{ name: t('dialogs.packFilterName'), extensions: ['zip'] }],
     })
     if (!destPath) return // 用户取消
     await invoke('export_character_pack', { id: editingId.value, destPath })
-    saveMsg.value = '角色包已导出'
+    saveMsg.value = t('character.msg.packExported')
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = `导出失败: ${(e as Error).message}`
+    saveError.value = t('character.msg.errExportFailed', { msg: (e as Error).message })
   } finally {
     packBusy.value = false
   }
@@ -491,9 +494,9 @@ async function importPack() {
   saveError.value = ''
   try {
     const selected = await open({
-      title: '导入角色包',
+      title: t('dialogs.importPack'),
       multiple: false,
-      filters: [{ name: '角色包', extensions: ['zip'] }],
+      filters: [{ name: t('dialogs.packFilterName'), extensions: ['zip'] }],
     })
     if (typeof selected !== 'string') return // 用户取消
     const result = await invoke('import_character_pack', { srcPath: selected }) as { imported: string[]; skipped: string[] }
@@ -501,12 +504,12 @@ async function importPack() {
     bustImageCache()
     emit(EVENT_CHARACTERS_CHANGED)
     const parts: string[] = []
-    if (result.imported.length) parts.push(`导入 ${result.imported.length} 个角色`)
-    if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 个（已存在）`)
-    saveMsg.value = parts.length ? parts.join('，') : '角色包中没有可导入的角色'
+    if (result.imported.length) parts.push(t('character.msg.imported', { n: result.imported.length }))
+    if (result.skipped.length) parts.push(t('character.msg.skipped', { n: result.skipped.length }))
+    saveMsg.value = parts.length ? parts.join(' · ') : t('character.msg.nothingToImport')
     setTimeout(() => { saveMsg.value = '' }, 4000)
   } catch (e) {
-    saveError.value = `导入失败: ${(e as Error).message}`
+    saveError.value = t('character.msg.errImportFailed', { msg: (e as Error).message })
   } finally {
     packBusy.value = false
   }
@@ -518,9 +521,9 @@ async function importPack() {
     <!-- ===== 角色卡片列表 ===== -->
     <div v-if="view === 'list'">
       <div class="mgr-header mgr-header-row">
-        <h2 class="section-title"><i class="fas fa-masks-theater"></i> 选择角色</h2>
+        <h2 class="section-title"><i class="fas fa-masks-theater"></i> {{ t('character.mgr.selectTitle') }}</h2>
         <button class="btn-import" :disabled="packBusy" @click="importPack">
-          <i class="fas fa-file-import"></i> 导入角色包
+          <i class="fas fa-file-import"></i> {{ t('character.mgr.importPack') }}
         </button>
       </div>
       <div class="list-status">
@@ -531,14 +534,14 @@ async function importPack() {
       <!-- 零角色空状态引导 -->
       <div v-if="displayList.length === 0" class="empty-guide">
         <i class="fas fa-masks-theater empty-guide-icon"></i>
-        <p class="empty-guide-title">还没有任何角色</p>
-        <p class="empty-guide-hint">导入一个角色包，或新建一个角色开始</p>
+        <p class="empty-guide-title">{{ t('character.mgr.emptyTitle') }}</p>
+        <p class="empty-guide-hint">{{ t('character.mgr.emptyHint') }}</p>
         <div class="empty-guide-actions">
           <button class="btn-import-lg" :disabled="packBusy" @click="importPack">
-            <i class="fas fa-file-import"></i> 导入角色包
+            <i class="fas fa-file-import"></i> {{ t('character.mgr.importPack') }}
           </button>
           <button class="btn-create-lg" @click="openCreateForm">
-            <i class="fas fa-plus"></i> 新建角色
+            <i class="fas fa-plus"></i> {{ t('character.mgr.createNew') }}
           </button>
         </div>
       </div>
@@ -557,43 +560,43 @@ async function importPack() {
         <div v-if="showCreateForm" class="modal-overlay" @click.self="showCreateForm = false">
           <div class="modal-card">
             <div class="modal-header">
-              <h3 class="modal-title"><i class="fas fa-masks-theater"></i> 创建新角色</h3>
+              <h3 class="modal-title"><i class="fas fa-masks-theater"></i> {{ t('character.mgr.createTitle') }}</h3>
               <button class="modal-close" @click="showCreateForm = false">✕</button>
             </div>
             <div class="modal-body">
               <div class="form-group">
-                <label class="form-label">角色 ID <span class="label-note">（英文小写，如 "new_char"）</span></label>
+                <label class="form-label">{{ t('character.mgr.idLabel') }} <span class="label-note">{{ t('character.mgr.idNote') }}</span></label>
                 <input
                   v-model="newCharId"
                   class="form-input"
-                  placeholder="my_character"
+                  :placeholder="t('character.mgr.idPlaceholder')"
                   autofocus
                   @keydown.enter="submitCreateForm"
                   @keydown.esc="showCreateForm = false"
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">显示名称</label>
+                <label class="form-label">{{ t('character.mgr.nameLabel') }}</label>
                 <input
                   v-model="newCharName"
                   class="form-input"
-                  placeholder="我的角色（留空则使用 ID）"
+                  :placeholder="t('character.mgr.namePlaceholder')"
                   @keydown.enter="submitCreateForm"
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">描述 <span class="label-note">（可选）</span></label>
+                <label class="form-label">{{ t('character.mgr.descLabel') }} <span class="label-note">{{ t('character.mgr.descNote') }}</span></label>
                 <input
                   v-model="newCharDesc"
                   class="form-input"
-                  placeholder="角色的简短描述"
+                  :placeholder="t('character.mgr.descPlaceholder')"
                 />
               </div>
               <p v-if="createError" class="form-error">{{ createError }}</p>
             </div>
             <div class="modal-footer">
-              <button class="btn-cancel" @click="showCreateForm = false">取消</button>
-              <button class="btn-create" @click="submitCreateForm">确认创建</button>
+              <button class="btn-cancel" @click="showCreateForm = false">{{ t('common.cancel') }}</button>
+              <button class="btn-create" @click="submitCreateForm">{{ t('character.mgr.confirmCreate') }}</button>
             </div>
           </div>
         </div>
@@ -608,12 +611,12 @@ async function importPack() {
           <div class="editor-topbar">
             <h2 class="editor-title"><i class="fas fa-masks-theater"></i> {{ editingId.charAt(0).toUpperCase() + editingId.slice(1) }}</h2>
             <div class="editor-actions">
-              <button class="btn-back" @click="backToList">← 返回</button>
+              <button class="btn-back" @click="backToList">{{ t('common.back') }}</button>
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
-                <i v-if="hasChanges" class="fas fa-floppy-disk"></i> 保存
+                <i v-if="hasChanges" class="fas fa-floppy-disk"></i> {{ t('character.mgr.saveBtn') }}
               </button>
-              <button class="btn-export" :disabled="packBusy" @click="exportPack" title="导出角色包"><i class="fas fa-file-export"></i></button>
-              <button class="btn-delete" @click="showDeleteConfirm = true" title="删除角色"><i class="fas fa-trash-can"></i></button>
+              <button class="btn-export" :disabled="packBusy" @click="exportPack" :title="t('character.mgr.exportTitle')"><i class="fas fa-file-export"></i></button>
+              <button class="btn-delete" @click="showDeleteConfirm = true" :title="t('character.mgr.deleteTitle')"><i class="fas fa-trash-can"></i></button>
             </div>
           </div>
           <div class="editor-status">
@@ -631,61 +634,61 @@ async function importPack() {
         <div class="editor-body">
           <!-- 提示词 -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-pencil"></i> 提示词</h3>
+            <h3 class="mgr-label"><i class="fas fa-pencil"></i> {{ t('character.mgr.prompt') }}</h3>
             <textarea v-model="promptText" class="mgr-textarea" rows="8" @input="markChanged"></textarea>
           </section>
 
           <!-- 姿势列表 -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-person"></i> 姿势</h3>
+            <h3 class="mgr-label"><i class="fas fa-person"></i> {{ t('character.mgr.poses') }}</h3>
             <div class="tag-list">
-              <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" title="点击移除">{{ p }} ✕</span>
+              <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" :title="t('character.mgr.clickToRemove')">{{ p }} ✕</span>
               <template v-if="addingPose">
                 <input
                   ref="poseInputRef"
                   v-model="newPoseName"
                   class="tag-input"
-                  placeholder="输入名称后回车"
+                  :placeholder="t('character.mgr.tagInputPlaceholder')"
                   @keydown.enter="commitNewPose"
                   @keydown.esc="addingPose = false"
                   @blur="commitNewPose"
                 />
               </template>
-              <button v-else class="tag-add" @click="addingPose = true">+ 添加</button>
+              <button v-else class="tag-add" @click="addingPose = true">{{ t('character.mgr.addTag') }}</button>
             </div>
           </section>
 
           <!-- 服装列表 -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-shirt"></i> 服装</h3>
+            <h3 class="mgr-label"><i class="fas fa-shirt"></i> {{ t('character.mgr.costumes') }}</h3>
             <div class="tag-list">
-              <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" title="点击移除">{{ c }} ✕</span>
+              <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" :title="t('character.mgr.clickToRemove')">{{ c }} ✕</span>
               <template v-if="addingCostume">
                 <input
                   ref="costumeInputRef"
                   v-model="newCostumeName"
                   class="tag-input"
-                  placeholder="输入名称后回车"
+                  :placeholder="t('character.mgr.tagInputPlaceholder')"
                   @keydown.enter="commitNewCostume"
                   @keydown.esc="addingCostume = false"
                   @blur="commitNewCostume"
                 />
               </template>
-              <button v-else class="tag-add" @click="addingCostume = true">+ 添加</button>
+              <button v-else class="tag-add" @click="addingCostume = true">{{ t('character.mgr.addTag') }}</button>
             </div>
           </section>
 
           <!-- 语音合成音色 -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-microphone"></i> 语音音色</h3>
+            <h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.voiceTitle') }}</h3>
             <div class="voice-select-row">
               <select v-model="selectedVoice" class="voice-select" @change="markChanged">
-                <option value="">不使用语音合成</option>
+                <option value="">{{ t('character.mgr.voiceNone') }}</option>
                 <option v-for="v in availableVoices" :key="v.voiceId" :value="v.voiceId">
                   {{ v.voiceId }}
                 </option>
               </select>
-              <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" title="刷新音色列表">
+              <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" :title="t('character.mgr.voiceRefresh')">
                 <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
               </button>
             </div>
@@ -697,27 +700,27 @@ async function importPack() {
                 @click="previewVoice"
               >
                 <i :class="voicePreviewing ? 'fas fa-stop' : 'fas fa-play'"></i>
-                {{ voicePreviewing ? '停止' : '试听' }}
+                {{ voicePreviewing ? t('character.mgr.previewStop') : t('character.mgr.preview') }}
               </button>
               <span class="voice-preview-hint">{{ voicePreviewText }}</span>
             </div>
             <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
             <p v-else-if="availableVoices.length === 0" class="voice-hint">
-              暂无音色，请先在设置中配置 CosyVoice API Key 并获取音色列表
+              {{ t('character.mgr.voiceNoneHint') }}
             </p>
             <p v-else-if="selectedVoice" class="voice-hint-ok">
-              <i class="fas fa-check-circle"></i> 已选择语音音色
+              <i class="fas fa-check-circle"></i> {{ t('character.mgr.voiceSelectedHint') }}
             </p>
 
             <div class="lang-row">
               <div class="lang-field">
-                <label class="lang-label">语音语言（TTS）</label>
+                <label class="lang-label">{{ t('character.mgr.ttsLang') }}</label>
                 <select v-model="selectedVoiceLang" class="voice-select" @change="markChanged">
                   <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
                 </select>
               </div>
               <div class="lang-field">
-                <label class="lang-label">默认显示语言</label>
+                <label class="lang-label">{{ t('character.mgr.defaultDisplayLang') }}</label>
                 <select v-model="selectedTextLang" class="voice-select" @change="markChanged">
                   <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
                 </select>
@@ -727,7 +730,7 @@ async function importPack() {
 
           <!-- 立绘网格 -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-image"></i> 立绘</h3>
+            <h3 class="mgr-label"><i class="fas fa-image"></i> {{ t('character.mgr.imagesTitle') }}</h3>
             <div class="img-grid">
               <div
                 v-for="img in editableImages"
@@ -746,7 +749,7 @@ async function importPack() {
               <div class="img-card img-card-add" @click="triggerAddImage">
                 <div class="img-add-icon">+</div>
                 <div class="img-grid-info">
-                  <div class="img-grid-name">添加立绘</div>
+                  <div class="img-grid-name">{{ t('character.mgr.addImage') }}</div>
                 </div>
               </div>
             </div>
@@ -775,19 +778,18 @@ async function importPack() {
       <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
         <div class="modal-card modal-warn">
           <div class="modal-header">
-            <h3 class="modal-title"><i class="fas fa-triangle-exclamation"></i> 确认删除</h3>
+            <h3 class="modal-title"><i class="fas fa-triangle-exclamation"></i> {{ t('character.mgr.deleteConfirmTitle') }}</h3>
             <button class="modal-close" @click="showDeleteConfirm = false">✕</button>
           </div>
           <div class="modal-body">
             <p class="delete-warn-text">
-              确定要删除角色 <strong>{{ editingId }}</strong> 吗？<br />
-              此操作会删除该角色的所有立绘、提示词和配置，<strong>不可恢复</strong>。
+              {{ t('character.mgr.deleteConfirmText', { id: editingId }) }}
             </p>
           </div>
           <div class="modal-footer">
-            <button class="btn-cancel" @click="showDeleteConfirm = false">取消</button>
+            <button class="btn-cancel" @click="showDeleteConfirm = false">{{ t('common.cancel') }}</button>
             <button class="btn-delete-confirm" :disabled="isDeleting" @click="deleteCharacter">
-              {{ isDeleting ? '删除中...' : '确认删除' }}
+              {{ isDeleting ? t('character.mgr.deleting') : t('character.mgr.confirmDelete') }}
             </button>
           </div>
         </div>

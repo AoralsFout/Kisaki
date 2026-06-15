@@ -3,6 +3,7 @@
  * 桌宠 - 主应用组件
  */
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
 import DialogueBubble from './components/DialogueBubble.vue'
 import InputBox from './components/InputBox.vue'
@@ -38,6 +39,8 @@ import { listen } from '@tauri-apps/api/event'
 import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled, isIgnoring } from './passthrough'
 
 const log = createLogger('App')
+
+const { t } = useI18n()
 
 const isDev = new URLSearchParams(window.location.search).has(QUERY_DEV)
 const isSettings = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
@@ -135,7 +138,7 @@ onMounted(async () => {
   setTimeout(() => {
     if (!welcomeShown && chat.messages.length === 0) {
       welcomeShown = true
-      chat.showBubbleText('嘿嘿', true)
+      chat.showBubbleText(t('app.bubble.welcome'), true)
     }
   }, 1000)
 
@@ -209,7 +212,7 @@ async function openSettingsWindow(tab?: string) {
     const tabQuery = tab ? `&tab=${tab}` : ''
     new WebviewWindow(WINDOW_SETTINGS, {
       url: `/?${QUERY_SETTINGS}=1${tabQuery}`,
-      title: '设置',
+      title: t('window.settings'),
       width: 1000,
       height: 600,
       decorations: false,
@@ -238,7 +241,7 @@ async function openLogWindow() {
 
     new WebviewWindow(WINDOW_LOGS, {
       url: `/?${QUERY_LOGS}=1`,
-      title: '日志',
+      title: t('window.logs'),
       width: 800,
       height: 500,
       x: mainPos ? mainPos.x + (mainSize?.width ?? 400) : undefined,
@@ -259,7 +262,7 @@ async function handleSelectCharacter(charId: string) {
   await ctrl.switchCharacter(charId)
   chat.resetContext()
   applyCharacterPersona()
-  chat.showBubbleText(`切换到 ${charStore.name}~`, false)
+  chat.showBubbleText(t('app.bubble.switchTo', { name: charStore.name }), false)
 }
 </script>
 
@@ -279,10 +282,10 @@ async function handleSelectCharacter(charId: string) {
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
       <div v-if="noCharacter" class="no-char-guide" data-pet-solid>
         <i class="fas fa-masks-theater no-char-icon"></i>
-        <p class="no-char-title">还没有角色</p>
-        <p class="no-char-hint">先添加一个角色才能开始聊天</p>
+        <p class="no-char-title">{{ t('app.noChar.title') }}</p>
+        <p class="no-char-hint">{{ t('app.noChar.hint') }}</p>
         <button class="no-char-btn" @click="openSettingsWindow('character')">
-          <i class="fas fa-plus"></i> 添加角色
+          <i class="fas fa-plus"></i> {{ t('app.noChar.add') }}
         </button>
       </div>
     </div>
@@ -305,45 +308,45 @@ async function handleSelectCharacter(charId: string) {
         class="stop-btn"
         data-pet-solid
         @click="chat.cancelResponse()"
-        aria-label="停止生成"
+        :aria-label="t('app.aria.stop')"
       >
         <i class="fas fa-stop"></i>
-        <span>停止</span>
+        <span>{{ t('app.stop') }}</span>
       </button>
 
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar" data-pet-solid>
-        <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()" aria-label="打开聊天输入框">
+        <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()" :aria-label="t('app.aria.chatInput')">
           <i class="fas fa-comment btn-icon"></i>
-          <span class="btn-label">聊天</span>
+          <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession" aria-label="会话管理">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession" :aria-label="t('app.aria.session')">
           <i class="fas fa-comments btn-icon"></i>
-          <span class="btn-label">会话</span>
+          <span class="btn-label">{{ t('app.toolbar.session') }}</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory" aria-label="打开对话历史">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory" :aria-label="t('app.aria.history')">
           <i class="fas fa-clipboard-list btn-icon"></i>
-          <span class="btn-label">历史</span>
+          <span class="btn-label">{{ t('app.toolbar.history') }}</span>
         </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showCharacterSelect = !showCharacterSelect" aria-label="切换角色">
+        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showCharacterSelect = !showCharacterSelect" :aria-label="t('app.aria.switchCharacter')">
           <i class="fas fa-rotate btn-icon"></i>
-          <span class="btn-label">角色</span>
+          <span class="btn-label">{{ t('app.toolbar.character') }}</span>
         </button>
-        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts" :aria-label="ttsEnabled ? '关闭语音播报' : '开启语音播报'">
+        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts" :aria-label="ttsEnabled ? t('app.aria.ttsOff') : t('app.aria.ttsOn')">
           <i class="fas fa-volume-high btn-icon"></i>
-          <span class="btn-label">{{ ttsEnabled ? '语音' : '静音' }}</span>
+          <span class="btn-label">{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
         </button>
-        <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough" :aria-label="passthroughOn ? '关闭鼠标穿透' : '开启鼠标穿透'">
+        <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough" :aria-label="passthroughOn ? t('app.aria.passthroughOff') : t('app.aria.passthroughOn')">
           <i class="fas fa-arrow-pointer btn-icon"></i>
-          <span class="btn-label">{{ passthroughOn ? '穿透' : '实体' }}</span>
+          <span class="btn-label">{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
         </button>
-        <button class="tool-btn" @click="openLogWindow()" aria-label="打开日志窗口">
+        <button class="tool-btn" @click="openLogWindow()" :aria-label="t('app.aria.logs')">
           <i class="fas fa-receipt btn-icon"></i>
-          <span class="btn-label">日志</span>
+          <span class="btn-label">{{ t('app.toolbar.logs') }}</span>
         </button>
-        <button class="tool-btn" @click="openSettingsWindow()" aria-label="打开设置窗口">
+        <button class="tool-btn" @click="openSettingsWindow()" :aria-label="t('app.aria.settings')">
           <i class="fas fa-gear btn-icon"></i>
-          <span class="btn-label">设置</span>
+          <span class="btn-label">{{ t('app.toolbar.settings') }}</span>
         </button>
       </div>
 

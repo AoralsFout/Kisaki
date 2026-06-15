@@ -3,7 +3,10 @@
  * 角色切换面板
  */
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible?: boolean
@@ -44,10 +47,10 @@ function handleSelect(id: string) {
     <div v-if="visible" class="overlay" data-pet-solid>
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title"><i class="fas fa-masks-theater"></i> 切换角色</span>
+          <span class="panel-title"><i class="fas fa-masks-theater"></i> {{ t('character.select.title') }}</span>
           <div class="header-actions">
-            <span class="count">{{ charStore.availableList.length }} 个角色</span>
-            <button class="btn-close" @click="emit('close')" aria-label="关闭角色切换面板">✕</button>
+            <span class="count">{{ t('character.select.count', { n: charStore.availableList.length }) }}</span>
+            <button class="btn-close" @click="emit('close')" :aria-label="t('character.select.aria')">✕</button>
           </div>
         </div>
 
@@ -64,7 +67,7 @@ function handleSelect(id: string) {
             </div>
             <div class="char-info">
               <div class="char-name">
-                {{ id === charStore.currentId ? `${charStore.name}（当前）` : charStore.getCharacterName(id) }}
+                {{ id === charStore.currentId ? t('character.select.current', { name: charStore.name }) : charStore.getCharacterName(id) }}
               </div>
               <div class="char-id">{{ id }}</div>
             </div>

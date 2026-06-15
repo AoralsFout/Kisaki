@@ -22,6 +22,7 @@ import type { ToolCall } from '../agent'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
+import { t } from '../i18n'
 import { useSessionStore } from './session'
 import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
@@ -306,7 +307,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!navigator.onLine) {
       log.warn('[%s] ✗ 网络不可用，无法发送消息', _fn)
       log.debug('[%s] navigator.onLine=%s', _fn, navigator.onLine)
-      showBubbleText('网络似乎断开了，联网后重试吧~', false)
+      showBubbleText(t('app.bubble.networkOff'), false)
       isProcessing.value = false
       log.trace('[%s] ◀ (网络不可用)', _fn)
       return
@@ -316,7 +317,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!isConfigValid(cfgCheck)) {
       log.warn('[%s] ✗ API 未配置 (model=%s baseURL=%s hasKey=%s)',
         _fn, cfgCheck.model || '?', cfgCheck.baseURL || '?', cfgCheck.apiKey ? '✓' : '✗')
-      showBubbleText('请先配置 API~ → 设置 填写 API 信息', false)
+      showBubbleText(t('app.bubble.apiNotConfigured'), false)
       isProcessing.value = false
       log.trace('[%s] ◀ (配置无效)', _fn)
       return
@@ -670,7 +671,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         log.error('[%s] 第%d轮 ✗ 错误: [%s] %s', _fn, turn, errName, errMsg)
         log.debug('[%s] 第%d轮 ✗ 错误堆栈: %s', _fn, turn, (err as Error).stack || '(无堆栈)')
-        showBubbleText(`出错了: ${errMsg}`, false)
+        showBubbleText(t('app.bubble.error', { msg: errMsg }), false)
         break
       }
     }
@@ -691,7 +692,7 @@ export const useChatStore = defineStore('chat', () => {
       // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
       log.info('[%s] ⚠ %d 轮循环后无文本回复，展示兜底提示 (finalTextFromLoop=%s)',
         _fn, MAX_TOOL_TURNS, finalTextFromLoop ? '有' : '无')
-      showBubbleText('我已经处理好了，还有什么需要帮忙的吗？', false)
+      showBubbleText(t('app.bubble.done'), false)
     } else {
       log.debug('[%s] 循环结束，气泡已设置 (%d字)', _fn, currentBubbleText.value.length)
     }

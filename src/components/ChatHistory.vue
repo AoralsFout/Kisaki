@@ -5,7 +5,10 @@
  * 展示所有历史消息，可滚动，最新消息在最下方。
  */
 import { ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -53,10 +56,10 @@ watch(
       <div class="history-panel">
         <!-- 头部 -->
         <div class="history-header">
-          <span class="history-title"><i class="fas fa-clipboard-list"></i> 对话历史</span>
+          <span class="history-title"><i class="fas fa-clipboard-list"></i> {{ t('chat.history.title') }}</span>
           <div class="header-actions">
-            <span class="msg-count">{{ chat.messages.length }} 条</span>
-            <button class="btn-clear" @click="chat.clearMessages()" title="清空历史"><i
+            <span class="msg-count">{{ t('chat.history.count', { n: chat.messages.length }) }}</span>
+            <button class="btn-clear" @click="chat.clearMessages()" :title="t('chat.history.clear')"><i
                 class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
@@ -65,7 +68,7 @@ watch(
         <!-- 消息列表 -->
         <div ref="listRef" class="message-list">
           <div v-if="chat.messages.length === 0" class="empty-hint">
-            暂无对话记录
+            {{ t('chat.history.empty') }}
           </div>
 
           <div v-for="msg in chat.messages" :key="msg.id" :class="['message', msg.role]">
@@ -75,12 +78,12 @@ watch(
             </div>
             <div class="msg-content">
               <div class="msg-role-label">
-                {{ msg.role === 'user' ? '你' : 'Kisaki' }}
+                {{ msg.role === 'user' ? t('chat.history.you') : 'Kisaki' }}
                 <span class="msg-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
               </div>
               <!-- 思考内容（仅 assistant 消息可能有） -->
               <details v-if="msg.thinking" class="thinking-block">
-                <summary class="thinking-summary">思考过程</summary>
+                <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
                 <div class="thinking-text">{{ msg.thinking }}</div>
               </details>
               <div class="msg-text">{{ msg.text }}</div>

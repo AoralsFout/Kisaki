@@ -5,6 +5,9 @@
  * - 支持 Shift+Enter 换行
  */
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -14,7 +17,7 @@ const props = withDefaults(defineProps<{
   modelValue?: string
 }>(), {
   visible: false,
-  placeholder: '输入消息...',
+  placeholder: '',
   disabled: false,
   modelValue: '',
 })
@@ -69,27 +72,27 @@ function handleClose() {
   <div class="input-overlay" @click.self="handleClose">
       <div class="input-container" @click.stop data-pet-solid>
         <div class="input-header">
-          <span class="input-title"><i class="fas fa-comment"></i> 对话</span>
-          <button class="btn-close" @click="handleClose" aria-label="关闭输入框">✕</button>
+          <span class="input-title"><i class="fas fa-comment"></i> {{ t('chat.input.title') }}</span>
+          <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
         </div>
         <textarea
           ref="inputRef"
           v-model="inputText"
           class="input-field"
-          :placeholder="placeholder"
+          :placeholder="placeholder || t('chat.input.placeholder')"
           :disabled="disabled"
           rows="3"
           @keydown="handleKeydown"
         ></textarea>
         <div class="input-footer">
-          <span class="hint">Enter 发送 · Shift+Enter 换行</span>
+          <span class="hint">{{ t('chat.input.hint') }}</span>
           <button
             class="btn-send"
             :disabled="!inputText.trim() || disabled"
             @click="sendMessage"
-            aria-label="发送消息"
+            :aria-label="t('chat.input.sendAria')"
           >
-            发送
+            {{ t('chat.input.send') }}
           </button>
         </div>
       </div>
