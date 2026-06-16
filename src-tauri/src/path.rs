@@ -80,3 +80,49 @@ pub(crate) fn safe_join(base: &Path, filename: &str) -> Result<PathBuf, String> 
 
     Ok(target)
 }
+
+/// 安全拼接相对子路径 — 用于 AI 工作目录读写，支持多层子目录
+///
+/// 与 `safe_join` 不同，本函数允许 `a/b/c.txt` 形式的相对路径，
+/// 但仍严格防护 path traversal：
+/// 1. 拒绝绝对路径与含 `..` 的组件
+/// 2. canonicalize 基目录
+/// 3. 对已存在的目标做 canonicalize 后校验前缀（防符号链接绕过）；
+///    目标不存在时（如写入新文件），直接用拼接路径校验前缀。
+pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
+    use std::path::Component;
+
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return Err("不允许绝对路径".to_string());
+    }
+    for comp in rel_path.components() {
+        match comp {
+            Component::ParentDir => return Err("路径不能包含 '..'".to_string()),
+            Component::RootDir | Component::Prefix(_) => {
+                return Err("不允许绝对路径".to_string())
+            }
+            _ => {}
+        }
+    }
+
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("无法解析工作目录 '{}': {}", base.display(), e))?;
+
+    let target = canonical_base.join(rel_path);
+
+    // 已存在则按真实路径校验（消解符号链接）；不存在则按拼接路径校验。
+    let check = if target.exists() {
+        target
+            .canonicalize()
+            .map_err(|e| format!("无法解析目标路径: {}", e))?
+    } else {
+        target.clone()
+    };
+    if !check.starts_with(&canonical_base) {
+        return Err("路径越权访问被拒绝".to_string());
+    }
+
+    Ok(target)
+}

@@ -15,7 +15,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { chat, isConfigValid, loadConfig, ChatContext, getToolTurns, translateText } from '../ai'
+import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText } from '../ai'
 import type { ToolCallData } from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
@@ -336,8 +336,9 @@ export const useChatStore = defineStore('chat', () => {
     // ── 工具调用循环 ─────────────────────────────────────
     // 角色通过 say 工具说话；say 出现即视为最终回复并终止循环。
     // 仅有动作工具（无 say）则继续下一轮，让模型在动作后把话说出来。
-    // 工具每轮都提供（说话本身就是工具调用）。循环上限按模型层级动态决定。
-    const toolTurns = getToolTurns(config.model)
+    // 循环何时结束由模型自己决定：只要它持续调用工具（读写文件、切换情绪等）
+    // 而不 say，循环就一直继续；MAX_TOOL_TURNS 仅为防失控的安全护栏。
+    const toolTurns = MAX_TOOL_TURNS
 
     /** 把最终台词落地：写气泡、入 UI 历史、触发 TTS */
     const deliver = (voice: string, display: string) => {
@@ -362,7 +363,7 @@ export const useChatStore = defineStore('chat', () => {
       chatContext.addToolResult(sayId, '已说出')
     }
 
-    log.trace('[%s] 工具循环开始 toolTurns=%d (model=%s)', _fn, toolTurns, config.model)
+    log.trace('[%s] 工具循环开始 安全上限=%d 轮 (model=%s)', _fn, toolTurns, config.model)
     for (let turn = 0; turn < toolTurns; turn++) {
       log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, toolTurns)
       const turnTimer = debugTimer(`${_fn} turn#${turn}`)
@@ -560,8 +561,8 @@ export const useChatStore = defineStore('chat', () => {
       // 用户主动取消：不展示兜底气泡
       log.info('[%s] 已取消，跳过兜底提示', _fn)
     } else if (!currentBubbleText.value) {
-      // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
-      log.info('[%s] ⚠ %d 轮循环后无文本回复，展示兜底提示 (finalTextFromLoop=%s)',
+      // 模型始终未调 say 就触达安全上限（异常：通常是模型陷入工具死循环），展示兜底提示
+      log.warn('[%s] ⚠ 触达工具循环安全上限 %d 轮仍无 say，展示兜底提示 (finalTextFromLoop=%s)',
         _fn, toolTurns, finalTextFromLoop ? '有' : '无')
       showBubbleText(t('app.bubble.done'), false)
     } else {

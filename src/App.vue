@@ -11,6 +11,7 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
 import SessionList from './components/SessionList.vue'
+import WorkspaceChip from './components/WorkspaceChip.vue'
 import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
@@ -313,6 +314,9 @@ async function handleSelectCharacter(charId: string) {
         <i class="fas fa-stop"></i>
         <span>{{ t('app.stop') }}</span>
       </button>
+
+      <!-- 工作区条（AI 文件读写目录，按会话独立，区别于工具栏） -->
+      <WorkspaceChip v-if="!noCharacter" />
 
       <!-- 工具按钮行（悬停展开文字） -->
       <div class="toolbar" data-pet-solid>

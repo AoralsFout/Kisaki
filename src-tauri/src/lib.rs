@@ -1,5 +1,6 @@
 mod character;
 mod cursor;
+mod fileio;
 mod log;
 mod pack;
 mod path;
@@ -68,6 +69,11 @@ pub fn run() {
             log::read_log_file,
             log::export_log_file,
             log::list_log_files,
+            fileio::agent_read_file,
+            fileio::agent_write_file,
+            fileio::agent_append_file,
+            fileio::agent_list_dir,
+            fileio::agent_delete_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

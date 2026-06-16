@@ -47,6 +47,12 @@ export default {
       hint: 'まずキャラクターを追加するとチャットを始められます',
       add: 'キャラを追加',
     },
+    workspace: {
+      set: 'ワークスペース設定',
+      change: '作業フォルダを変更',
+      clear: '権限を解除',
+      pickTitle: 'AI が読み書きする作業フォルダを選択',
+    },
     bubble: {
       welcome: 'えへへ',
       switchTo: '{name} に切り替えたよ~',

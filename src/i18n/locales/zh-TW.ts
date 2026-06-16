@@ -47,6 +47,12 @@ export default {
       hint: '先新增一個角色才能開始聊天',
       add: '新增角色',
     },
+    workspace: {
+      set: '設定工作區',
+      change: '更換工作目錄',
+      clear: '取消授權',
+      pickTitle: '選擇 AI 可讀寫的工作目錄',
+    },
     bubble: {
       welcome: '嘿嘿',
       switchTo: '已切換至 {name}~',

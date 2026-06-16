@@ -32,6 +32,8 @@ export interface Session {
   characterId?: string
   /** 会话关联的角色视觉状态（情绪/姿势/服装/屏幕位置） */
   characterState?: CharacterVisualState
+  /** 本会话授权给 AI 读写的工作目录绝对路径；null/undefined = 未授权 */
+  workspaceRoot?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -260,6 +262,28 @@ export const useSessionStore = defineStore('session', () => {
     return sessions.value.find(s => s.id === sessionId)
   }
 
+  // ── AI 工作目录 ──
+
+  /** 为当前会话设置 AI 工作目录（绝对路径） */
+  function setWorkspace(path: string) {
+    const session = currentSession.value
+    if (!session) return
+    session.workspaceRoot = path
+    session.updatedAt = Date.now()
+    persistSessions()
+    log.info('已设置会话工作目录: %s', path)
+  }
+
+  /** 取消当前会话的工作目录授权 */
+  function clearWorkspace() {
+    const session = currentSession.value
+    if (!session) return
+    session.workspaceRoot = null
+    session.updatedAt = Date.now()
+    persistSessions()
+    log.info('已取消会话工作目录授权')
+  }
+
   // ── 角色状态恢复 ──
 
   /**
@@ -319,5 +343,7 @@ export const useSessionStore = defineStore('session', () => {
     deleteSession,
     renameSession,
     getSessionById,
+    setWorkspace,
+    clearWorkspace,
   }
 })

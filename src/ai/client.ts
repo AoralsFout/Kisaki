@@ -110,7 +110,7 @@ export function isConfigValid(config: AIConfig): boolean {
 // 说明见 modelCapabilities.ts
 
 export {
-  getToolTurns,
+  MAX_TOOL_TURNS,
   getModelProfile,
   getContextLimit,
   getMaxRounds,

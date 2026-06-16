@@ -47,6 +47,12 @@ export default {
       hint: 'Add a character first to start chatting',
       add: 'Add character',
     },
+    workspace: {
+      set: 'Set workspace',
+      change: 'Change working folder',
+      clear: 'Revoke access',
+      pickTitle: 'Choose a folder the AI can read and write',
+    },
     bubble: {
       welcome: 'Hehe',
       switchTo: 'Switched to {name}~',

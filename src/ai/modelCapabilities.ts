@@ -634,13 +634,15 @@ const TIER_CONTEXT_CAP: Record<ModelTier, number> = {
 /** 每轮对话（一问一答）的粗略 token 消耗 */
 const AVG_TOKENS_PER_TURN = 600
 
-/** 层级 → 最大工具调用循环轮数 */
-const TIER_TOOL_TURNS: Record<ModelTier, number> = {
-  'very-high': 3,    // o1, GPT-5.4, Claude 4.6 — 极强理解，极少回调
-  high: 5,            // GPT-4o, GPT-4.1, Gemini 2.5 Pro, V4 Pro
-  medium: 8,          // GPT-4o-mini, GPT-4-Turbo, V4 Flash
-  low: 10,            // GPT-3.5, Mistral Small
-}
+/**
+ * 工具调用循环的安全上限（防失控）
+ *
+ * 循环何时结束由**模型自己决定**：模型调用 `say` 说话即视为最终回复、终止循环；
+ * 只要它持续调用工具（读写文件、切换情绪等）而不 `say`，循环就会一直继续。
+ * 本常量并非行为性的“建议轮数”，而仅是一道兜底护栏——防止个别模型陷入
+ * 永不 `say` 的死循环，导致持续请求 API、烧钱并卡住桌宠。正常任务远达不到此值。
+ */
+export const MAX_TOOL_TURNS = 50
 
 // ─── 公开 API ──────────────────────────────────────────
 
@@ -691,14 +693,4 @@ export function getMaxRounds(model: string): number {
   log.trace('getMaxRounds(%s) = %d (limit=%d, avgT=%d)',
     model, rounds, limit, AVG_TOKENS_PER_TURN)
   return rounds
-}
-
-/**
- * 根据模型智能层级返回建议的工具调用循环最大轮数
- *
- * 更智能的模型需要的修复轮次更少，更弱的模型需要更多尝试机会。
- */
-export function getToolTurns(model: string): number {
-  const profile = getModelProfile(model)
-  return TIER_TOOL_TURNS[profile.tier]
 }
