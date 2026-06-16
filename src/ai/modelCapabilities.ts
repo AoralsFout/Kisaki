@@ -14,8 +14,6 @@
  * - xAI:        docs.x.ai (Grok 4.3 发布于 2026-04-30)
  * - Meta:       llm.meta.com (Llama 4 发布于 2025-04)
  */
-import type { ResponseFormat } from './types'
-import { BILINGUAL_OUTPUT_SCHEMA, BILINGUAL_JSON_MODE } from './types'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('ModelCaps')
@@ -703,38 +701,4 @@ export function getMaxRounds(model: string): number {
 export function getToolTurns(model: string): number {
   const profile = getModelProfile(model)
   return TIER_TOOL_TURNS[profile.tier]
-}
-
-/**
- * 检测模型是否支持 structured output（json_schema 严格模式）
- *
- * 委托给模型能力注册表。
- */
-export function supportsStructuredOutput(model: string): boolean {
-  return getModelProfile(model).supportsStructuredOutput
-}
-
-/**
- * 检测模型是否支持 JSON 模式（response_format.json_object）
- *
- * 委托给模型能力注册表。
- * DeepSeek 因频繁空 content 异常已临时禁用（跨版本稳定后重开）。
- */
-export function supportsJsonMode(_model: string): boolean {
-  // return getModelProfile(model).supportsJsonMode
-  return false
-}
-
-/**
- * 根据模型返回最适合的双语输出格式
- *
- * 优先级：
- * 1. json_schema 严格模式 → OpenAI 现代模型
- * 2. json_object 模式    → DeepSeek 等（当前禁用）
- * 3. undefined           → 无 response_format，使用传统【】标记格式
- */
-export function getBilingualResponseFormat(model: string): ResponseFormat | undefined {
-  if (supportsStructuredOutput(model)) return BILINGUAL_OUTPUT_SCHEMA
-  if (supportsJsonMode(model)) return BILINGUAL_JSON_MODE
-  return undefined
 }

@@ -110,9 +110,6 @@ export function isConfigValid(config: AIConfig): boolean {
 // 说明见 modelCapabilities.ts
 
 export {
-  supportsStructuredOutput,
-  supportsJsonMode,
-  getBilingualResponseFormat,
   getToolTurns,
   getModelProfile,
   getContextLimit,
@@ -207,7 +204,7 @@ export async function chat(
           function: { name: tc.name, arguments: tc.args },
         })
       }
-      callbacks.onTools?.(calls)
+      callbacks.onTools?.(calls, fullText)
       toolCallMap.clear()
     }
 

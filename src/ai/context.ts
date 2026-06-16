@@ -11,6 +11,7 @@
 import type { ChatMessage } from './types'
 import { getDefaultMessages } from './prompts'
 import { getContextLimit, getMaxRounds } from './modelCapabilities'
+import { langName } from './langNames'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('ChatContext')
@@ -48,25 +49,8 @@ function estimateTokens(text: string): number {
   return Math.ceil(tokens) + 4 // 消息结构 overhead
 }
 
-/** 语言代码 → 中文名称映射 */
-const LANG_NAMES: Record<string, string> = {
-  'zh-CN': '中文（简体）',
-  'zh-TW': '中文（繁体）',
-  'en-US': '英语',
-  'ja-JP': '日语',
-  'ko-KR': '韩语',
-  'fr-FR': '法语',
-  'de-DE': '德语',
-  'es-ES': '西班牙语',
-  'ru-RU': '俄语',
-}
-
-function langName(code: string): string {
-  return LANG_NAMES[code] || code
-}
-
 /**
- * 构建双语回复格式指令
+ * 构建说话方式指令（say 工具）
  * @param voiceLang 角色语音语言（TTS 合成用），如 "ja-JP"
  * @param displayLang 用户显示语言，如 "zh-CN"
  */
@@ -74,86 +58,50 @@ function buildLangInstruction(voiceLang: string, displayLang: string): string {
   const voiceLangName = langName(voiceLang)
   const displayLangName = langName(displayLang)
 
-  // 如果语音语言和显示语言相同，不需要双语格式
   if (voiceLang === displayLang) {
-    return `\n\n## 📝 语言要求\n你的母语是 ${voiceLangName}。请用 ${voiceLangName} 回复。`
+    return `\n\n## 🗣 说话方式（必须遵守）
+你的母语是 ${voiceLangName}。你**只能通过调用 say 工具来说话**：把要说的话放进 say 的 voice 参数（${voiceLangName}，纯口语、可被语音合成，不含 emoji/动作描写）。母语与显示语言相同，display 可省略。`
   }
 
-  return `\n\n## 📝 双语回复格式（必须遵守）
+  return `\n\n## 🗣 说话方式（必须遵守）
 
 你的母语是 ${voiceLangName}，但用户使用 ${displayLangName}。
 
-每次回复你必须同时输出以下两个部分：
-1. 【${voiceLangName}】用你的母语（${voiceLangName}）自然说出的话（用于语音合成）
-2. 【译文】翻译成用户语言（${displayLangName}）的版本（用于显示）
+你**只能通过调用 say 工具来说话**，每次开口都要调用它，并同时给出两个参数：
+1. voice：用你的母语（${voiceLangName}）说出的台词，用于语音合成。必须是纯口语化的自然语言，不含 emoji、颜文字、特殊符号，也不含对动作或心理的描写。
+2. display：把同一句话翻译成 ${displayLangName}，用于屏幕显示。
 
-格式：
-【${voiceLangName}】<角色母语内容>
-【译文】<用户语言内容>
-
-示例（母语=日语，用户语言=中文）：
-【日本語】こんにちは、お兄さん。今日はどうしたの？
-【译文】你好呀，哥哥。今天怎么啦？
-
-注意：
-- 即使调用了工具，最终回复也要遵循此格式
-- 母语内容必须是由母语文字和标点符号组合，可以被合成为语音的文本。不允许出现emoji，特殊符号，颜文字等不可语音合成内容。也不允许出现对想法或动作的描述。
-- 不要省略任一字段`
+即使你同时切换了表情/姿势/服装，最后也要调用 say 把话说出来。`
 }
 
-/** 为每轮生成的简短格式提醒（利用近因偏差） */
-function buildTurnReminder(voiceLang: string, _displayLang: string): string {
-  return `[格式提醒] 请务必使用双语格式回复 — 先写【${langName(voiceLang)}】<语音内容> 再写【译文】<展示内容>，两部分都不能省略。`
-}
-
-/**
- * 为支持结构化输出的 provider 构建 JSON 格式指令
- * 替换 system prompt 中的语言要求部分（不在 getMessages 注入，而是直接修改 system prompt）
- */
-function buildJsonLangInstruction(voiceLang: string, displayLang: string): string {
-  const voiceLangName = langName(voiceLang)
-  const displayLangName = langName(displayLang)
-
+/** 为每轮生成的简短说话提醒（利用近因偏差） */
+function buildTurnReminder(voiceLang: string, displayLang: string): string {
   if (voiceLang === displayLang) {
-    return `\n\n## 📝 语言要求\n你的母语是 ${voiceLangName}。请用 ${voiceLangName} 回复。`
+    return `[提醒] 通过调用 say 工具说话（voice=台词）。`
   }
-
-  return `\n\n## 📝 双语回复格式（JSON 结构化输出）
-
-你的母语是 ${voiceLangName}，但用户使用 ${displayLangName}。
-
-每次回复你**必须**输出一个 JSON 对象，包含两个字段：
-1. "native_text": 用你的母语（${voiceLangName}）自然说出的话（用于语音合成）。必须是纯母语文字，不允许添加额外想法或动作，不允许有 emoji 或特殊符号。
-2. "display_text": 翻译成用户语言（${displayLangName}）的版本（用于显示）
-
-示例（母语=日语，用户语言=中文）：
-{"native_text": "こんにちは、お兄さん。今日はどうしたの？", "display_text": "你好呀，哥哥。今天怎么啦？"}
-
-即使调用了工具，最终回复也要遵循此格式。`
+  return `[提醒] 通过调用 say 工具说话：voice=${langName(voiceLang)}台词，display=${langName(displayLang)}译文，两者都要给。`
 }
 
 /** 工具使用说明（自动追加到所有角色提示词末尾） */
 const TOOL_INSTRUCTIONS = `
 ## 🔧 函数调用规则（必须遵守）
-你的文字回复不会改变你的任何状态。只有通过函数调用才能实际改变你的姿势、表情、服装和屏幕位置。
+你只能通过函数调用与世界交互：**说话用 say**，改变外观用 set_character_* 等。普通正文不会改变你的任何状态；要让用户听到并看到你说的话，必须调用 say。
 
 ### 你必须使用函数调用的场景
-1. 用户要求你改变外观时 → 必须调用 set_character_* 相关函数
-2. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator
-3. 你的情绪发生变化时 → 调用 set_character_emotion
-4. 你希望改变姿势或服装时 → 调用 set_character_stance / set_character_costume
-5. 你需要改变你在屏幕的大小或位置时 → 调用 set_screen_pose
-
-### 错误示例 ❌
-用户: "换个姿势"
-你回复: "好的，我站起来"（然后什么都没发生 ❌）
+1. 你要开口说任何话时 → 必须调用 say（这是唯一的说话方式）
+2. 用户要求你改变外观时 → 必须调用 set_character_* 相关函数
+3. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator
+4. 你的情绪发生变化时 → 调用 set_character_emotion
+5. 你希望改变姿势或服装时 → 调用 set_character_stance / set_character_costume
+6. 你需要改变你在屏幕的大小或位置时 → 调用 set_screen_pose
 
 ### 正确示例 ✅
 用户: "换个姿势"
-你调用 set_character_stance() → 实际生效 ✅
-然后回复: "好了~"
+你调用 set_character_stance(...) 切换姿势，并调用 say(...) 说"好了~"
+（动作生效 ✅ 且把话说出来了 ✅）
 
 ### 可用函数列表
+- say(voice, display): 说出你的台词（唯一的说话方式）
 - set_character_emotion(emotion): 切换表情
 - set_character_stance(stance): 切换身体姿势
 - set_character_costume(costume): 切换服装
@@ -172,7 +120,6 @@ export class ChatContext {
   private customPrompt: string | null = null
   private voiceLang: string = ''
   private displayLang: string = ''
-  private structured: boolean = false
   private maxContextTokens: number
 
   /**
@@ -203,36 +150,6 @@ export class ChatContext {
     this.reset()
   }
 
-  /** 启用/禁用结构化输出模式（JSON Schema），改动将在下次 setSystemPrompt 时生效 */
-  setStructuredOutput(enabled: boolean) {
-    if (this.structured === enabled) return
-    this.structured = enabled
-    // 立即重建 system prompt 使其生效
-    if (this.customPrompt && this.voiceLang && this.displayLang) {
-      this.rebuildSystemPrompt()
-    }
-    log.debug('结构化输出 %s', enabled ? '启用' : '禁用')
-  }
-
-  /** 是否已启用结构化输出 */
-  get isStructured(): boolean {
-    return this.structured
-  }
-
-  /** 格式违规标记：下次 getMessages 调用时附加完整格式指令（而非简短提醒） */
-  private needsFullFormatReattach: boolean = false
-
-  /** 标记格式违规：下次 API 请求将重新附上完整的双语格式指令 */
-  markFormatViolation() {
-    this.needsFullFormatReattach = true
-    log.debug('格式违规已标记，下次 getMessages 将附加完整格式指令')
-  }
-
-  /** 重置格式违规标记 */
-  private resetFormatViolationMarker() {
-    this.needsFullFormatReattach = false
-  }
-
   /** 当前上下文估计 token 总数（用于裁剪决策） */
   get estimatedTokens(): number {
     return this.messages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0)
@@ -241,13 +158,11 @@ export class ChatContext {
   /** 重建 system prompt（应用语言指令变更） */
   private rebuildSystemPrompt() {
     if (!this.customPrompt || !this.voiceLang || !this.displayLang) return
-    const langFn = this.structured ? buildJsonLangInstruction : buildLangInstruction
     this.messages[0] = {
       role: 'system',
-      content: this.customPrompt + langFn(this.voiceLang, this.displayLang) + TOOL_INSTRUCTIONS,
+      content: this.customPrompt + buildLangInstruction(this.voiceLang, this.displayLang) + TOOL_INSTRUCTIONS,
     }
-    log.debug('System prompt 已重建 (结构化=%s, 语音: %s, 显示: %s)',
-      this.structured, this.voiceLang, this.displayLang)
+    log.debug('System prompt 已重建 (语音: %s, 显示: %s)', this.voiceLang, this.displayLang)
   }
 
   /** 设置自定义 system prompt（自动追加语言指令和工具说明） */
@@ -255,21 +170,18 @@ export class ChatContext {
     this.customPrompt = prompt
     this.voiceLang = voiceLang || ''
     this.displayLang = displayLang || ''
-    const langFn = this.structured ? buildJsonLangInstruction : buildLangInstruction
-    const langInstruction = voiceLang && displayLang ? langFn(voiceLang, displayLang) : ''
+    const langInstruction = voiceLang && displayLang ? buildLangInstruction(voiceLang, displayLang) : ''
     this.messages[0] = {
       role: 'system',
       content: prompt + langInstruction + TOOL_INSTRUCTIONS,
     }
-    log.debug('System prompt 已设置 (结构化=%s, 语音: %s, 显示: %s)',
-      this.structured, voiceLang || '默认', displayLang || '默认')
+    log.debug('System prompt 已设置 (语音: %s, 显示: %s)', voiceLang || '默认', displayLang || '默认')
   }
 
   /** 重置对话 */
   reset() {
     const prevLen = this.messages.length
     this.messages = getDefaultMessages()
-    this.resetFormatViolationMarker()
     if (this.customPrompt) {
       this.rebuildSystemPrompt()
     }
@@ -318,31 +230,17 @@ export class ChatContext {
   /**
    * 获取完整消息列表（供 API 调用）
    *
-   * 会在末尾自动追加每轮的格式提醒（利用近因偏差），
-   * 若之前发生过格式违规，则自动附加完整格式指令（而非简短提醒），
-   * 以强化模型对双语言格式的记忆。
-   * 不修改内部存储的消息列表。
+   * 会在末尾自动追加每轮的说话提醒（利用近因偏差），
+   * 强化模型"用 say 工具说话"的记忆。不修改内部存储的消息列表。
    */
   getMessages(): ChatMessage[] {
-    // 复制一份，注入每轮格式提醒
+    // 复制一份，注入每轮说话提醒
     const msgs = [...this.messages]
     if (this.voiceLang && this.displayLang) {
-      if (this.needsFullFormatReattach) {
-        // 格式违规后重新附上完整格式指令，附带示例和注意事项
-        const langFn = this.structured ? buildJsonLangInstruction : buildLangInstruction
-        msgs.push({
-          role: 'system',
-          content: langFn(this.voiceLang, this.displayLang),
-        })
-        log.debug('格式违规恢复：已附加完整格式指令 (voice=%s display=%s structured=%s)',
-          this.voiceLang, this.displayLang, this.structured)
-        this.needsFullFormatReattach = false
-      } else {
-        msgs.push({
-          role: 'system',
-          content: buildTurnReminder(this.voiceLang, this.displayLang),
-        })
-      }
+      msgs.push({
+        role: 'system',
+        content: buildTurnReminder(this.voiceLang, this.displayLang),
+      })
     }
     return msgs
   }

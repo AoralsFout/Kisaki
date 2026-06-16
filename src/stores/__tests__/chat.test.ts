@@ -2,7 +2,7 @@
  * Chat Store 核心逻辑单元测试
  *
  * 覆盖：
- * - parseBilingualResponse 双语解析
+ * - splitSayCalls / parseSayArgs / resolveSayContent / resolveContentFallback —— say 机制
  * - addMessage / clearMessages / resetContext 消息管理
  * - showBubbleText / hideBubble 气泡控制
  * - toggleInput / openInput / closeInput 输入框控制
@@ -15,79 +15,110 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-// ─── parseBilingualResponse ──────────────────────────
+// ─── say 工具调用拆分 / 解析 / 兜底 ──────────────────────────
 
-describe('parseBilingualResponse', () => {
-  it('解析完整的双语回复', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】こんにちは\n【译文】你好')
-    expect(result.nativeText).toBe('こんにちは')
-    expect(result.displayText).toBe('你好')
+/** 构造一个 OpenAI 风格的工具调用 */
+function toolCall(name: string, args: string, id = name) {
+  return { id, type: 'function' as const, function: { name, arguments: args } }
+}
+
+/** 翻译桩：把目标语言代码作为前缀返回，便于断言"是否/向哪种语言调用了翻译" */
+const fakeTranslate = async (text: string, target: string) => `[${target}]${text}`
+
+describe('splitSayCalls', () => {
+  it('分出 say 与动作调用', async () => {
+    const { splitSayCalls } = await import('../chat')
+    const calls = [
+      toolCall('set_character_emotion', '{"emotion":"开心"}'),
+      toolCall('say', '{"voice":"やあ","display":"嗨"}'),
+    ]
+    const { sayCall, actionCalls } = splitSayCalls(calls)
+    expect(sayCall?.function.name).toBe('say')
+    expect(actionCalls).toHaveLength(1)
+    expect(actionCalls[0].function.name).toBe('set_character_emotion')
   })
 
-  it('解析带空行的双语回复', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】おはようございます\n\n【译文】早上好')
-    expect(result.nativeText).toBe('おはようございます')
-    expect(result.displayText).toBe('早上好')
+  it('多个 say 只取第一个，其余忽略', async () => {
+    const { splitSayCalls } = await import('../chat')
+    const calls = [toolCall('say', '{"voice":"1"}', 's1'), toolCall('say', '{"voice":"2"}', 's2')]
+    const { sayCall, actionCalls } = splitSayCalls(calls)
+    expect(sayCall?.id).toBe('s1')
+    expect(actionCalls).toHaveLength(0)
   })
 
-  it('仅有【译文】标签时解析为 nativeText（因【译文】匹配 NATIVE_RE 通用标签模式）', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【译文】早上好')
-    // 【译文】匹配通用标签模式，所以 nativeText 有值，displayText 也被提取
-    expect(result.nativeText).toBe('早上好')
-    expect(result.displayText).toBe('早上好')
+  it('无 say 时 sayCall 为 null', async () => {
+    const { splitSayCalls } = await import('../chat')
+    const { sayCall, actionCalls } = splitSayCalls([toolCall('get_time', '{}')])
+    expect(sayCall).toBeNull()
+    expect(actionCalls).toHaveLength(1)
+  })
+})
+
+describe('parseSayArgs', () => {
+  it('解析 voice 与 display', async () => {
+    const { parseSayArgs } = await import('../chat')
+    expect(parseSayArgs('{"voice":"こんにちは","display":"你好"}')).toEqual({ voice: 'こんにちは', display: '你好' })
   })
 
-  it('仅有【语言】标签时回退为整段文本', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】こんにちは')
-    // 没有【译文】标签，displayMatch 为 null，回退为整段文本
-    expect(result.nativeText).toBe('【日语】こんにちは')
-    expect(result.displayText).toBe('【日语】こんにちは')
+  it('缺失字段返回 undefined', async () => {
+    const { parseSayArgs } = await import('../chat')
+    expect(parseSayArgs('{"voice":"あ"}')).toEqual({ voice: 'あ', display: undefined })
   })
 
-  it('双语标签内容为空时回退', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】\n【译文】')
-    expect(result.nativeText).toBe('【日语】\n【译文】')
-    expect(result.displayText).toBe('【日语】\n【译文】')
+  it('非法 JSON 返回空对象', async () => {
+    const { parseSayArgs } = await import('../chat')
+    expect(parseSayArgs('not json')).toEqual({})
   })
 
-  it('无任何标签时返回整段文本', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('这是一段普通的文本回复')
-    expect(result.nativeText).toBe('这是一段普通的文本回复')
-    expect(result.displayText).toBe('这是一段普通的文本回复')
+  it('两端空白被裁剪', async () => {
+    const { parseSayArgs } = await import('../chat')
+    expect(parseSayArgs('{"voice":"  あ  "}')).toEqual({ voice: 'あ', display: undefined })
+  })
+})
+
+describe('resolveSayContent', () => {
+  it('两者齐全：不调翻译', async () => {
+    const { resolveSayContent } = await import('../chat')
+    const r = await resolveSayContent({ voice: 'やあ', display: '嗨' }, 'ja-JP', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: 'やあ', display: '嗨' })
   })
 
-  it('空字符串', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('')
-    expect(result.nativeText).toBe('')
-    expect(result.displayText).toBe('')
+  it('缺 display：翻译 voice 补出', async () => {
+    const { resolveSayContent } = await import('../chat')
+    const r = await resolveSayContent({ voice: 'やあ' }, 'ja-JP', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: 'やあ', display: '[zh-CN]やあ' })
   })
 
-  it('多语言标签（非日语）', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【英语】Hello\n【译文】你好')
-    expect(result.nativeText).toBe('Hello')
-    expect(result.displayText).toBe('你好')
+  it('缺 voice：翻译 display 补出', async () => {
+    const { resolveSayContent } = await import('../chat')
+    const r = await resolveSayContent({ display: '嗨' }, 'ja-JP', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: '[ja-JP]嗨', display: '嗨' })
   })
 
-  it('双语内容包含标点和特殊字符', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】今日は良い天気ですね！☀️\n【译文】今天天气真好！☀️')
-    expect(result.nativeText).toBe('今日は良い天気ですね！☀️')
-    expect(result.displayText).toBe('今天天气真好！☀️')
+  it('语言相同：互为兜底，不调翻译', async () => {
+    const { resolveSayContent } = await import('../chat')
+    const r = await resolveSayContent({ voice: '你好' }, 'zh-CN', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: '你好', display: '你好' })
+  })
+})
+
+describe('resolveContentFallback', () => {
+  it('语言不同：正文当 display，翻译出 voice', async () => {
+    const { resolveContentFallback } = await import('../chat')
+    const r = await resolveContentFallback('你好呀', 'ja-JP', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: '[ja-JP]你好呀', display: '你好呀' })
   })
 
-  it('多行双语内容', async () => {
-    const { parseBilingualResponse } = await import('../chat')
-    const result = parseBilingualResponse('【日语】こんにちは。\nお元気ですか？\n【译文】你好。\n你好吗？')
-    expect(result.nativeText).toBe('こんにちは。\nお元気ですか？')
-    expect(result.displayText).toBe('你好。\n你好吗？')
+  it('语言相同：voice=display=正文', async () => {
+    const { resolveContentFallback } = await import('../chat')
+    const r = await resolveContentFallback('你好', 'zh-CN', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: '你好', display: '你好' })
+  })
+
+  it('空正文返回空', async () => {
+    const { resolveContentFallback } = await import('../chat')
+    const r = await resolveContentFallback('   ', 'ja-JP', 'zh-CN', fakeTranslate)
+    expect(r).toEqual({ voice: '', display: '' })
   })
 })
 
