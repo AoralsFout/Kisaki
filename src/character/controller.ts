@@ -92,12 +92,33 @@ export function useCharacterController() {
 
   function setEmotion(emotion: string) {
     if (!charStore.data) return
-    const img = pickRandomImage(charStore.data, {
+    const d = charStore.data
+
+    // 先尝试在当前姿势下找图
+    let img = pickRandomImage(d, {
       pose: currentPoseTag.value, emotion, costume: currentCostume.value,
       exclude: currentImage.value?.file,
     })
+
+    // 当前姿势没有该情绪的图 → 自动搜索其他姿势
     if (!img) {
-      log.warn('未找到匹配情绪"%s"的图片', emotion)
+      for (const pose of d.poses) {
+        if (pose === currentPoseTag.value) continue
+        img = pickRandomImage(d, {
+          pose, emotion, costume: currentCostume.value,
+          exclude: currentImage.value?.file,
+        })
+        if (img) {
+          log.info('情绪"%s"在当前姿势"%s"中无匹配，自动切换到姿势"%s"',
+            emotion, currentPoseTag.value, pose)
+          currentPoseTag.value = pose
+          break
+        }
+      }
+    }
+
+    if (!img) {
+      log.warn('未找到匹配情绪"%s"的图片（所有姿势均无匹配）', emotion)
       return
     }
     currentEmotion.value = emotion
@@ -144,14 +165,29 @@ export function useCharacterController() {
     costume?: string
   }) {
     if (!charStore.data) return
+    const d = charStore.data
     syncDefaultsFromData()
-    const pose = look.pose ?? currentPoseTag.value
+    let pose = look.pose ?? currentPoseTag.value
     const emotion = look.emotion ?? currentEmotion.value
     const costume = look.costume ?? currentCostume.value
-    const img = pickRandomImage(charStore.data, {
+    let img = pickRandomImage(d, {
       pose, emotion, costume,
       exclude: currentImage.value?.file,
     })
+
+    // 只设置了情绪（未显式指定姿势）且当前姿势无匹配 → 自动搜索其他姿势
+    if (!img && !look.pose && look.emotion) {
+      for (const p of d.poses) {
+        if (p === pose) continue
+        img = pickRandomImage(d, { pose: p, emotion, costume, exclude: currentImage.value?.file })
+        if (img) {
+          log.info('setLook 情绪"%s"在姿势"%s"中无匹配，自动切换到姿势"%s"', emotion, pose, p)
+          pose = p
+          break
+        }
+      }
+    }
+
     if (!img) {
       log.warn('setLook 未找到匹配图片: %o', look)
       return

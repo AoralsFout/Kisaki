@@ -5,7 +5,7 @@
  * 支持流式输出 + Function Calling (Tool Use)。
  */
 import type { AIConfig, ChatMessage, StreamCallbacks, ToolCallData, ResponseFormat } from './types'
-import { BILINGUAL_OUTPUT_SCHEMA } from './types'
+import { getModelProfile } from './modelCapabilities'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('API')
@@ -106,63 +106,18 @@ export function isConfigValid(config: AIConfig): boolean {
   return Boolean(config.baseURL && config.apiKey && config.model)
 }
 
-/**
- * 检测当前模型是否支持结构化输出（JSON Schema 严格模式）
- *
- * 工作原理：通过 response_format.type='json_schema' + strict:true 强制模型输出
- * 符合指定 JSON Schema 的回复。支持此特性的模型：
- *
- * OpenAI 系列（来源：https://developers.openai.com/api/docs/guides/structured-outputs）：
- * - GPT-5 系列：gpt-5-*
- * - GPT-4.5：gpt-4.5-*
- * - GPT-4.1 系列：gpt-4.1-*, gpt-4.1-mini-*, gpt-4.1-nano-*
- * - GPT-4o 系列：gpt-4o-*, gpt-4o-mini-*
- * - GPT-4 Turbo：gpt-4-turbo-*
- * - o 系列推理模型：o1-*, o3-*, o4-mini-*
- *
- * 注意：response_format 与 tools 互斥，不能在同一个请求中同时使用。
- *
- * @param model 模型名称
- */
-export function supportsStructuredOutput(model: string): boolean {
-  return /^(gpt-5|gpt-4\.5|gpt-4\.1|gpt-4o|gpt-4-turbo|o[134])/.test(model)
-}
+// ─── 模型检测——委托给模型能力注册表 ────────────────────
+// 说明见 modelCapabilities.ts
 
-/**
- * 检测当前模型是否支持 JSON 模式（response_format.json_object）
- *
- * 比 structured output 弱，不强制 schema，只保证输出是有效 JSON。
- * 字段结构需要由系统提示词指导。
- *
- * 已知支持的供应商：
- * - DeepSeek：所有 chat 模型（来源：https://api-docs.deepseek.com/guides/json_mode）
- *   deepseek-chat（V2/V3），deepseek-reasoner（R1），deepseek-v4-pro 等
- * - Together AI：JSON 模式（来源：https://docs.together.ai/docs/json-mode）
- * - xAI (Grok)：OpenAI 兼容的结构化输出（来源：https://docs.x.ai/docs/guides/structured-outputs）
- *
- * @param model 模型名称
- */
-export function supportsJsonMode(_model: string): boolean {
-  // deepseek 频繁触发空content异常，临时禁用
-  // return /^(deepseek)/i.test(model)
-  return false;
-}
-
-/**
- * 根据模型返回最适合的双语输出格式
- *
- * 优先级：
- * 1. json_schema 严格模式 → OpenAI 现代模型
- * 2. json_object 模式    → DeepSeek 等
- * 3. undefined           → 无 response_format，使用传统【】标记格式
- *
- * @param model 模型名称
- */
-export function getBilingualResponseFormat(model: string): ResponseFormat | undefined {
-  if (supportsStructuredOutput(model)) return BILINGUAL_OUTPUT_SCHEMA
-  if (supportsJsonMode(model)) return { type: 'json_object' }
-  return undefined
-}
+export {
+  supportsStructuredOutput,
+  supportsJsonMode,
+  getBilingualResponseFormat,
+  getToolTurns,
+  getModelProfile,
+  getContextLimit,
+  getMaxRounds,
+} from './modelCapabilities'
 
 /**
  * 发送对话请求（流式），支持 Function Calling + 结构化输出 + 超时保护
@@ -183,12 +138,13 @@ export async function chat(
   }
 
   const url = `${config.baseURL.replace(/\/+$/, '')}/chat/completions`
+  const profile = getModelProfile(config.model)
   const body: Record<string, unknown> = {
     model: config.model,
     messages,
     stream: true,
     temperature: 0.8,
-    max_tokens: 4096,
+    max_tokens: profile.recommendedMaxTokens,
   }
   if (tools?.length) {
     body.tools = tools
@@ -364,11 +320,12 @@ export async function quickChat(
   if (!isConfigValid(config)) throw new Error('API 未配置')
 
   const url = `${config.baseURL.replace(/\/+$/, '')}/chat/completions`
+  const profile = getModelProfile(config.model)
   const body: Record<string, unknown> = {
     model: config.model,
     messages,
     temperature: 0.3,       // 低温度，更确定性的修复
-    max_tokens: 4096,
+    max_tokens: Math.min(profile.recommendedMaxTokens, 4096), // 修复场景不需要太长输出
   }
   if (responseFormat) {
     body.response_format = responseFormat

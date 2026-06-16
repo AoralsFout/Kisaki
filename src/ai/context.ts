@@ -3,18 +3,24 @@
  *
  * 维护多轮对话历史，自动裁剪超出长度的消息。
  * 支持 tool calls / tool results 消息（用于 Function Calling）。
+ *
+ * 现在支持按模型能力自动配置上下文预算与对话轮数：
+ * 传入 model 名称 → 从 ModelProfile 推导合适值；
+ * 不传则退化为原有保守默认值。
  */
 import type { ChatMessage } from './types'
 import { getDefaultMessages } from './prompts'
+import { getContextLimit, getMaxRounds } from './modelCapabilities'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('ChatContext')
 
-/** 最大保留的对话轮数（一轮 = 一问一答） */
-const MAX_ROUNDS = 10
-
-/** 最大上下文 token 数（留出回复空间，默认模型上下文窗口通常 8k–128k） */
-const MAX_CONTEXT_TOKENS = 6000
+/**
+ * 后备默认值（仅在未传 model 且未手动指定时使用）。
+ * 按已知最保守模型（~GPT-3.5）设定，确保任何模型都能运行。
+ */
+const FALLBACK_MAX_ROUNDS = 10
+const FALLBACK_MAX_CONTEXT_TOKENS = 6000
 
 /** 单条工具结果最大字符数（超出部分截断） */
 const MAX_TOOL_RESULT_LENGTH = 1000
@@ -169,9 +175,31 @@ export class ChatContext {
   private structured: boolean = false
   private maxContextTokens: number
 
-  constructor(maxRounds: number = MAX_ROUNDS, maxContextTokens: number = MAX_CONTEXT_TOKENS) {
-    this.maxRounds = maxRounds
-    this.maxContextTokens = maxContextTokens
+  /**
+   * @param opts          可选配置对象
+   * @param opts.model    模型名称——传入后自动按模型能力选择上下文预算和轮数
+   * @param opts.maxRounds    手动覆写最大轮数（优先级高于 model 推导）
+   * @param opts.maxContextTokens  手动覆写 token 上限（优先级高于 model 推导）
+   *
+   * 兼容旧式调用：new ChatContext(10, 6000) 仍可工作。
+   */
+  constructor(...args: any[]) {
+    // 兼容旧式 positional args: (maxRounds, maxContextTokens)
+    if (args.length <= 1 && typeof args[0] === 'object' && args[0] !== null) {
+      const opts = args[0] as { model?: string; maxRounds?: number; maxContextTokens?: number }
+      if (opts.model) {
+        this.maxRounds = opts.maxRounds ?? getMaxRounds(opts.model)
+        this.maxContextTokens = opts.maxContextTokens ?? getContextLimit(opts.model)
+      } else {
+        this.maxRounds = opts.maxRounds ?? FALLBACK_MAX_ROUNDS
+        this.maxContextTokens = opts.maxContextTokens ?? FALLBACK_MAX_CONTEXT_TOKENS
+      }
+    } else {
+      // 旧式调用
+      this.maxRounds = (typeof args[0] === 'number' ? args[0] : FALLBACK_MAX_ROUNDS)
+      this.maxContextTokens = (typeof args[1] === 'number' ? args[1] : FALLBACK_MAX_CONTEXT_TOKENS)
+    }
+    log.info('ChatContext 初始化: maxRounds=%d, maxContextTokens=%d', this.maxRounds, this.maxContextTokens)
     this.reset()
   }
 

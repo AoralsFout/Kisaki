@@ -15,7 +15,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { chat, quickChat, isConfigValid, loadConfig, ChatContext, supportsStructuredOutput, supportsJsonMode, getBilingualResponseFormat } from '../ai'
+import { chat, quickChat, isConfigValid, loadConfig, ChatContext, supportsStructuredOutput, supportsJsonMode, getBilingualResponseFormat, getToolTurns } from '../ai'
 import type { ToolCallData, ResponseFormat } from '../ai'
 import { agentService } from '../agent/service'
 import type { ToolCall } from '../agent'
@@ -261,7 +261,19 @@ export const useChatStore = defineStore('chat', () => {
   /** 当前是否正在执行工具（子状态） */
   const isUsingTools = ref(false)
 
-  let chatContext = new ChatContext()
+  /**
+   * 根据当前配置创建一个按模型能力自动配置的 ChatContext。
+   * 后续若要切换模型，需重新创建 ChatContext 使其生效。
+   */
+  function createChatContext(): ChatContext {
+    const cfg = loadConfig()
+    if (cfg.model) {
+      return new ChatContext({ model: cfg.model })
+    }
+    return new ChatContext()
+  }
+
+  let chatContext = createChatContext()
   let abortController: AbortController | null = null
 
   function init() {
@@ -382,10 +394,11 @@ export const useChatStore = defineStore('chat', () => {
     let wasCancelled = false                      // 用户主动取消标记（跳过兜底气泡）
 
     // ── 工具调用循环 ─────────────────────────────────────
-    const MAX_TOOL_TURNS = 5
-    log.trace('[%s] 工具循环开始 MAX_TOOL_TURNS=%d', _fn, MAX_TOOL_TURNS)
-    for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
-      log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, MAX_TOOL_TURNS)
+    // 根据模型智能层级动态决定循环上限（更智能的模型需要的修复轮次更少）
+    const toolTurns = getToolTurns(config.model)
+    log.trace('[%s] 工具循环开始 toolTurns=%d (model=%s)', _fn, toolTurns, config.model)
+    for (let turn = 0; turn < toolTurns; turn++) {
+      log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, toolTurns)
       const turnTimer = debugTimer(`${_fn} turn#${turn}`)
 
       // 结构化输出与 tools 互斥：只在无工具轮次启用
@@ -691,7 +704,7 @@ export const useChatStore = defineStore('chat', () => {
     } else if (!currentBubbleText.value) {
       // 循环结束后没有文本回复（如全屏工具调用耗尽轮数），展示兜底提示
       log.info('[%s] ⚠ %d 轮循环后无文本回复，展示兜底提示 (finalTextFromLoop=%s)',
-        _fn, MAX_TOOL_TURNS, finalTextFromLoop ? '有' : '无')
+        _fn, toolTurns, finalTextFromLoop ? '有' : '无')
       showBubbleText(t('app.bubble.done'), false)
     } else {
       log.debug('[%s] 循环结束，气泡已设置 (%d字)', _fn, currentBubbleText.value.length)
@@ -817,8 +830,8 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     log.trace('[%s] messages → []', _fn)
 
-    chatContext = new ChatContext()
-    log.trace('[%s] chatContext → new ChatContext()', _fn)
+    chatContext = createChatContext()
+    log.trace('[%s] chatContext → createChatContext()', _fn)
 
     // 保存清空状态到当前会话
     useSessionStore().saveCurrentSession()
@@ -830,7 +843,7 @@ export const useChatStore = defineStore('chat', () => {
     const _fn = 'resetContext'
     log.trace('[%s] ▶', _fn)
     const oldContext = chatContext
-    chatContext = new ChatContext()
+    chatContext = createChatContext()
     log.debug('[%s] ✓ 对话上下文已重置 (old context=%s)', _fn, oldContext.constructor.name)
     log.trace('[%s] ◀', _fn)
   }
