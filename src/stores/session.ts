@@ -9,6 +9,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useChatStore } from './chat'
 import type { ChatMessage } from './chat'
 import { useCharacterStore } from './character'
@@ -34,8 +35,28 @@ export interface Session {
   characterState?: CharacterVisualState
   /** 本会话授权给 AI 读写的工作目录绝对路径；null/undefined = 未授权 */
   workspaceRoot?: string | null
+  /** 回档检查点：每条用户消息一个，记录回合前的视觉状态；hasFiles 标记是否有文件备份 */
+  checkpoints?: Checkpoint[]
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * 回档检查点 —— 对应一次用户消息触发的回合（id = 该用户消息 id）。
+ * 文件备份本身存在 Rust 缓存目录（见 src-tauri/src/backup.rs），此处仅存对话/视觉侧元信息。
+ */
+export interface Checkpoint {
+  /** = 触发该回合的用户消息 id */
+  id: string
+  createdAt: number
+  /** 回合开始前的角色 id */
+  characterId?: string
+  /** 回合开始前的角色视觉状态 */
+  visualState?: CharacterVisualState
+  /** 本回合是否对文件做过备份（决定回档时是否需要还原文件） */
+  hasFiles: boolean
+  /** 备份时的工作根（仅记录，实际还原以 Rust manifest 为准） */
+  workspaceRoot?: string | null
 }
 
 // ─── 工具函数 ─────────────────────────────────────────────
@@ -223,6 +244,9 @@ export const useSessionStore = defineStore('session', () => {
     const idx = sessions.value.findIndex(s => s.id === sessionId)
     if (idx === -1) return false
 
+    // 清理该会话的文件备份（Rust 缓存目录）
+    void invoke('agent_checkpoint_clear_session', { sessionId }).catch(() => { /* ignore */ })
+
     const isCurrent = sessionId === currentSessionId.value
     sessions.value.splice(idx, 1)
 
@@ -327,6 +351,147 @@ export const useSessionStore = defineStore('session', () => {
     charStore.applyVisualState(session.characterState)
   }
 
+  // ── 回档检查点 ──
+
+  /**
+   * 为一次用户消息回合建立检查点：记录回合前的角色与视觉状态。
+   * 文件备份在「改文件工具执行前」由 backupFile 按需追加。
+   * @returns checkpointId（= 传入的用户消息 id）
+   */
+  function beginCheckpoint(messageId: string): string {
+    const session = currentSession.value
+    if (!session) return messageId
+    if (!session.checkpoints) session.checkpoints = []
+    const charStore = useCharacterStore()
+    session.checkpoints.push({
+      id: messageId,
+      createdAt: Date.now(),
+      characterId: charStore.currentId,
+      visualState: charStore.getVisualStateSnapshot(),
+      hasFiles: false,
+      workspaceRoot: session.workspaceRoot ?? null,
+    })
+    persistSessions()
+    return messageId
+  }
+
+  /** 标记某检查点已产生文件备份（回档时据此决定是否还原文件） */
+  function markCheckpointFiles(checkpointId: string) {
+    const cp = currentSession.value?.checkpoints?.find(c => c.id === checkpointId)
+    if (cp && !cp.hasFiles) {
+      cp.hasFiles = true
+      persistSessions()
+    }
+  }
+
+  /**
+   * 在「改文件工具执行前」备份目标文件（写时复制，幂等）。
+   * 未授权工作目录则跳过（工具本身随后会报错引导用户）。
+   */
+  async function backupFile(checkpointId: string, relPath: string): Promise<void> {
+    const session = currentSession.value
+    const root = session?.workspaceRoot
+    if (!session || !root || !relPath) return
+    await invoke('agent_checkpoint_backup', {
+      sessionId: session.id,
+      checkpointId,
+      root,
+      relPath,
+    })
+  }
+
+  /** 清空当前会话的全部检查点与文件备份（清空对话时调用） */
+  async function clearCheckpoints(): Promise<void> {
+    const session = currentSession.value
+    if (!session) return
+    session.checkpoints = []
+    persistSessions()
+    try {
+      await invoke('agent_checkpoint_clear_session', { sessionId: session.id })
+    } catch { /* ignore */ }
+  }
+
+  /** 恢复某检查点记录的角色与视觉状态 */
+  async function restoreCharacterCheckpoint(cp: Checkpoint) {
+    const charStore = useCharacterStore()
+    if (
+      cp.characterId &&
+      cp.characterId !== charStore.currentId &&
+      charStore.availableList.includes(cp.characterId)
+    ) {
+      try {
+        await charStore.loadCharacter(cp.characterId, true)
+      } catch (err) {
+        log.warn('回档恢复角色失败（保持当前角色）: %s', (err as Error).message)
+      }
+    }
+    if (cp.visualState) charStore.applyVisualState(cp.visualState)
+  }
+
+  /**
+   * 回档到某条消息：还原工作区文件 + 恢复视觉状态 + 截断该消息及其后的对话。
+   * @param messageId 目标用户消息 id（= 检查点 id）
+   * @returns 是否成功执行
+   */
+  async function rollbackTo(messageId: string): Promise<boolean> {
+    const session = currentSession.value
+    if (!session) return false
+    const chatStore = useChatStore()
+
+    // 进行中的生成先取消，避免回调写入将被截断的上下文
+    if (chatStore.isProcessing) chatStore.cancelResponse()
+
+    const msgs = chatStore.messages
+    const idx = msgs.findIndex(m => m.id === messageId)
+    if (idx < 0) {
+      log.warn('回档目标消息不存在: %s', messageId)
+      return false
+    }
+
+    const cps = session.checkpoints ?? []
+    // 该点及其后、且有文件备份的检查点，按消息顺序「从新到旧」传给 Rust
+    const fileCpIdsNewestFirst = cps
+      .map(cp => ({ cp, mi: msgs.findIndex(m => m.id === cp.id) }))
+      .filter(x => x.mi >= idx && x.cp.hasFiles)
+      .sort((a, b) => b.mi - a.mi)
+      .map(x => x.cp.id)
+
+    // 1. 还原文件
+    if (fileCpIdsNewestFirst.length > 0) {
+      try {
+        await invoke('agent_checkpoint_rollback', {
+          sessionId: session.id,
+          checkpointIds: fileCpIdsNewestFirst,
+        })
+      } catch (e) {
+        log.error('回档还原文件失败: %s', (e as Error).message)
+      }
+    }
+
+    // 2. 恢复目标检查点的视觉状态 / 角色
+    const targetCp = cps.find(c => c.id === messageId)
+    if (targetCp) await restoreCharacterCheckpoint(targetCp)
+
+    // 3. 截断对话到目标消息之前，并丢弃 >= 目标的检查点
+    const kept = msgs.slice(0, idx)
+    session.messages = [...kept]
+    session.checkpoints = cps.filter(cp => {
+      const mi = msgs.findIndex(m => m.id === cp.id)
+      return mi >= 0 && mi < idx
+    })
+    session.characterId = useCharacterStore().currentId
+    session.characterState = useCharacterStore().getVisualStateSnapshot()
+    session.updatedAt = Date.now()
+    persistSessions()
+
+    // 4. 重建 chat 上下文（loadMessages 会按 say 范式重放消息）
+    chatStore.loadMessages(kept)
+
+    log.info('已回档到消息 %s（保留 %d 条，还原 %d 个文件检查点）',
+      messageId, kept.length, fileCpIdsNewestFirst.length)
+    return true
+  }
+
   return {
     // 状态
     sessions,
@@ -345,5 +510,11 @@ export const useSessionStore = defineStore('session', () => {
     getSessionById,
     setWorkspace,
     clearWorkspace,
+    // 回档检查点
+    beginCheckpoint,
+    markCheckpointFiles,
+    backupFile,
+    clearCheckpoints,
+    rollbackTo,
   }
 })

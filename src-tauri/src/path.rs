@@ -11,17 +11,22 @@ use std::sync::OnceLock;
 
 static CHARACTERS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
+static BACKUPS_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 初始化数据目录（在 tauri setup 阶段调用）
-pub(crate) fn init_dirs(chars: PathBuf, logs: PathBuf) -> Result<(), &'static str> {
+pub(crate) fn init_dirs(chars: PathBuf, logs: PathBuf, backups: PathBuf) -> Result<(), &'static str> {
     fs::create_dir_all(&chars).map_err(|_| "创建 characters 目录失败")?;
     fs::create_dir_all(&logs).map_err(|_| "创建 logs 目录失败")?;
+    fs::create_dir_all(&backups).map_err(|_| "创建 backups 目录失败")?;
     CHARACTERS_DIR
         .set(chars)
         .map_err(|_| "CHARACTERS_DIR already set")?;
     LOGS_DIR
         .set(logs)
         .map_err(|_| "LOGS_DIR already set")?;
+    BACKUPS_DIR
+        .set(backups)
+        .map_err(|_| "BACKUPS_DIR already set")?;
     Ok(())
 }
 
@@ -36,6 +41,16 @@ pub(crate) fn log_dir() -> PathBuf {
     let dir = LOGS_DIR
         .get()
         .expect("LOGS_DIR 未初始化")
+        .clone();
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// AI 文件改动备份根目录（app_cache_dir/backups）。
+pub(crate) fn backups_dir() -> PathBuf {
+    let dir = BACKUPS_DIR
+        .get()
+        .expect("BACKUPS_DIR 未初始化")
         .clone();
     let _ = fs::create_dir_all(&dir);
     dir

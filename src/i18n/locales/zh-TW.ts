@@ -83,6 +83,24 @@ export default {
       error: '發生錯誤: {msg}',
       done: '我已經處理好了，還有什麼需要幫忙的嗎？',
     },
+    confirm: {
+      title: '確認檔案操作',
+      allow: '允許',
+      reject: '拒絕',
+      allowSession: '本會話自動允許',
+      loading: '產生預覽…',
+      unreadable: '無法讀取原檔案，將以新建處理。',
+      truncated: '（差異較大，已截斷顯示）',
+      noDiff: '（無可預覽的差異）',
+      summary: {
+        write: '覆蓋寫入（{n} 字元）',
+        append: '附加（{n} 字元）',
+        deleteFile: '刪除整個檔案',
+        replace: '取代第 {s}-{e} 行',
+        insert: '在第 {line} 行前插入',
+        deleteLines: '刪除第 {s}-{e} 行',
+      },
+    },
   },
 
   window: {
@@ -143,6 +161,8 @@ export default {
       desc: '應用程式介面與外觀設定。',
       uiLang: '介面語言',
       uiLangHint: '應用程式介面文字的顯示語言（與 AI 回覆的翻譯語言相互獨立）。',
+      autoExecTitle: '自動執行檔案修改',
+      autoExecDesc: '開啟後，AI 修改檔案無需逐次確認（仍會自動備份，可在歷史中回檔）。',
     },
     about: {
       title: '關於',
@@ -272,6 +292,10 @@ export default {
       empty: '尚無對話記錄',
       you: '你',
       thinking: '思考過程',
+      rollback: '回檔',
+      rollbackTitle: '還原檔案並刪除此後的對話',
+      rollbackConfirm: '回檔到此處？將刪除此後對話並還原檔案',
+      rollbackYes: '回檔',
     },
     input: {
       title: '對話',

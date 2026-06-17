@@ -28,7 +28,8 @@
       "Read(//c/Users/32506/AppData/Local/Kisaki/**)",
       "Read(//c/Users/32506/AppData/Roaming/com.kisaki.app/**)",
       "Bash(npm view *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(grep -v -E '\\\\.\\(png|jpg|jpeg|gif|svg|ico|woff|ttf\\)$')"
     ]
   }
 }

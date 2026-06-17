@@ -83,6 +83,24 @@ export default {
       error: 'Something went wrong: {msg}',
       done: 'All done! Is there anything else I can help with?',
     },
+    confirm: {
+      title: 'Confirm file operation',
+      allow: 'Allow',
+      reject: 'Reject',
+      allowSession: 'Auto-allow this session',
+      loading: 'Building preview…',
+      unreadable: 'Cannot read the original file; treating as new.',
+      truncated: '(Large diff, display truncated)',
+      noDiff: '(No diff to preview)',
+      summary: {
+        write: 'Overwrite ({n} chars)',
+        append: 'Append ({n} chars)',
+        deleteFile: 'Delete entire file',
+        replace: 'Replace lines {s}-{e}',
+        insert: 'Insert before line {line}',
+        deleteLines: 'Delete lines {s}-{e}',
+      },
+    },
   },
 
   window: {
@@ -143,6 +161,8 @@ export default {
       desc: 'Application interface and appearance settings.',
       uiLang: 'Interface language',
       uiLangHint: 'The display language of the app interface (independent of the AI reply translation language).',
+      autoExecTitle: 'Auto-run file changes',
+      autoExecDesc: 'When on, the AI edits files without per-action confirmation (backups are still made; you can roll back from history).',
     },
     about: {
       title: 'About',
@@ -272,6 +292,10 @@ export default {
       empty: 'No conversation records',
       you: 'You',
       thinking: 'Thinking process',
+      rollback: 'Roll back',
+      rollbackTitle: 'Restore files and delete messages after this',
+      rollbackConfirm: 'Roll back to here? This deletes later messages and restores files',
+      rollbackYes: 'Roll back',
     },
     input: {
       title: 'Chat',

@@ -19,7 +19,8 @@ import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translate
 import type { ToolCallData } from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
-import type { ToolCall } from '../agent'
+import type { ToolCall, ToolResult } from '../agent'
+import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm } from '../agent/toolPolicy'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
@@ -79,8 +80,23 @@ export interface ToolActivity {
   /** 原始工具名，如 'read_file'、'set_character_emotion' */
   name: string
   /** 执行状态 */
-  status: 'running' | 'done' | 'error'
+  status: 'running' | 'done' | 'error' | 'skipped'
 }
+
+/** 待确认的文件操作（非空即弹确认卡） */
+export interface PendingConfirm {
+  /** 工具调用 id */
+  id: string
+  /** 工具名，如 'write_file' */
+  toolName: string
+  /** 受影响的相对路径 */
+  path: string
+  /** 原始参数（确认卡据此计算 diff 与摘要） */
+  args: Record<string, any>
+}
+
+/** 文件操作确认决定 */
+export type ConfirmDecision = 'allow' | 'allow-session' | 'reject'
 
 /** 一次 chat() 调用的结果 */
 type ChatResult =
@@ -221,6 +237,55 @@ export const useChatStore = defineStore('chat', () => {
   /** 是否显示工具活动列表（处理时点亮，完成后延时淡出） */
   const showToolActivity = ref(false)
 
+  // ── 文件修改确认（逐个确认；本会话自动允许；全局开关见 toolPolicy） ──
+  /** 待确认的文件操作（非空即弹确认卡） */
+  const pendingConfirm = ref<PendingConfirm | null>(null)
+  /** 本会话内自动允许（运行时，不持久化；清空 / 切换会话时重置） */
+  const autoExecSession = ref(false)
+  /** 等待用户确认的 resolver */
+  let confirmResolver: ((d: ConfirmDecision) => void) | null = null
+
+  /** 设待确认项并等待用户决定（在确认卡按钮触发 resolveConfirm 后兑现） */
+  function waitUserConfirm(tc: ToolCall, signal: AbortSignal): Promise<ConfirmDecision> {
+    return new Promise((resolve) => {
+      // 已取消：直接拒绝，避免无人应答而卡住循环
+      if (signal.aborted) { resolve('reject'); return }
+      pendingConfirm.value = {
+        id: tc.id,
+        toolName: tc.name,
+        path: mutatingPath(tc.name, tc.arguments) || '',
+        args: tc.arguments,
+      }
+      const onAbort = () => {
+        confirmResolver = null
+        pendingConfirm.value = null
+        resolve('reject')
+      }
+      confirmResolver = (d) => {
+        signal.removeEventListener('abort', onAbort)
+        confirmResolver = null
+        pendingConfirm.value = null
+        resolve(d)
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
+  /** UI 调用：对当前待确认项作出决定 */
+  function resolveConfirm(decision: ConfirmDecision) {
+    confirmResolver?.(decision)
+  }
+
+  /** 取消 / 清空时兜底拒绝待确认项，避免工具循环卡死在 await */
+  function rejectPendingConfirm() {
+    if (confirmResolver) {
+      const r = confirmResolver
+      confirmResolver = null
+      pendingConfirm.value = null
+      r('reject')
+    }
+  }
+
   /** 新增一条「执行中」活动并点亮列表 */
   function beginActivity(id: string, name: string) {
     if (toolHideTimer !== null) { clearTimeout(toolHideTimer); toolHideTimer = null }
@@ -228,15 +293,27 @@ export const useChatStore = defineStore('chat', () => {
     showToolActivity.value = true
   }
 
-  /** 把指定活动标记为完成/失败 */
-  function endActivity(id: string, ok: boolean) {
+  /** 把指定活动标记为完成 / 失败 / 跳过 */
+  function endActivity(id: string, status: ToolActivity['status']) {
     const a = toolActivities.value.find(x => x.id === id)
-    if (a) a.status = ok ? 'done' : 'error'
+    if (a) a.status = status
   }
 
   /** 工具结果是否为执行失败（executor 不抛错，错误以字符串前缀返回） */
   function isToolError(content: string): boolean {
     return /^(工具执行错误|工具执行失败|错误[:：])/.test(content || '')
+  }
+
+  /** 工具结果是否为「被用户拒绝」（executeWithPolicy 拒绝时的前缀） */
+  function isToolSkipped(content: string): boolean {
+    return /^用户已拒绝/.test(content || '')
+  }
+
+  /** 由工具结果内容推断活动状态 */
+  function resultStatus(content: string): ToolActivity['status'] {
+    if (isToolSkipped(content)) return 'skipped'
+    if (isToolError(content)) return 'error'
+    return 'done'
   }
 
   /**
@@ -324,9 +401,12 @@ export const useChatStore = defineStore('chat', () => {
     log.debug('[%s] 消息长度: %d 字符', _fn, userText.length)
 
     // ── 添加用户消息 ────────────────────────────────────
-    addMessage('user', userText)
+    const userMsgId = addMessage('user', userText)
     chatContext.addUserMessage(userText)
     log.trace('[%s] 用户消息已加入 ChatContext', _fn)
+
+    // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
+    const checkpointId = useSessionStore().beginCheckpoint(userMsgId)
 
     // ── 准备气泡 ────────────────────────────────────────
     showBubble.value = true
@@ -404,6 +484,38 @@ export const useChatStore = defineStore('chat', () => {
       chatContext.addToolResult(sayId, '已说出')
     }
 
+    /**
+     * 执行一个工具调用，并对「改文件」工具施加策略：
+     *   1. 需确认则弹确认卡并等待用户决定（拒绝 → 不执行，回执告知模型）。
+     *   2. 执行前对目标文件做写时复制备份（失败仅告警，不阻断）。
+     * 非改文件工具直接执行。
+     */
+    const executeWithPolicy = async (tc: ToolCall): Promise<ToolResult> => {
+      if (shouldConfirm(tc.name, { globalAuto: getAutoExecFiles(), sessionAuto: autoExecSession.value })) {
+        const decision = await waitUserConfirm(tc, myAbort.signal)
+        if (decision === 'reject') {
+          log.info('[%s] ✗ 用户拒绝文件操作: %s %o', _fn, tc.name, tc.arguments)
+          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该文件操作，未执行。' }
+        }
+        if (decision === 'allow-session') {
+          autoExecSession.value = true
+          log.info('[%s] 用户选择「本会话自动允许」文件操作', _fn)
+        }
+      }
+      if (isMutatingTool(tc.name)) {
+        const rel = mutatingPath(tc.name, tc.arguments)
+        if (rel) {
+          try {
+            await useSessionStore().backupFile(checkpointId, rel)
+            useSessionStore().markCheckpointFiles(checkpointId)
+          } catch (e) {
+            log.warn('[%s] ⚠ 文件备份失败（继续执行）: %s', _fn, (e as Error).message)
+          }
+        }
+      }
+      return agentService.execute(tc)
+    }
+
     log.trace('[%s] 工具循环开始 安全上限=%d 轮 (model=%s)', _fn, toolTurns, config.model)
     for (let turn = 0; turn < toolTurns; turn++) {
       log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, toolTurns)
@@ -472,8 +584,8 @@ export const useChatStore = defineStore('chat', () => {
               const tc = textCalls[ti]
               beginActivity(tc.id, tc.name || '?')
               log.info('[%s] 第%d轮 ✦ 执行文本动作[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tc.name || '?')
-              const toolResult = await agentService.execute(tc)
-              endActivity(tc.id, !isToolError(toolResult?.content || ''))
+              const toolResult = await executeWithPolicy(tc)
+              endActivity(tc.id, resultStatus(toolResult?.content || ''))
               chatContext.addToolResult(tc.id, toolResult.content)
             }
             isUsingTools.value = false
@@ -527,13 +639,13 @@ export const useChatStore = defineStore('chat', () => {
               }
             } catch (parseErr) {
               log.error('[%s] 第%d轮 ★ 工具参数 JSON 解析失败: %s', _fn, turn, (parseErr as Error).message)
-              endActivity(tc.id, false)
+              endActivity(tc.id, 'error')
               chatContext.addToolResult(tc.id, '参数解析失败')
               continue
             }
-            const toolResult = await agentService.execute(toolCall)
+            const toolResult = await executeWithPolicy(toolCall)
             toolTimer.stop()
-            endActivity(tc.id, !isToolError(toolResult?.content || ''))
+            endActivity(tc.id, resultStatus(toolResult?.content || ''))
             log.debug('[%s] 第%d轮 ★ 工具结果(%s): %s', _fn, turn, tcName,
               (toolResult?.content || '').slice(0, 200))
             chatContext.addToolResult(tc.id, toolResult.content)
@@ -672,6 +784,9 @@ export const useChatStore = defineStore('chat', () => {
     log.debug('[%s] 取消前状态: isProcessing=%s isUsingTools=%s abortController=%s',
       _fn, isProcessing.value, isUsingTools.value, abortController ? '存在' : 'null')
 
+    // 兜底拒绝待确认的文件操作，解除工具循环的 await
+    rejectPendingConfirm()
+
     if (abortController) {
       log.trace('[%s] 调用 abortController.abort()', _fn)
       abortController.abort()
@@ -694,7 +809,7 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ◀', _fn)
   }
 
-  function addMessage(role: ChatMessage['role'], text: string, thinking?: string, voice?: string) {
+  function addMessage(role: ChatMessage['role'], text: string, thinking?: string, voice?: string): string {
     const _fn = 'addMessage'
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const msgLen = text.length
@@ -719,6 +834,7 @@ export const useChatStore = defineStore('chat', () => {
     useSessionStore().saveCurrentSession()
     saveTimer.stop()
     log.trace('[%s] ◀', _fn)
+    return id
   }
 
   function clearMessages() {
@@ -731,6 +847,8 @@ export const useChatStore = defineStore('chat', () => {
       abortController.abort()
       abortController = null
     }
+    rejectPendingConfirm()
+    autoExecSession.value = false
     isProcessing.value = false
     isUsingTools.value = false
     hideBubble()
@@ -750,6 +868,8 @@ export const useChatStore = defineStore('chat', () => {
 
     // 保存清空状态到当前会话
     useSessionStore().saveCurrentSession()
+    // 清空本会话的回档检查点与文件备份
+    void useSessionStore().clearCheckpoints()
     log.info('[%s] ✓ 已清空 %d 条聊天记录', _fn, prevCount)
     log.trace('[%s] ◀', _fn)
   }
@@ -790,6 +910,9 @@ export const useChatStore = defineStore('chat', () => {
     currentThinking.value = ''
     isProcessing.value = false
     isUsingTools.value = false
+    // 切换/恢复会话：解除待确认项，并重置「本会话自动允许」
+    rejectPendingConfirm()
+    autoExecSession.value = false
     log.trace('[%s] 气泡状态已重置: hideBubble showInput=false thinking=""', _fn)
 
     if (abortController) {
@@ -899,6 +1022,9 @@ export const useChatStore = defineStore('chat', () => {
     isUsingTools,
     toolActivities,
     showToolActivity,
+    pendingConfirm,
+    autoExecSession,
+    resolveConfirm,
     init,
     sendMessage,
     cancelResponse,

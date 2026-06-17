@@ -1,3 +1,4 @@
+mod backup;
 mod character;
 mod cursor;
 mod fileio;
@@ -42,7 +43,7 @@ pub fn run() {
                 let d = app.path().app_data_dir()?;
                 (d.join("characters"), d.join("logs"))
             };
-            path::init_dirs(chars_dir, logs_dir)?;
+            path::init_dirs(chars_dir, logs_dir, app.path().app_cache_dir()?.join("backups"))?;
 
             // ─── 全局光标轮询（主窗口鼠标穿透命中测试） ───
             // 主窗口透明，透明区域需让鼠标穿透到下方窗口。穿透开启后 WebView
@@ -78,6 +79,9 @@ pub fn run() {
             fileio::agent_edit_lines,
             fileio::agent_find_files,
             fileio::agent_search_in_files,
+            backup::agent_checkpoint_backup,
+            backup::agent_checkpoint_rollback,
+            backup::agent_checkpoint_clear_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

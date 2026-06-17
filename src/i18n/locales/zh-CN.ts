@@ -86,6 +86,24 @@ export default {
       error: '出错了: {msg}',
       done: '我已经处理好了，还有什么需要帮忙的吗？',
     },
+    confirm: {
+      title: '确认文件操作',
+      allow: '允许',
+      reject: '拒绝',
+      allowSession: '本会话自动允许',
+      loading: '生成预览…',
+      unreadable: '无法读取原文件，将按新建处理。',
+      truncated: '（差异较大，已截断显示）',
+      noDiff: '（无可预览的差异）',
+      summary: {
+        write: '覆盖写入（{n} 字符）',
+        append: '追加（{n} 字符）',
+        deleteFile: '删除整个文件',
+        replace: '替换第 {s}-{e} 行',
+        insert: '在第 {line} 行前插入',
+        deleteLines: '删除第 {s}-{e} 行',
+      },
+    },
   },
 
   window: {
@@ -146,6 +164,8 @@ export default {
       desc: '应用界面与外观设置。',
       uiLang: '界面语言',
       uiLangHint: '应用界面文案的显示语言（与 AI 回复的翻译语言相互独立）。',
+      autoExecTitle: '自动执行文件修改',
+      autoExecDesc: '开启后，AI 修改文件无需逐次确认（仍会自动备份，可在历史中回档）。',
     },
     about: {
       title: '关于',
@@ -275,6 +295,10 @@ export default {
       empty: '暂无对话记录',
       you: '你',
       thinking: '思考过程',
+      rollback: '回档',
+      rollbackTitle: '还原文件并删除此后的对话',
+      rollbackConfirm: '回档到此处？将删除此后对话并还原文件',
+      rollbackYes: '回档',
     },
     input: {
       title: '对话',

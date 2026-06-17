@@ -41,6 +41,7 @@ function toolLabel(name: string): string {
               'fa-spinner fa-spin': a.status === 'running',
               'fa-check': a.status === 'done',
               'fa-xmark': a.status === 'error',
+              'fa-ban': a.status === 'skipped',
             }"
           ></i>
         </div>
@@ -105,12 +106,14 @@ function toolLabel(name: string): string {
   text-align: center;
 }
 
-/* 状态配色：执行中=主题色，完成=绿，失败=红 */
+/* 状态配色：执行中=主题色，完成=绿，失败=红，跳过=灰 */
 .ta-item.running .ta-status { color: #667eea; }
 .ta-item.done .ta-status { color: #5fbf7f; }
 .ta-item.error .ta-status { color: #e06464; }
+.ta-item.skipped .ta-status { color: #9a9aa8; }
 .ta-item.done .ta-icon { color: rgba(255, 255, 255, 0.85); }
 .ta-item.error { border-color: rgba(224, 100, 100, 0.35); }
+.ta-item.skipped { opacity: 0.7; }
 
 /* 整体淡入淡出 */
 .tools-fade-enter-active,

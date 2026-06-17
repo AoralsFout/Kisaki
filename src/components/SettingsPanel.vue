@@ -21,6 +21,7 @@ import DevPanel from '../DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../stores/language'
 import { getTypingSpeed, setTypingSpeed } from '../stores/language'
+import { getAutoExecFiles, setAutoExecFiles } from '../agent/toolPolicy'
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../i18n'
 import { WINDOW_LOGS, QUERY_SETTINGS, QUERY_LOGS } from '../constants'
 import { getAllWindows } from '@tauri-apps/api/window'
@@ -46,6 +47,7 @@ const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
 const uiLang = ref(getUiLanguage())
 const typingSpeed = ref(getTypingSpeed())
+const autoExec = ref(getAutoExecFiles())
 
 function onTypingSpeedInput(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
@@ -226,6 +228,22 @@ async function openLogWindow() {
               <option v-for="l in UI_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
             </select>
             <p class="form-hint">{{ t('settings.general.uiLangHint') }}</p>
+          </div>
+
+          <hr class="section-divider" />
+
+          <!-- 文件修改自动执行开关 -->
+          <div class="form-group">
+            <div class="toggle-row">
+              <label class="toggle-label">
+                <span class="toggle-label-text">{{ t('settings.general.autoExecTitle') }}</span>
+                <span class="toggle-label-desc">{{ t('settings.general.autoExecDesc') }}</span>
+              </label>
+              <button :class="['toggle-switch', { active: autoExec }]"
+                @click="autoExec = !autoExec; setAutoExecFiles(autoExec)" role="switch" :aria-checked="autoExec">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
           </div>
         </div>
 

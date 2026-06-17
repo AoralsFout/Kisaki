@@ -83,6 +83,24 @@ export default {
       error: 'エラーが発生しました: {msg}',
       done: '対応できたよ、ほかに手伝えることはある？',
     },
+    confirm: {
+      title: 'ファイル操作の確認',
+      allow: '許可',
+      reject: '拒否',
+      allowSession: 'このセッションは自動許可',
+      loading: 'プレビューを生成中…',
+      unreadable: '元ファイルを読み取れません。新規作成として扱います。',
+      truncated: '（差分が大きいため省略表示）',
+      noDiff: '（プレビューできる差分はありません）',
+      summary: {
+        write: '上書き保存（{n} 文字）',
+        append: '追記（{n} 文字）',
+        deleteFile: 'ファイルを削除',
+        replace: '{s}-{e} 行目を置換',
+        insert: '{line} 行目の前に挿入',
+        deleteLines: '{s}-{e} 行目を削除',
+      },
+    },
   },
 
   window: {
@@ -143,6 +161,8 @@ export default {
       desc: 'アプリのインターフェースと外観の設定。',
       uiLang: 'インターフェース言語',
       uiLangHint: 'アプリ画面の表示言語（AI の返信翻訳言語とは独立しています）。',
+      autoExecTitle: 'ファイル変更を自動実行',
+      autoExecDesc: '有効にすると、AI のファイル変更を都度確認しません（バックアップは自動で取られ、履歴から復元できます）。',
     },
     about: {
       title: 'について',
@@ -272,6 +292,10 @@ export default {
       empty: '会話記録がありません',
       you: 'あなた',
       thinking: '思考過程',
+      rollback: '復元',
+      rollbackTitle: 'ファイルを復元し、以降の会話を削除',
+      rollbackConfirm: 'ここまで戻す？以降の会話を削除しファイルを復元します',
+      rollbackYes: '復元',
     },
     input: {
       title: '会話',

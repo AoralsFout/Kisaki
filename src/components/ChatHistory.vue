@@ -7,6 +7,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
+import { useSessionStore } from '../stores/session'
 
 const { t } = useI18n()
 
@@ -21,11 +22,22 @@ const emit = defineEmits<{
 }>()
 
 const chat = useChatStore()
+const sessionStore = useSessionStore()
 const listRef = ref<HTMLElement | null>(null)
+
+/** 正在二次确认回档的消息 id */
+const confirmRollbackId = ref<string | null>(null)
+
+/** 执行回档：还原文件 + 恢复视觉状态 + 截断此后对话 */
+async function doRollback(messageId: string) {
+  confirmRollbackId.value = null
+  await sessionStore.rollbackTo(messageId)
+}
 
 // 按 Escape 关闭面板
 let keyHandler: ((e: KeyboardEvent) => void) | null = null
 watch(() => props.visible, (v) => {
+  if (!v) confirmRollbackId.value = null
   if (v) {
     keyHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') emit('close')
@@ -87,6 +99,24 @@ watch(
                 <div class="thinking-text">{{ msg.thinking }}</div>
               </details>
               <div class="msg-text">{{ msg.text }}</div>
+
+              <!-- 回档（仅用户消息）：还原文件 + 截断此后对话 -->
+              <div v-if="msg.role === 'user'" class="msg-rollback">
+                <template v-if="confirmRollbackId === msg.id">
+                  <span class="rb-q">{{ t('chat.history.rollbackConfirm') }}</span>
+                  <button class="rb-yes" @click="doRollback(msg.id)">{{ t('chat.history.rollbackYes') }}</button>
+                  <button class="rb-no" @click="confirmRollbackId = null">{{ t('common.cancel') }}</button>
+                </template>
+                <button
+                  v-else
+                  class="rb-btn"
+                  :disabled="chat.isProcessing"
+                  :title="t('chat.history.rollbackTitle')"
+                  @click="confirmRollbackId = msg.id"
+                >
+                  <i class="fas fa-clock-rotate-left"></i> {{ t('chat.history.rollback') }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -273,6 +303,77 @@ watch(
 
 .message.assistant .msg-text {
   background: rgba(118, 75, 162, 0.15);
+}
+
+/* ---- 回档控件（用户消息） ---- */
+.msg-rollback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  justify-content: flex-end;
+  min-height: 18px;
+}
+
+.rb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 2px 4px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.message.user:hover .rb-btn {
+  opacity: 1;
+}
+
+.rb-btn:hover:not(:disabled) {
+  color: #f0b85c;
+  background: rgba(240, 184, 92, 0.12);
+}
+
+.rb-btn:disabled {
+  cursor: not-allowed;
+}
+
+.rb-q {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.rb-yes,
+.rb-no {
+  font-size: 10px;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.rb-yes {
+  background: rgba(240, 184, 92, 0.85);
+  color: #2a2030;
+  font-weight: 600;
+}
+
+.rb-yes:hover {
+  background: #f0b85c;
+}
+
+.rb-no {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.rb-no:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ---- 思考内容 ---- */

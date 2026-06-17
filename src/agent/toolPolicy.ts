@@ -1,0 +1,71 @@
+/**
+ * 工具权限策略 —— 哪些工具会改文件、改的是哪个路径，以及「自动执行」开关
+ *
+ * 单独成模块的原因：
+ *   - 工具 handler（tools/files.ts）保持「纯转发」，确认/备份逻辑不侵入它们
+ *     （现有 files.test.ts 直接断言 handler→invoke，不应被打断）。
+ *   - 分类信息与图标（toolMeta.ts）一样是「关于工具的元信息」，集中声明便于维护。
+ */
+import { STORAGE_AUTO_EXEC_FILES } from '../constants'
+
+/**
+ * 会修改文件的工具 → 从其参数中取「受影响的相对路径」。
+ * 只读工具（read_file / list_dir / find_files / search_in_files）不在此列。
+ */
+const MUTATING_TOOLS: Record<string, (args: Record<string, any>) => string> = {
+  write_file: a => String(a.path ?? ''),
+  append_file: a => String(a.path ?? ''),
+  delete_file: a => String(a.path ?? ''),
+  replace_lines: a => String(a.path ?? ''),
+  insert_lines: a => String(a.path ?? ''),
+  delete_lines: a => String(a.path ?? ''),
+}
+
+/** 该工具是否会修改文件 */
+export function isMutatingTool(name: string): boolean {
+  return name in MUTATING_TOOLS
+}
+
+/** 取该工具调用受影响的相对路径；非改文件工具返回 null */
+export function mutatingPath(name: string, args: Record<string, any>): string | null {
+  const fn = MUTATING_TOOLS[name]
+  return fn ? fn(args || {}) : null
+}
+
+/** 全部改文件工具名（供测试 / 展示用） */
+export function mutatingToolNames(): string[] {
+  return Object.keys(MUTATING_TOOLS)
+}
+
+// ─── 全局「自动执行文件修改」开关（localStorage 持久化） ──────────────
+
+/** 读取全局自动执行开关（默认关闭：改文件需逐次确认） */
+export function getAutoExecFiles(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_AUTO_EXEC_FILES) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 设置全局自动执行开关 */
+export function setAutoExecFiles(value: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_AUTO_EXEC_FILES, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 是否需要就该工具调用向用户弹确认。
+ * 纯函数（开关从参数注入），便于单测。
+ * 规则：是改文件工具 且 未开全局自动 且 未开本会话自动 → 需要确认。
+ */
+export function shouldConfirm(
+  name: string,
+  opts: { globalAuto: boolean; sessionAuto: boolean },
+): boolean {
+  if (!isMutatingTool(name)) return false
+  return !opts.globalAuto && !opts.sessionAuto
+}

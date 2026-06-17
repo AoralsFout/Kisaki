@@ -13,6 +13,7 @@ import CharacterSelect from './components/CharacterSelect.vue'
 import SessionList from './components/SessionList.vue'
 import WorkspaceChip from './components/WorkspaceChip.vue'
 import ToolActivityList from './components/ToolActivityList.vue'
+import ToolConfirm from './components/ToolConfirm.vue'
 import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
@@ -297,6 +298,9 @@ async function handleSelectCharacter(charId: string) {
 
     <!-- 底部交互区 -->
     <div class="bottom-area">
+      <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
+      <ToolConfirm v-if="!noCharacter" />
+
       <!-- 对话气泡 -->
       <DialogueBubble ref="bubbleRef" :text="chat.currentBubbleText" :thinking="chat.currentThinking"
         :visible="chat.showBubble" :typing="chat.isTyping" @typing-end="chat.isTyping = false" />
