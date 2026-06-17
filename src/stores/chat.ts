@@ -72,6 +72,16 @@ export interface ChatMessage {
   timestamp: number
 }
 
+/** 工具调用活动（主窗口右侧列表用，临时态，不持久化） */
+export interface ToolActivity {
+  /** 工具调用 id（动作工具用 tc.id，文本兜底用其生成 id） */
+  id: string
+  /** 原始工具名，如 'read_file'、'set_character_emotion' */
+  name: string
+  /** 执行状态 */
+  status: 'running' | 'done' | 'error'
+}
+
 /** 一次 chat() 调用的结果 */
 type ChatResult =
   | { type: 'done'; text: string }
@@ -205,6 +215,30 @@ export const useChatStore = defineStore('chat', () => {
   /** 当前是否正在执行工具（子状态） */
   const isUsingTools = ref(false)
 
+  // ── 工具调用过程展示（主窗口右侧列表，仅处理时临时展示，不持久化） ──
+  /** 单条工具调用活动 */
+  const toolActivities = ref<ToolActivity[]>([])
+  /** 是否显示工具活动列表（处理时点亮，完成后延时淡出） */
+  const showToolActivity = ref(false)
+
+  /** 新增一条「执行中」活动并点亮列表 */
+  function beginActivity(id: string, name: string) {
+    if (toolHideTimer !== null) { clearTimeout(toolHideTimer); toolHideTimer = null }
+    toolActivities.value.push({ id, name, status: 'running' })
+    showToolActivity.value = true
+  }
+
+  /** 把指定活动标记为完成/失败 */
+  function endActivity(id: string, ok: boolean) {
+    const a = toolActivities.value.find(x => x.id === id)
+    if (a) a.status = ok ? 'done' : 'error'
+  }
+
+  /** 工具结果是否为执行失败（executor 不抛错，错误以字符串前缀返回） */
+  function isToolError(content: string): boolean {
+    return /^(工具执行错误|工具执行失败|错误[:：])/.test(content || '')
+  }
+
   /**
    * 根据当前配置创建一个按模型能力自动配置的 ChatContext。
    * 后续若要切换模型，需重新创建 ChatContext 使其生效。
@@ -219,6 +253,8 @@ export const useChatStore = defineStore('chat', () => {
 
   let chatContext = createChatContext()
   let abortController: AbortController | null = null
+  /** 工具活动列表淡出延时器（处理结束后保留一会儿再隐藏） */
+  let toolHideTimer: ReturnType<typeof setTimeout> | null = null
 
   function init() {
     log.trace('[init] ▶')
@@ -255,6 +291,11 @@ export const useChatStore = defineStore('chat', () => {
     const userText = text.trim()
     isProcessing.value = true
     log.debug('[%s] isProcessing → true', _fn)
+
+    // 重置工具活动列表（本次请求独立展示，等首个工具调用再点亮）
+    if (toolHideTimer !== null) { clearTimeout(toolHideTimer); toolHideTimer = null }
+    toolActivities.value = []
+    showToolActivity.value = false
 
     // 用户发送新消息时，取消正在播放的语音
     log.trace('[%s] 取消正在播放的语音', _fn)
@@ -429,8 +470,10 @@ export const useChatStore = defineStore('chat', () => {
             if (cleanText) chatContext.addAssistantMessage(cleanText)
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
+              beginActivity(tc.id, tc.name || '?')
               log.info('[%s] 第%d轮 ✦ 执行文本动作[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tc.name || '?')
               const toolResult = await agentService.execute(tc)
+              endActivity(tc.id, !isToolError(toolResult?.content || ''))
               chatContext.addToolResult(tc.id, toolResult.content)
             }
             isUsingTools.value = false
@@ -471,6 +514,7 @@ export const useChatStore = defineStore('chat', () => {
             const tc = actionCalls[ti]
             const toolTimer = debugTimer(`${_fn} tool#${ti} turn#${turn}`)
             const tcName = tc.function?.name || '?'
+            beginActivity(tc.id, tcName)
             log.info('[%s] 第%d轮 ★ 执行动作[%d/%d]: %s (id=%s)',
               _fn, turn, ti + 1, actionCalls.length, tcName, tc.id)
             log.debug('[%s] 第%d轮 ★ 参数: %s', _fn, turn, (tc.function?.arguments || '{}').slice(0, 300))
@@ -483,11 +527,13 @@ export const useChatStore = defineStore('chat', () => {
               }
             } catch (parseErr) {
               log.error('[%s] 第%d轮 ★ 工具参数 JSON 解析失败: %s', _fn, turn, (parseErr as Error).message)
+              endActivity(tc.id, false)
               chatContext.addToolResult(tc.id, '参数解析失败')
               continue
             }
             const toolResult = await agentService.execute(toolCall)
             toolTimer.stop()
+            endActivity(tc.id, !isToolError(toolResult?.content || ''))
             log.debug('[%s] 第%d轮 ★ 工具结果(%s): %s', _fn, turn, tcName,
               (toolResult?.content || '').slice(0, 200))
             chatContext.addToolResult(tc.id, toolResult.content)
@@ -572,6 +618,15 @@ export const useChatStore = defineStore('chat', () => {
     isProcessing.value = false
     abortController = null
     log.debug('[%s] isProcessing → false abortController → null', _fn)
+
+    // 工具活动列表：本次有调用则保留一会儿供用户回看，再淡出；无调用则立即隐藏
+    if (toolActivities.value.length > 0) {
+      if (toolHideTimer !== null) clearTimeout(toolHideTimer)
+      toolHideTimer = setTimeout(() => { showToolActivity.value = false; toolHideTimer = null }, 5000)
+    } else {
+      showToolActivity.value = false
+    }
+
     _timer.stop()
     log.trace('[%s] ◀ (正常结束)', _fn)
   }
@@ -842,6 +897,8 @@ export const useChatStore = defineStore('chat', () => {
     showInput,
     configReady,
     isUsingTools,
+    toolActivities,
+    showToolActivity,
     init,
     sendMessage,
     cancelResponse,
