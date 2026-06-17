@@ -70,33 +70,23 @@ function handleClose() {
 
 <template>
   <div class="input-overlay" @click.self="handleClose">
-      <div class="input-container" @click.stop data-pet-solid>
-        <div class="input-header">
-          <span class="input-title"><i class="fas fa-comment"></i> {{ t('chat.input.title') }}</span>
-          <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
-        </div>
-        <textarea
-          ref="inputRef"
-          v-model="inputText"
-          class="input-field"
-          :placeholder="placeholder || t('chat.input.placeholder')"
-          :disabled="disabled"
-          rows="3"
-          @keydown="handleKeydown"
-        ></textarea>
-        <div class="input-footer">
-          <span class="hint">{{ t('chat.input.hint') }}</span>
-          <button
-            class="btn-send"
-            :disabled="!inputText.trim() || disabled"
-            @click="sendMessage"
-            :aria-label="t('chat.input.sendAria')"
-          >
-            {{ t('chat.input.send') }}
-          </button>
-        </div>
+    <div class="input-container" @click.stop data-pet-solid>
+      <div class="input-header">
+        <span class="input-title"><i class="fas fa-comment"></i> {{ t('chat.input.title') }}</span>
+        <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
+      </div>
+      <textarea ref="inputRef" v-model="inputText" class="input-field"
+        :placeholder="placeholder || t('chat.input.placeholder')" :disabled="disabled" rows="3"
+        @keydown="handleKeydown"></textarea>
+      <div class="input-footer">
+        <span class="hint">{{ t('chat.input.hint') }}</span>
+        <button class="btn-send" :disabled="!inputText.trim() || disabled" @click="sendMessage"
+          :aria-label="t('chat.input.sendAria')">
+          {{ t('chat.input.send') }}
+        </button>
       </div>
     </div>
+  </div>
 </template>
 
 <style scoped>
@@ -201,5 +191,4 @@ function handleClose() {
   opacity: 0.4;
   cursor: not-allowed;
 }
-
 </style>

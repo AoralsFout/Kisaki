@@ -69,6 +69,11 @@ export default {
       append_file: '追加檔案',
       list_dir: '列出目錄',
       delete_file: '刪除檔案',
+      replace_lines: '替換行',
+      insert_lines: '插入行',
+      delete_lines: '刪除行',
+      find_files: '查找檔案',
+      search_in_files: '搜尋內容',
     },
     bubble: {
       welcome: '嘿嘿',

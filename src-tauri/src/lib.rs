@@ -74,6 +74,10 @@ pub fn run() {
             fileio::agent_append_file,
             fileio::agent_list_dir,
             fileio::agent_delete_file,
+            fileio::agent_read_lines,
+            fileio::agent_edit_lines,
+            fileio::agent_find_files,
+            fileio::agent_search_in_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

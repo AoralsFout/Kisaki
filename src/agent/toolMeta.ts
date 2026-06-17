@@ -26,6 +26,12 @@ const TOOL_ICONS: Record<string, string> = {
   append_file: 'fa-file-circle-plus',
   list_dir: 'fa-folder-open',
   delete_file: 'fa-trash',
+  // 按行编辑 / 查找
+  replace_lines: 'fa-pen-to-square',
+  insert_lines: 'fa-square-plus',
+  delete_lines: 'fa-eraser',
+  find_files: 'fa-magnifying-glass',
+  search_in_files: 'fa-magnifying-glass-arrow-right',
 }
 
 /** 未知工具的兜底图标 */

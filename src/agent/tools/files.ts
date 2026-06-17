@@ -37,19 +37,36 @@ interface DirEntry {
   size: number
 }
 
+/** 内容搜索命中结构（与 Rust agent_search_in_files 返回一致） */
+interface SearchHit {
+  path: string
+  line: number
+  text: string
+}
+
 export const readFileTool: Tool = {
   definition: {
     type: 'function',
     function: {
       name: 'read_file',
       description:
-        '读取工作目录内某个文本文件的内容。仅支持 UTF-8 文本，单文件上限 2MB。',
+        '读取工作目录内某个文本文件的内容。仅支持 UTF-8 文本。' +
+        '不带行号参数时返回整个文件（上限 2MB）；' +
+        '带 start_line/end_line 时只返回该行区间且输出带行号——想精确编辑前，先用行区间读取以获得行号。',
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
             description: '相对工作目录的路径，如 notes/todo.txt',
+          },
+          start_line: {
+            type: 'integer',
+            description: '起始行号（1 起，含）。省略则从第 1 行开始',
+          },
+          end_line: {
+            type: 'integer',
+            description: '结束行号（1 起，含）。省略则到文件末尾',
           },
         },
         required: ['path'],
@@ -59,6 +76,14 @@ export const readFileTool: Tool = {
   handler: async (args) => {
     const root = await requireRoot()
     const relPath = String(args.path ?? '')
+    const hasRange = args.start_line != null || args.end_line != null
+    if (hasRange) {
+      const startLine = args.start_line != null ? Number(args.start_line) : null
+      const endLine = args.end_line != null ? Number(args.end_line) : null
+      log.debug('read_file(lines): %s [%s,%s]', relPath, startLine, endLine)
+      const text = await invoke<string>('agent_read_lines', { root, relPath, startLine, endLine })
+      return text || '(空文件)'
+    }
     log.debug('read_file: %s', relPath)
     const content = await invoke<string>('agent_read_file', { root, relPath })
     return content === '' ? '(空文件)' : content
@@ -179,5 +204,162 @@ export const deleteFileTool: Tool = {
     log.debug('delete_file: %s', relPath)
     await invoke('agent_delete_file', { root, relPath })
     return `已删除 ${relPath}`
+  },
+}
+
+// ─── 按行编辑（replace / insert / delete，共用 agent_edit_lines） ──────
+
+export const replaceLinesTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'replace_lines',
+      description:
+        '用新内容替换文件中指定的行区间 [start_line, end_line]（1 起，含）。' +
+        '编辑前建议先用 read_file 带行号读取，确认行号。content 可为多行。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对工作目录的文件路径' },
+          start_line: { type: 'integer', description: '起始行号（1 起，含）' },
+          end_line: { type: 'integer', description: '结束行号（1 起，含）' },
+          content: { type: 'string', description: '替换后的新内容（可多行；空字符串等价于删除这些行）' },
+        },
+        required: ['path', 'start_line', 'end_line', 'content'],
+      },
+    },
+  },
+  handler: async (args) => {
+    const root = await requireRoot()
+    const relPath = String(args.path ?? '')
+    const startLine = Number(args.start_line)
+    const endLine = Number(args.end_line)
+    const content = String(args.content ?? '')
+    log.debug('replace_lines: %s [%d,%d]', relPath, startLine, endLine)
+    return await invoke<string>('agent_edit_lines', {
+      root, relPath, operation: 'replace', startLine, endLine, content,
+    })
+  },
+}
+
+export const insertLinesTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'insert_lines',
+      description:
+        '在指定行号处插入新内容（在该行之前插入，不覆盖原有行）。' +
+        'line 取 1..=总行数+1，等于总行数+1 时追加到文件末尾。content 可为多行。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对工作目录的文件路径' },
+          line: { type: 'integer', description: '插入位置行号（1 起，在该行之前插入）' },
+          content: { type: 'string', description: '要插入的内容（可多行）' },
+        },
+        required: ['path', 'line', 'content'],
+      },
+    },
+  },
+  handler: async (args) => {
+    const root = await requireRoot()
+    const relPath = String(args.path ?? '')
+    const startLine = Number(args.line)
+    const content = String(args.content ?? '')
+    log.debug('insert_lines: %s @%d', relPath, startLine)
+    return await invoke<string>('agent_edit_lines', {
+      root, relPath, operation: 'insert', startLine, endLine: null, content,
+    })
+  },
+}
+
+export const deleteLinesTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'delete_lines',
+      description: '删除文件中指定的行区间 [start_line, end_line]（1 起，含）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对工作目录的文件路径' },
+          start_line: { type: 'integer', description: '起始行号（1 起，含）' },
+          end_line: { type: 'integer', description: '结束行号（1 起，含）' },
+        },
+        required: ['path', 'start_line', 'end_line'],
+      },
+    },
+  },
+  handler: async (args) => {
+    const root = await requireRoot()
+    const relPath = String(args.path ?? '')
+    const startLine = Number(args.start_line)
+    const endLine = Number(args.end_line)
+    log.debug('delete_lines: %s [%d,%d]', relPath, startLine, endLine)
+    return await invoke<string>('agent_edit_lines', {
+      root, relPath, operation: 'delete', startLine, endLine, content: null,
+    })
+  },
+}
+
+// ─── 查找 / 搜索 ───────────────────────────────────────
+
+export const findFilesTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'find_files',
+      description:
+        '在工作目录内按文件名递归查找文件。pattern 支持通配符 * 和 ?（大小写不敏感），如 *.txt、note*.md。',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: '文件名通配符，如 *.txt' },
+          path: { type: 'string', description: '限定在某子目录下查找（相对工作目录），留空表示整个工作目录' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  handler: async (args) => {
+    const root = await requireRoot()
+    const pattern = String(args.pattern ?? '')
+    const relPath = args.path != null ? String(args.path) : null
+    log.debug('find_files: %s (in %s)', pattern, relPath || '(root)')
+    const list = await invoke<string[]>('agent_find_files', { root, pattern, relPath })
+    if (!list.length) return '(无匹配)'
+    let out = list.join('\n')
+    if (list.length >= 200) out += '\n…（结果较多，已截断，请缩小范围）'
+    return out
+  },
+}
+
+export const searchInFilesTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'search_in_files',
+      description:
+        '在工作目录内按内容递归搜索（大小写不敏感子串），返回命中的「文件:行号: 该行内容」。仅搜索 UTF-8 文本文件。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要搜索的关键词' },
+          path: { type: 'string', description: '限定在某子目录下搜索（相对工作目录），留空表示整个工作目录' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  handler: async (args) => {
+    const root = await requireRoot()
+    const query = String(args.query ?? '')
+    const relPath = args.path != null ? String(args.path) : null
+    log.debug('search_in_files: %s (in %s)', query, relPath || '(root)')
+    const hits = await invoke<SearchHit[]>('agent_search_in_files', { root, query, relPath })
+    if (!hits.length) return '(无匹配)'
+    let out = hits.map(h => `${h.path}:${h.line}: ${h.text}`).join('\n')
+    if (hits.length >= 100) out += '\n…（命中较多，已截断，请缩小范围或换更具体的关键词）'
+    return out
   },
 }

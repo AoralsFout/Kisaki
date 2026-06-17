@@ -69,6 +69,11 @@ export default {
       append_file: 'Append file',
       list_dir: 'List directory',
       delete_file: 'Delete file',
+      replace_lines: 'Replace lines',
+      insert_lines: 'Insert lines',
+      delete_lines: 'Delete lines',
+      find_files: 'Find files',
+      search_in_files: 'Search content',
     },
     bubble: {
       welcome: 'Hehe',

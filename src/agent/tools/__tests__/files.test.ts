@@ -25,7 +25,10 @@ const localStorageMock = (() => {
 })()
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
-import { readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool } from '../files'
+import {
+  readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
+  replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
+} from '../files'
 import { useSessionStore } from '../../../stores/session'
 
 const ROOT = 'C:\\work\\ws'
@@ -116,5 +119,82 @@ describe('文件工具 - 已授权工作目录', () => {
   it('list_dir 空目录返回占位提示', async () => {
     invokeMock.mockResolvedValue([])
     expect(await listDirTool.handler({})).toBe('(空目录)')
+  })
+
+  // ── 按行读取路由 ──
+  it('read_file 不带行号 → 走 agent_read_file', async () => {
+    invokeMock.mockResolvedValue('whole')
+    await readFileTool.handler({ path: 'a.txt' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_read_file', { root: ROOT, relPath: 'a.txt' })
+  })
+
+  it('read_file 带行号区间 → 走 agent_read_lines', async () => {
+    invokeMock.mockResolvedValue('  1 | x')
+    const out = await readFileTool.handler({ path: 'a.txt', start_line: 1, end_line: 20 })
+    expect(invokeMock).toHaveBeenCalledWith('agent_read_lines', { root: ROOT, relPath: 'a.txt', startLine: 1, endLine: 20 })
+    expect(out).toBe('  1 | x')
+  })
+
+  it('read_file 仅给 start_line 也走 agent_read_lines（endLine=null）', async () => {
+    invokeMock.mockResolvedValue('  5 | y')
+    await readFileTool.handler({ path: 'a.txt', start_line: 5 })
+    expect(invokeMock).toHaveBeenCalledWith('agent_read_lines', { root: ROOT, relPath: 'a.txt', startLine: 5, endLine: null })
+  })
+
+  // ── 按行编辑（共用 agent_edit_lines，operation 区分） ──
+  it('replace_lines 以 operation=replace 调用', async () => {
+    invokeMock.mockResolvedValue('已替换第 3-4 行（共 1 行新内容）')
+    const out = await replaceLinesTool.handler({ path: 'a.txt', start_line: 3, end_line: 4, content: 'new' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_edit_lines', {
+      root: ROOT, relPath: 'a.txt', operation: 'replace', startLine: 3, endLine: 4, content: 'new',
+    })
+    expect(out).toMatch(/已替换/)
+  })
+
+  it('insert_lines 以 operation=insert 调用（endLine=null）', async () => {
+    invokeMock.mockResolvedValue('已在第 2 行前插入 1 行')
+    await insertLinesTool.handler({ path: 'a.txt', line: 2, content: 'ins' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_edit_lines', {
+      root: ROOT, relPath: 'a.txt', operation: 'insert', startLine: 2, endLine: null, content: 'ins',
+    })
+  })
+
+  it('delete_lines 以 operation=delete 调用（content=null）', async () => {
+    invokeMock.mockResolvedValue('已删除第 5-6 行')
+    await deleteLinesTool.handler({ path: 'a.txt', start_line: 5, end_line: 6 })
+    expect(invokeMock).toHaveBeenCalledWith('agent_edit_lines', {
+      root: ROOT, relPath: 'a.txt', operation: 'delete', startLine: 5, endLine: 6, content: null,
+    })
+  })
+
+  // ── 查找 / 搜索 ──
+  it('find_files 传参并把结果列表换行拼接', async () => {
+    invokeMock.mockResolvedValue(['a.txt', 'sub/b.txt'])
+    const out = await findFilesTool.handler({ pattern: '*.txt' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_find_files', { root: ROOT, pattern: '*.txt', relPath: null })
+    expect(out).toBe('a.txt\nsub/b.txt')
+  })
+
+  it('find_files 无匹配返回占位', async () => {
+    invokeMock.mockResolvedValue([])
+    expect(await findFilesTool.handler({ pattern: '*.md', path: 'sub' })).toBe('(无匹配)')
+    expect(invokeMock).toHaveBeenCalledWith('agent_find_files', { root: ROOT, pattern: '*.md', relPath: 'sub' })
+  })
+
+  it('search_in_files 把命中格式化为 path:line: text', async () => {
+    invokeMock.mockResolvedValue([
+      { path: 'a.txt', line: 3, text: 'TODO foo' },
+      { path: 'b.txt', line: 10, text: 'TODO bar' },
+    ])
+    const out = await searchInFilesTool.handler({ query: 'TODO' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_search_in_files', { root: ROOT, query: 'TODO', relPath: null })
+    const lines = out.split('\n')
+    expect(lines[0]).toBe('a.txt:3: TODO foo')
+    expect(lines[1]).toBe('b.txt:10: TODO bar')
+  })
+
+  it('search_in_files 无匹配返回占位', async () => {
+    invokeMock.mockResolvedValue([])
+    expect(await searchInFilesTool.handler({ query: 'zzz' })).toBe('(无匹配)')
   })
 })

@@ -13,6 +13,8 @@ describe('toolIcon', () => {
     expect(toolIcon('set_character_emotion')).toBe('fa-face-smile')
     expect(toolIcon('switch_character')).toBe('fa-rotate')
     expect(toolIcon('get_time')).toBe('fa-clock')
+    expect(toolIcon('find_files')).toBe('fa-magnifying-glass')
+    expect(toolIcon('replace_lines')).toBe('fa-pen-to-square')
   })
 
   it('未知工具返回兜底图标 fa-gear', () => {
@@ -21,12 +23,13 @@ describe('toolIcon', () => {
     expect(toolIcon('say')).toBe('fa-gear') // say 不在映射内（不进列表）
   })
 
-  it('覆盖全部 15 个已注册工具，均非兜底', () => {
+  it('覆盖全部 20 个已注册工具，均非兜底', () => {
     const names = [
       'get_time', 'get_weather', 'calculator',
       'set_character_emotion', 'set_character_stance', 'set_character_costume',
       'set_character_look', 'set_screen_pose', 'get_character_state', 'switch_character',
       'read_file', 'write_file', 'append_file', 'list_dir', 'delete_file',
+      'replace_lines', 'insert_lines', 'delete_lines', 'find_files', 'search_in_files',
     ]
     for (const n of names) {
       expect(toolIcon(n), `${n} 应有专属图标`).not.toBe('fa-gear')

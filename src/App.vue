@@ -298,81 +298,75 @@ async function handleSelectCharacter(charId: string) {
     <!-- 底部交互区 -->
     <div class="bottom-area">
       <!-- 对话气泡 -->
-      <DialogueBubble
-        ref="bubbleRef"
-        :text="chat.currentBubbleText"
-        :thinking="chat.currentThinking"
-        :visible="chat.showBubble"
-        :typing="chat.isTyping"
-        @typing-end="chat.isTyping = false"
-      />
+      <DialogueBubble ref="bubbleRef" :text="chat.currentBubbleText" :thinking="chat.currentThinking"
+        :visible="chat.showBubble" :typing="chat.isTyping" @typing-end="chat.isTyping = false" />
 
-      <!-- 停止生成按钮（仅在 AI 生成中显示） -->
-      <button
-        v-if="chat.isProcessing"
-        class="stop-btn"
-        data-pet-solid
-        @click="chat.cancelResponse()"
-        :aria-label="t('app.aria.stop')"
-      >
-        <i class="fas fa-stop"></i>
-        <span>{{ t('app.stop') }}</span>
-      </button>
+      <div class="bars">
+        <!-- 工作区条（AI 文件读写目录，按会话独立） -->
+        <WorkspaceChip v-if="!noCharacter" />
 
-      <!-- 工作区条（AI 文件读写目录，按会话独立，区别于工具栏） -->
-      <WorkspaceChip v-if="!noCharacter" />
+        <!-- 工具按钮行（悬停展开文字） -->
+        <div class="toolbar" data-pet-solid>
+          <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()"
+            :aria-label="t('app.aria.chatInput')">
+            <i class="fas fa-comment btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
+          </button>
+          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession"
+            :aria-label="t('app.aria.session')">
+            <i class="fas fa-comments btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.session') }}</span>
+          </button>
+          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory"
+            :aria-label="t('app.aria.history')">
+            <i class="fas fa-clipboard-list btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.history') }}</span>
+          </button>
+          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter"
+            @click="showCharacterSelect = !showCharacterSelect" :aria-label="t('app.aria.switchCharacter')">
+            <i class="fas fa-rotate btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.character') }}</span>
+          </button>
+          <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts"
+            :aria-label="ttsEnabled ? t('app.aria.ttsOff') : t('app.aria.ttsOn')">
+            <i class="fas fa-volume-high btn-icon"></i>
+            <span class="btn-label">{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
+          </button>
+          <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough"
+            :aria-label="passthroughOn ? t('app.aria.passthroughOff') : t('app.aria.passthroughOn')">
+            <i class="fas fa-arrow-pointer btn-icon"></i>
+            <span class="btn-label">{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
+          </button>
+          <button class="tool-btn" @click="openLogWindow()" :aria-label="t('app.aria.logs')">
+            <i class="fas fa-receipt btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.logs') }}</span>
+          </button>
+          <button class="tool-btn" @click="openSettingsWindow()" :aria-label="t('app.aria.settings')">
+            <i class="fas fa-gear btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.settings') }}</span>
+          </button>
+        </div>
 
-      <!-- 工具按钮行（悬停展开文字） -->
-      <div class="toolbar" data-pet-solid>
-        <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()" :aria-label="t('app.aria.chatInput')">
-          <i class="fas fa-comment btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
-        </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession" :aria-label="t('app.aria.session')">
-          <i class="fas fa-comments btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.session') }}</span>
-        </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory" :aria-label="t('app.aria.history')">
-          <i class="fas fa-clipboard-list btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.history') }}</span>
-        </button>
-        <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showCharacterSelect = !showCharacterSelect" :aria-label="t('app.aria.switchCharacter')">
-          <i class="fas fa-rotate btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.character') }}</span>
-        </button>
-        <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts" :aria-label="ttsEnabled ? t('app.aria.ttsOff') : t('app.aria.ttsOn')">
-          <i class="fas fa-volume-high btn-icon"></i>
-          <span class="btn-label">{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
-        </button>
-        <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough" :aria-label="passthroughOn ? t('app.aria.passthroughOff') : t('app.aria.passthroughOn')">
-          <i class="fas fa-arrow-pointer btn-icon"></i>
-          <span class="btn-label">{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
-        </button>
-        <button class="tool-btn" @click="openLogWindow()" :aria-label="t('app.aria.logs')">
-          <i class="fas fa-receipt btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.logs') }}</span>
-        </button>
-        <button class="tool-btn" @click="openSettingsWindow()" :aria-label="t('app.aria.settings')">
-          <i class="fas fa-gear btn-icon"></i>
-          <span class="btn-label">{{ t('app.toolbar.settings') }}</span>
+        <!-- 停止生成按钮（仅在 AI 生成中显示） -->
+        <button v-if="chat.isProcessing" class="stop-btn" data-pet-solid @click="chat.cancelResponse()"
+          :aria-label="t('app.aria.stop')">
+          <i class="fas fa-stop"></i>
+          <span>{{ t('app.stop') }}</span>
         </button>
       </div>
 
       <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
       <div class="input-wrapper" :class="{ open: chat.showInput }">
-        <InputBox
-          :visible="chat.showInput"
-          :disabled="chat.isProcessing"
-          @send="handleSend"
-          @close="chat.closeInput()"
-        />
+        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" @send="handleSend"
+          @close="chat.closeInput()" />
       </div>
     </div>
 
     <!-- 面板 -->
     <ChatHistory :visible="showHistory" @close="showHistory = false" />
     <SessionList :visible="showSession" @close="showSession = false" />
-    <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false" @select="handleSelectCharacter" />
+    <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false"
+      @select="handleSelectCharacter" />
   </main>
 </template>
 
@@ -400,22 +394,26 @@ async function handleSelectCharacter(charId: string) {
   border-radius: 12px;
   z-index: 60;
 }
+
 .no-char-icon {
   font-size: 40px;
   color: rgba(255, 255, 255, 0.55);
   margin-bottom: 6px;
 }
+
 .no-char-title {
   font-size: 16px;
   font-weight: 600;
   color: #fff;
   margin: 0;
 }
+
 .no-char-hint {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
   margin: 0 0 12px;
 }
+
 .no-char-btn {
   display: flex;
   align-items: center;
@@ -429,6 +427,7 @@ async function handleSelectCharacter(charId: string) {
   cursor: pointer;
   transition: opacity 0.15s;
 }
+
 .no-char-btn:hover {
   opacity: 0.88;
 }
@@ -458,7 +457,7 @@ async function handleSelectCharacter(charId: string) {
     opacity: 1;
   }
 
-  &::before{
+  &::before {
     position: absolute;
     content: ' ';
     width: 150px;
@@ -506,8 +505,20 @@ async function handleSelectCharacter(charId: string) {
   pointer-events: none;
 }
 
-.bottom-area > * {
+.bottom-area>* {
   pointer-events: auto;
+}
+
+.bars {
+  display: grid;
+  /* 三列 */
+  grid-template-columns: 3fr 7fr 3fr;
+  max-width: 600px;
+  gap: 6px;
+
+  :chlidren {
+    width: 30%;
+  }
 }
 
 .toolbar {
@@ -522,19 +533,17 @@ async function handleSelectCharacter(charId: string) {
 }
 
 .tool-btn {
+  position: relative;
   background: none;
   border: none;
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 12px;
-  transition: background 0.15s;
   line-height: 1;
   display: flex;
   align-items: center;
-  gap: 2px;
-  overflow: hidden;
-  max-width: 28px;
-  transition: max-width 0.25s ease, background 0.15s;
+  justify-content: center;
+  transition: background 0.15s;
 }
 
 .tool-btn:disabled {
@@ -544,7 +553,6 @@ async function handleSelectCharacter(charId: string) {
 
 .tool-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
-  max-width: 80px;
 }
 
 .btn-icon {
@@ -553,11 +561,19 @@ async function handleSelectCharacter(charId: string) {
 }
 
 .btn-label {
-  font-size: 12px;
+  position: absolute;
+  font-size: 14px;
+  border-radius: 8px;
+  left: 50%;
+  transform: translate(-50%, -35px);
+  padding: 4px 6px;
   color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.15s ease 0.1s;
+  transition: opacity 0.1s ease 0.1s;
 }
 
 .tool-btn:hover .btn-label {
@@ -576,14 +592,14 @@ async function handleSelectCharacter(charId: string) {
 .stop-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin-bottom: 8px;
-  padding: 6px 16px;
   background: rgba(210, 60, 60, 0.88);
   color: #fff;
   border: none;
-  border-radius: 16px;
-  font-size: 13px;
+  border-radius: 20px;
+  font-size: 14px;
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: background 0.15s;

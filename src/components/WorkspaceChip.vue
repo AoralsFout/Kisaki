@@ -45,12 +45,7 @@ function clearWorkspace() {
 <template>
   <div class="workspace-chip" data-pet-solid>
     <template v-if="root">
-      <button
-        class="ws-main"
-        :title="root"
-        @click="pickDirectory"
-        :aria-label="t('app.workspace.change')"
-      >
+      <button class="ws-main" :title="root" @click="pickDirectory" :aria-label="t('app.workspace.change')">
         <i class="fas fa-folder-open ws-icon"></i>
         <span class="ws-name">{{ displayName }}</span>
       </button>
@@ -58,12 +53,7 @@ function clearWorkspace() {
         <i class="fas fa-xmark"></i>
       </button>
     </template>
-    <button
-      v-else
-      class="ws-main ws-empty"
-      @click="pickDirectory"
-      :aria-label="t('app.workspace.set')"
-    >
+    <button v-else class="ws-main ws-empty" @click="pickDirectory" :aria-label="t('app.workspace.set')">
       <i class="fas fa-folder ws-icon"></i>
       <span class="ws-name">{{ t('app.workspace.set') }}</span>
     </button>
@@ -78,21 +68,20 @@ function clearWorkspace() {
   margin-bottom: 8px;
   background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
-  padding: 4px 6px 4px 10px;
-  border-radius: 16px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  max-width: 240px;
 }
 
 .ws-main {
   display: flex;
   align-items: center;
+  height: 100%;
   gap: 6px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 10px;
+  border-radius: 20px;
   transition: background 0.15s;
   min-width: 0;
 }
@@ -123,11 +112,13 @@ function clearWorkspace() {
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 20px;
+  width: 20px;
   background: none;
   border: none;
   cursor: pointer;
   padding: 2px 5px;
-  border-radius: 8px;
+  border-radius: 50%;
   color: rgba(255, 255, 255, 0.5);
   font-size: 12px;
   transition: background 0.15s, color 0.15s;

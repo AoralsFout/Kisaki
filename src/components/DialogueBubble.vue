@@ -118,7 +118,7 @@ defineExpose({ skipTyping })
 
 <style scoped>
 .bubble-wrapper {
-  max-width: 500px;
+  max-width: 600px;
   min-width: 200px;
   margin-bottom: 8px;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.25));
@@ -142,15 +142,14 @@ defineExpose({ skipTyping })
 .bubble-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  overflow: hidden;
+  max-height: 100px;
+  overflow-y: scroll;
 }
 
 /* ---- 思考内容 ---- */
 .thinking-block {
   margin-bottom: 8px;
   font-size: 12px;
-  /* border-left: 3px solid rgba(0, 0, 0, 0.12); */
-  /* padding-left: 8px; */
 }
 
 .thinking-summary {
@@ -171,6 +170,26 @@ defineExpose({ skipTyping })
   font-style: italic;
   line-height: 1.5;
   white-space: pre-wrap;
+  max-height: 100px;
+  overflow-y: scroll;
+}
+
+/* 深色滚动条 */
+.thinking-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.thinking-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thinking-text::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 3px;
+}
+
+.thinking-text::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
 }
 
 /* ---- 光标 ---- */
@@ -182,7 +201,14 @@ defineExpose({ skipTyping })
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
 </style>

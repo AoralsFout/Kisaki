@@ -69,6 +69,11 @@ export default {
       append_file: 'ファイル追記',
       list_dir: 'フォルダ一覧',
       delete_file: 'ファイル削除',
+      replace_lines: '行を置換',
+      insert_lines: '行を挿入',
+      delete_lines: '行を削除',
+      find_files: 'ファイル検索',
+      search_in_files: '内容検索',
     },
     bubble: {
       welcome: 'えへへ',
