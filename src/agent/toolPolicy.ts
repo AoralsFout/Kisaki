@@ -37,6 +37,29 @@ export function mutatingToolNames(): string[] {
   return Object.keys(MUTATING_TOOLS)
 }
 
+// ─── 高风险工具 —— 每次执行都需用户确认，无「自动允许」选项 ──────────
+
+/** 高风险工具名称 → (args) => 摘要文本（展示在确认对话框中） */
+const DANGEROUS_TOOLS: Record<string, (args: Record<string, any>) => string> = {
+  execute_command: a => `$ ${a.command ?? ''}`,
+}
+
+/** 该工具是否属于高风险类别（每次执行都需确认） */
+export function isDangerousTool(name: string): boolean {
+  return name in DANGEROUS_TOOLS
+}
+
+/** 获取高风险工具的摘要文本（用于确认对话框展示） */
+export function dangerousToolSummary(name: string, args: Record<string, any>): string {
+  const fn = DANGEROUS_TOOLS[name]
+  return fn ? fn(args || {}) : ''
+}
+
+/** 全部高风险工具名 */
+export function dangerousToolNames(): string[] {
+  return Object.keys(DANGEROUS_TOOLS)
+}
+
 // ─── 全局「自动执行文件修改」开关（localStorage 持久化） ──────────────
 
 /** 读取全局自动执行开关（默认关闭：改文件需逐次确认） */

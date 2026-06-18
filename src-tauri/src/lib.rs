@@ -1,5 +1,6 @@
 mod backup;
 mod character;
+mod command;
 mod cursor;
 mod fileio;
 mod log;
@@ -79,6 +80,7 @@ pub fn run() {
             fileio::agent_edit_lines,
             fileio::agent_find_files,
             fileio::agent_search_in_files,
+            command::agent_execute_command,
             backup::agent_checkpoint_backup,
             backup::agent_checkpoint_rollback,
             backup::agent_checkpoint_clear_session,

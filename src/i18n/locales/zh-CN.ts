@@ -77,6 +77,7 @@ export default {
       delete_lines: '删除行',
       find_files: '查找文件',
       search_in_files: '搜索内容',
+      execute_command: '执行命令',
     },
     bubble: {
       welcome: '嘿嘿',
@@ -102,6 +103,13 @@ export default {
         replace: '替换第 {s}-{e} 行',
         insert: '在第 {line} 行前插入',
         deleteLines: '删除第 {s}-{e} 行',
+      },
+      command: {
+        title: '命令执行确认',
+        execute: '允许执行',
+        timeout: '{sec} 秒',
+        noWorkspace: '未设置工作目录',
+        noRollback: '此操作不受回档保护：通过命令修改或删除的文件无法自动备份和恢复，请确认命令无误后再执行。',
       },
     },
   },

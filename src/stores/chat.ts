@@ -20,7 +20,7 @@ import type { ToolCallData } from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolResult } from '../agent'
-import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm } from '../agent/toolPolicy'
+import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm, isDangerousTool, dangerousToolSummary } from '../agent/toolPolicy'
 import { speakTextStreaming, cancelSpeak } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
@@ -276,6 +276,52 @@ export const useChatStore = defineStore('chat', () => {
     confirmResolver?.(decision)
   }
 
+  // ── 命令执行确认（每次都必须确认，无自动允许） ──
+  /** 待确认的命令执行（非空即弹 CommandConfirm 卡） */
+  const pendingCommandConfirm = ref<PendingConfirm | null>(null)
+  /** 等待用户确认命令的 resolver */
+  let commandConfirmResolver: ((d: 'allow' | 'reject') => void) | null = null
+
+  /** 设待确认项并等待用户决定 */
+  function waitCommandConfirm(tc: ToolCall, signal: AbortSignal): Promise<'allow' | 'reject'> {
+    return new Promise((resolve) => {
+      if (signal.aborted) { resolve('reject'); return }
+      pendingCommandConfirm.value = {
+        id: tc.id,
+        toolName: tc.name,
+        path: dangerousToolSummary(tc.name, tc.arguments) || '',
+        args: tc.arguments,
+      }
+      const onAbort = () => {
+        commandConfirmResolver = null
+        pendingCommandConfirm.value = null
+        resolve('reject')
+      }
+      commandConfirmResolver = (d) => {
+        signal.removeEventListener('abort', onAbort)
+        commandConfirmResolver = null
+        pendingCommandConfirm.value = null
+        resolve(d)
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
+  /** UI 调用：对当前待确认的命令作出决定 */
+  function resolveCommandConfirm(decision: 'allow' | 'reject') {
+    commandConfirmResolver?.(decision)
+  }
+
+  /** 取消 / 清空时兜底拒绝待确认的命令 */
+  function rejectPendingCommandConfirm() {
+    if (commandConfirmResolver) {
+      const r = commandConfirmResolver
+      commandConfirmResolver = null
+      pendingCommandConfirm.value = null
+      r('reject')
+    }
+  }
+
   /** 取消 / 清空时兜底拒绝待确认项，避免工具循环卡死在 await */
   function rejectPendingConfirm() {
     if (confirmResolver) {
@@ -491,6 +537,16 @@ export const useChatStore = defineStore('chat', () => {
      * 非改文件工具直接执行。
      */
     const executeWithPolicy = async (tc: ToolCall): Promise<ToolResult> => {
+      // 高风险工具（如命令执行）→ 每次都必须确认，无自动允许
+      if (isDangerousTool(tc.name)) {
+        const decision = await waitCommandConfirm(tc, myAbort.signal)
+        if (decision === 'reject') {
+          log.info('[%s] ✗ 用户拒绝高风险操作: %s %o', _fn, tc.name, tc.arguments)
+          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该操作。' }
+        }
+        log.info('[%s] ✓ 用户允许高风险操作: %s', _fn, tc.name)
+        return agentService.execute(tc)
+      }
       if (shouldConfirm(tc.name, { globalAuto: getAutoExecFiles(), sessionAuto: autoExecSession.value })) {
         const decision = await waitUserConfirm(tc, myAbort.signal)
         if (decision === 'reject') {
@@ -784,8 +840,9 @@ export const useChatStore = defineStore('chat', () => {
     log.debug('[%s] 取消前状态: isProcessing=%s isUsingTools=%s abortController=%s',
       _fn, isProcessing.value, isUsingTools.value, abortController ? '存在' : 'null')
 
-    // 兜底拒绝待确认的文件操作，解除工具循环的 await
+    // 兜底拒绝待确认的操作，解除工具循环的 await
     rejectPendingConfirm()
+    rejectPendingCommandConfirm()
 
     if (abortController) {
       log.trace('[%s] 调用 abortController.abort()', _fn)
@@ -848,6 +905,7 @@ export const useChatStore = defineStore('chat', () => {
       abortController = null
     }
     rejectPendingConfirm()
+    rejectPendingCommandConfirm()
     autoExecSession.value = false
     isProcessing.value = false
     isUsingTools.value = false
@@ -912,6 +970,7 @@ export const useChatStore = defineStore('chat', () => {
     isUsingTools.value = false
     // 切换/恢复会话：解除待确认项，并重置「本会话自动允许」
     rejectPendingConfirm()
+    rejectPendingCommandConfirm()
     autoExecSession.value = false
     log.trace('[%s] 气泡状态已重置: hideBubble showInput=false thinking=""', _fn)
 
@@ -1023,8 +1082,10 @@ export const useChatStore = defineStore('chat', () => {
     toolActivities,
     showToolActivity,
     pendingConfirm,
+    pendingCommandConfirm,
     autoExecSession,
     resolveConfirm,
+    resolveCommandConfirm,
     init,
     sendMessage,
     cancelResponse,

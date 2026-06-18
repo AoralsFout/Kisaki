@@ -15,6 +15,7 @@ import { weatherTool } from './tools/weather'
 import { calculatorTool } from './tools/calculator'
 import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, switchCharacterTool } from './tools/character'
 import { readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
+import { executeCommandTool } from './tools/command'
 
 const log = createLogger('Agent')
 
@@ -25,6 +26,7 @@ export function initTools() {
     setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, switchCharacterTool,
     readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
     replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
+    executeCommandTool,
   )
   log.info('内置工具已注册 (%d 个)', listTools().length)
 }

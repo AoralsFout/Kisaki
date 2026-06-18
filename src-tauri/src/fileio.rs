@@ -26,7 +26,7 @@ const MAX_ENTRIES_SCANNED: usize = 20000;
 const SEARCH_LINE_MAX: usize = 200;
 
 /// 校验 root 是有效目录并规范化返回。
-fn check_root(root: &str) -> Result<PathBuf, String> {
+pub(crate) fn check_root(root: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(root);
     if !p.is_dir() {
         return Err("工作目录无效或已不存在".to_string());

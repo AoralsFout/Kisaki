@@ -74,6 +74,7 @@ export default {
       delete_lines: 'Delete lines',
       find_files: 'Find files',
       search_in_files: 'Search content',
+      execute_command: 'Execute Command',
     },
     bubble: {
       welcome: 'Hehe',
@@ -99,6 +100,13 @@ export default {
         replace: 'Replace lines {s}-{e}',
         insert: 'Insert before line {line}',
         deleteLines: 'Delete lines {s}-{e}',
+      },
+      command: {
+        title: 'Confirm Command Execution',
+        execute: 'Execute',
+        timeout: '{sec}s',
+        noWorkspace: 'No workspace set',
+        noRollback: 'Not protected by rollback: files modified or deleted by this command cannot be auto-restored. Please verify the command before executing.',
       },
     },
   },

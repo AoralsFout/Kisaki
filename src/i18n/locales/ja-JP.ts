@@ -74,6 +74,7 @@ export default {
       delete_lines: '行を削除',
       find_files: 'ファイル検索',
       search_in_files: '内容検索',
+      execute_command: 'コマンド実行',
     },
     bubble: {
       welcome: 'えへへ',
@@ -99,6 +100,13 @@ export default {
         replace: '{s}-{e} 行目を置換',
         insert: '{line} 行目の前に挿入',
         deleteLines: '{s}-{e} 行目を削除',
+      },
+      command: {
+        title: 'コマンド実行の確認',
+        execute: '実行',
+        timeout: '{sec}秒',
+        noWorkspace: '作業ディレクトリ未設定',
+        noRollback: 'この操作はロールバックの対象外です：コマンドで変更・削除したファイルは自動的に復元できません。コマンドが正しいことを確認してから実行してください。',
       },
     },
   },

@@ -20,6 +20,8 @@ const TOOL_ICONS: Record<string, string> = {
   set_screen_pose: 'fa-up-down-left-right',
   get_character_state: 'fa-circle-info',
   switch_character: 'fa-rotate',
+  // 命令执行
+  execute_command: 'fa-terminal',
   // 文件类
   read_file: 'fa-file-lines',
   write_file: 'fa-file-pen',
