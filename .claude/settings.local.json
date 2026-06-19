@@ -29,7 +29,15 @@
       "Read(//c/Users/32506/AppData/Roaming/com.kisaki.app/**)",
       "Bash(npm view *)",
       "Bash(echo \"exit=$?\")",
-      "Bash(grep -v -E '\\\\.\\(png|jpg|jpeg|gif|svg|ico|woff|ttf\\)$')"
+      "Bash(grep -v -E '\\\\.\\(png|jpg|jpeg|gif|svg|ico|woff|ttf\\)$')",
+      "WebFetch(domain:panzer-jack.github.io)",
+      "Bash(git commit *)",
+      "Read(//c/Users/32506/.claude/skills/**)",
+      "Read(//c/Users/32506/.claude/plugins/**)",
+      "Bash(xargs grep -li \"writing-plans\\\\|writing plans\")",
+      "Bash(npm -v)",
+      "Bash(npm test *)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

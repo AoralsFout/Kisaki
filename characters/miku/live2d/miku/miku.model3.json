@@ -1,0 +1,148 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "MIKU.moc3",
+		"Textures": [
+			"MIKU.4096/texture_00.png"
+		],
+		"Physics": "MIKU.physics3.json",
+		"DisplayInfo": "MIKU.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "Chijing",
+				"File": "exps/Chijing.exp3.json"
+			},
+			{
+				"Name": "Dazhihui",
+				"File": "exps/Dazhihui.exp3.json"
+			},
+			{
+				"Name": "Mimiyan",
+				"File": "exps/Mimiyan.exp3.json"
+			},
+			{
+				"Name": "Saihong",
+				"File": "exps/Saihong.exp3.json"
+			},
+			{
+				"Name": "Yanjing",
+				"File": "exps/Yanjing.exp3.json"
+			},
+			{
+				"Name": "liuhan",
+				"File": "exps/liuhan.exp3.json"
+			}
+		],
+		"Motions": {
+			"Shengqi": [
+				{
+					"File": "motions/01_shengqi.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Gaoxing": [
+				{
+					"File": "motions/02_gaoxing.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Aiqing": [
+				{
+					"File": "motions/03_aiqing.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Kaixin": [
+				{
+					"File": "motions/04_kaixin.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Zhuantou": [
+				{
+					"File": "motions/05_zhuantou.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Daku": [
+				{
+					"File": "motions/06_daku.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Diantou": [
+				{
+					"File": "motions/07_diantou.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				},
+				{
+					"File": "motions/14_diantou.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Zoulu": [
+				{
+					"File": "motions/08_zoulu.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Jianrushumian": [
+				{
+					"File": "motions/09_jianrushumian.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Fennu": [
+				{
+					"File": "motions/10_fennu.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Zhuangkeai": [
+				{
+					"File": "motions/11_zhuangkeai.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Huodongshenti": [
+				{
+					"File": "motions/12_huodongshenti.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Niuyao": [
+				{
+					"File": "motions/13_niuyao.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	],
+	"HitAreas": []
+}

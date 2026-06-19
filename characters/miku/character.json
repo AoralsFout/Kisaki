@@ -1,0 +1,46 @@
+{
+  "id": "miku",
+  "name": "初音未来",
+  "description": "初音未来",
+  "version": 2,
+  "render": "live2d",
+  "live2d": {
+    "model": "live2d/miku/miku.model3.json",
+    "scale": 3,
+    "mouseFollow": true,
+    "tapMotionGroup": "Gaoxing",
+    "offsetX": 0,
+    "offsetY": 500,
+    "idleMotionGroup": "Zhuangkeai",
+    "expressions": {
+      "Chijing": "吃惊",
+      "Dazhihui": "大智慧",
+      "Mimiyan": "眯眯眼",
+      "Saihong": "腮红",
+      "Yanjing": "眼镜",
+      "liuhan": "流汗"
+    },
+    "motions": {
+      "Shengqi": "生气",
+      "Gaoxing": "高兴",
+      "Aiqing": "爱情",
+      "Kaixin": "开心",
+      "Zhuantou": "转头",
+      "Daku": "大哭",
+      "Diantou": "点头",
+      "Zoulu": "走路",
+      "Jianrushumian": "渐入睡眠",
+      "Fennu": "愤怒",
+      "Zhuangkeai": "装可爱",
+      "Huodongshenti": "活动身体",
+      "Niuyao": "扭腰"
+    }
+  },
+  "poses": [],
+  "emotions": [],
+  "costumes": [],
+  "images": [],
+  "voiceLanguage": "ja-JP",
+  "textLanguage": "zh-CN",
+  "voice": "cosyvoice-v3-flash-bailian-c6a1efc801334c73badc403bd87f2a30"
+}
