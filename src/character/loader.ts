@@ -48,6 +48,30 @@ export interface CharacterImageData {
   emotions: string[]
 }
 
+/** 角色渲染方式 */
+export type RenderKind = 'illustration' | 'live2d'
+
+/** Live2D 角色配置（相对路径均以角色目录为根） */
+export interface Live2DConfig {
+  /** model3.json 相对角色目录的路径，如 "live2d/Hiyori/Hiyori.model3.json" */
+  model: string
+  /** 相对模型自然尺寸的缩放（可选） */
+  scale?: number
+  /** sprite 偏移（CSS 像素，可选） */
+  offsetX?: number
+  offsetY?: number
+  /** 空闲动作组名（可选，缺省取 model3 首个动作组） */
+  idleMotionGroup?: string
+  /** 点击反应动作组名（可选） */
+  tapMotionGroup?: string
+  /** 鼠标跟随（可选，默认 true） */
+  mouseFollow?: boolean
+  /** 表情注解：模型 expressionId → 中文描述（可选） */
+  expressions?: Record<string, string>
+  /** 动作注解：模型动作组名 → 中文描述（可选） */
+  motions?: Record<string, string>
+}
+
 export interface CharacterData {
   id: string
   name: string
@@ -67,12 +91,31 @@ export interface CharacterData {
   voiceLanguage?: string
   /** 默认文本显示语言，如 "zh-CN"、"en-US"、"ja-JP" */
   textLanguage?: string
+  /** 渲染方式：静态立绘（默认）或 Live2D 动态模型 */
+  render?: RenderKind
+  /** Live2D 配置（render==='live2d' 时使用） */
+  live2d?: Live2DConfig
 }
 
 /** 图片完整 URL。所有角色文件统一存放于 data_dir，走 asset:// 协议读取。 */
 export function imageUrl(charId: string, fileName: string): string {
   if (!_charactersPath) return ''  // data_dir 未就绪（非 Tauri 环境）
   return convertFileSrc(`${_charactersPath}/${charId}/images/${fileName}`)
+}
+
+/** 角色目录下任意文件的绝对路径（data_dir 根）。 */
+export function characterFilePath(charId: string, rel: string): string {
+  return `${_charactersPath}/${charId}/${rel}`
+}
+
+/**
+ * Live2D 资源文件的 asset URL（convertFileSrc）。
+ * 注意：Windows 下 convertFileSrc 会把整条路径编码为单段，Cubism 自带的相对路径
+ * 解析因此失效——必须对每个引用文件单独调用本函数（见 Live2DStage 的 redirectPath）。
+ */
+export function live2dFileUrl(charId: string, rel: string): string {
+  if (!_charactersPath) return ''  // data_dir 未就绪（非 Tauri 环境）
+  return convertFileSrc(characterFilePath(charId, rel))
 }
 
 /** 加载角色提示词（从 data_dir 读 prompt.txt，不存在则返回空串） */
@@ -87,14 +130,14 @@ async function loadPrompt(id: string): Promise<string> {
 }
 
 /** 当前支持的 schema 版本 */
-const CURRENT_VERSION = 1
+const CURRENT_VERSION = 2
 
 /** 数据迁移：将旧版本角色数据升级到最新格式 */
-function migrateCharacterData(raw: Record<string, unknown>): CharacterData {
+export function migrateCharacterData(raw: Record<string, unknown>): CharacterData {
   const version = (raw.version as number) || 0
   let data = { ...raw } as Record<string, unknown>
 
-  // v0 → v1：补全缺失字段
+  // 升级到最新版：补全缺失字段（v0/v1 → v2）
   if (version < CURRENT_VERSION) {
     data = {
       ...data,
@@ -107,8 +150,10 @@ function migrateCharacterData(raw: Record<string, unknown>): CharacterData {
       voiceModel: data.voiceModel || '',
       voiceLanguage: data.voiceLanguage || 'ja-JP',
       textLanguage: data.textLanguage || 'zh-CN',
+      // v2：渲染方式，旧角色默认静态立绘
+      render: (data.render as RenderKind) || 'illustration',
     }
-    log.info('数据迁移: v0 → v1')
+    log.info('数据迁移: v%d → v%d', version, CURRENT_VERSION)
   }
 
   return data as unknown as CharacterData

@@ -42,6 +42,8 @@ export const useCharacterStore = defineStore('character', () => {
   const costumes = computed(() => data.value?.costumes ?? [])
   const name = computed(() => data.value?.name ?? currentId.value)
   const prompt = computed(() => data.value?.prompt ?? '')
+  /** 渲染方式：'illustration'（默认）| 'live2d' */
+  const render = computed(() => data.value?.render ?? 'illustration')
 
   /** 获取角色的显示名称（缓存不到时 fallback 为 id 首字母大写） */
   function getCharacterName(id: string): string {
@@ -127,7 +129,7 @@ export const useCharacterStore = defineStore('character', () => {
 
   return {
     currentId, data, loading, availableList,
-    poses, emotions, costumes, name, prompt,
+    poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName,
     applyVisualState, getVisualStateSnapshot,
