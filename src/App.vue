@@ -19,7 +19,7 @@ import DevPanel from './DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
-import { useCharacterStore, initCharacterDataDir } from './character'
+import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
@@ -151,7 +151,7 @@ onMounted(async () => {
       const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
       channel.onmessage = (event) => {
         const { type, payload } = event.data ?? {}
-        const ctrl = characterRef.value?.controller
+        const ctrl = getCharacterController()
         if (!ctrl) return
         if (type === 'set-pose') ctrl.setScreenPose(payload.key as any)
         if (type === 'set-emotion') ctrl.setEmotion(payload.emotion as any)
@@ -196,7 +196,8 @@ function handleCharacterClick() {
 
 function handleSend(text: string) {
   if (noCharacter.value) return
-  if (!characterRef.value?.controller) return
+  // 立绘角色需控制器就绪；Live2D 角色无立绘控制器，仅由 noCharacter 把关
+  if (charStore.render === 'illustration' && !getCharacterController()) return
   chat.closeInput()
   chat.sendMessage(text)
 }
@@ -259,11 +260,17 @@ async function openLogWindow() {
 }
 
 async function handleSelectCharacter(charId: string) {
-  const ctrl = characterRef.value?.controller
-  if (!ctrl || charId === charStore.currentId) return
+  if (charId === charStore.currentId) return
   // 先取消正在进行中的 AI 请求与 TTS，防止生成的回复被写入将被清空的上下文
   if (chat.isProcessing) chat.cancelResponse()
-  await ctrl.switchCharacter(charId)
+  const ctrl = getCharacterController()
+  if (ctrl) {
+    await ctrl.switchCharacter(charId)
+  } else {
+    // Live2D 角色无立绘控制器，走渲染无关切换
+    await charStore.loadCharacter(charId, true)
+    sessionStore.saveCurrentSession()
+  }
   chat.resetContext()
   applyCharacterPersona()
   chat.showBubbleText(t('app.bubble.switchTo', { name: charStore.name }), false)

@@ -1,184 +1,28 @@
 <script setup lang="ts">
 /**
- * 角色立绘渲染组件
+ * 角色渲染切换器
  *
- * 双图叠加实现交叉淡入淡出 + 姿态系统（位置/缩放）。
+ * 按当前角色的 render 字段挂载静态立绘（IllustrationStage）或 Live2D（Live2DStage）。
+ * 立绘的控制器/注册逻辑在 IllustrationStage 内；Live2D 的控制器在 Live2DStage 内。
+ * 本组件只负责按渲染类型切换，并向上转发点击事件。
  *
- * 姿态控制：
- * - controller.setPose('headshot-center') → 头像居中
- * - controller.setPose('full-bottom-left') → 全身左下
- * - 切换时 CSS transition 驱动平滑移动动画
- *
- * 图片切换：
- * - 旧图叠加在上层淡出（opacity 1→0）
- * - 新图在下层始终保持显示
+ * App.vue 通过 commandBus 的 getCharacterController()（立绘）/ agent 上下文（Live2D）
+ * 访问控制器，不再依赖本组件的实例暴露。
  */
-import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
-import { useCharacterController, registerCharacterController } from '../character'
-import type { CharacterImageData } from '../character'
-import { setAgentController } from '../agent'
-import { buildMask } from '../passthrough/alphaMask'
-import { createLogger } from '../utils/logger'
-
-const log = createLogger('Character')
+import { computed } from 'vue'
+import { useCharacterStore } from '../character'
+import IllustrationStage from './IllustrationStage.vue'
+import Live2DStage from './Live2DStage.vue'
 
 const emit = defineEmits<{
   click: [event: MouseEvent]
 }>()
 
-const controller = useCharacterController()
-const charStore = controller.charStore
-
-/** 根据文件名生成完整 URL */
-function imgUrl(file: string | undefined): string {
-  return file ? charStore.getImageUrl(file) : ''
-}
-
-/** 正在淡出的旧图 */
-const fadingImage = ref<CharacterImageData | null>(null)
-/** 是否已触发淡出 */
-const fading = ref(false)
-
-/** 图片预加载 + 异步解码（避免主线程阻塞） */
-function preloadImage(file: string | undefined) {
-  if (!file) return
-  const url = charStore.getImageUrl(file)
-  const img = new Image()
-  img.decoding = 'async'
-  img.src = url
-  // 同步构建 alpha 掩码（鼠标穿透像素命中用），失败时自动退回矩形命中
-  void buildMask(url)
-}
-
-/** 监听当前图片变更，预加载新图 */
-watch(
-  () => controller.currentImage.value?.file,
-  (newFile) => {
-    if (newFile) preloadImage(newFile)
-  },
-)
-
-/** 根据当前姿态计算 CSS 样式 */
-const imageStyle = computed(() => {
-  const pose = controller.screenPosePreset.value
-  return {
-    left: pose.left,
-    bottom: pose.bottom,
-    transform: `translateX(${pose.translateX}) scale(${pose.scale})`,
-  }
-})
-
-onMounted(() => {
-  controller.init()
-  registerCharacterController(controller)
-  setAgentController(controller)
-  log.info('Character 组件挂载')
-})
-
-onUnmounted(() => {
-  controller.dispose()
-  log.info('Character 组件卸载')
-})
-
-/** 监听图片切换，驱动交叉淡出 */
-watch(
-  () => controller.currentImage.value,
-  (newImg, oldImg) => {
-    if (!oldImg || !newImg || oldImg.file === newImg.file) return
-
-    log.debug('图片切换: %s → %s', oldImg.file, newImg.file)
-    fadingImage.value = null
-    fading.value = false
-
-    nextTick(() => {
-      fadingImage.value = oldImg
-
-      requestAnimationFrame(() => {
-        fading.value = true
-      })
-    })
-  },
-)
-
-function onFadeEnd() {
-  fadingImage.value = null
-  fading.value = false
-}
-
-function handleClick(e: MouseEvent) {
-  emit('click', e)
-}
-
-defineExpose({ controller })
+const charStore = useCharacterStore()
+const isLive2d = computed(() => charStore.render === 'live2d')
 </script>
 
 <template>
-  <div class="character-container" @click="handleClick">
-    <!-- 当前图（底层，始终保持显示） -->
-    <img v-if="controller.currentImage.value" :src="imgUrl(controller.currentImage.value?.file)" :style="imageStyle"
-      class="img-base" :alt="controller.currentEmotion.value" draggable="false" />
-
-    <!-- 旧图（叠在上层，淡出） -->
-    <img v-if="fadingImage" :key="fadingImage.file" :src="imgUrl(fadingImage.file)"
-      :style="[imageStyle, { position: 'absolute' }]" :class="['img-overlay', { 'fade-out': fading }]" alt=""
-      draggable="false" @transitionend="onFadeEnd" />
-  </div>
+  <Live2DStage v-if="isLive2d" @click="emit('click', $event)" />
+  <IllustrationStage v-else @click="emit('click', $event)" />
 </template>
-
-<style scoped>
-.character-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  mask-image: linear-gradient(to left,#00000000 0%,#000 20%,#000 80%,#00000000 100%);
-  /* contain 限制浏览器布局/样式/绘制范围，提升重绘性能 */
-  contain: layout style paint;
-  /* content-visibility 跳过视口外的渲染 */
-  content-visibility: auto;
-  contain-intrinsic-size: 600px 800px;
-}
-
-.img-base {
-  position: absolute;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-
-  /* will-change 提示浏览器将此元素提升为独立合成层（GPU） */
-  will-change: transform;
-  /* loading 懒加载 + 异步解码 */
-  loading: lazy;
-  decoding: async;
-
-  /* 位置/缩放过渡（平滑动画） */
-  transition:
-    left 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    bottom 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-  /* 移除 scale 过渡（与 transform 重复），减少属性监听 */
-}
-
-.img-overlay {
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  opacity: 1;
-  z-index: 2;
-  /* 覆盖层是独立合成层，只过渡 opacity（最省 GPU） */
-  will-change: opacity;
-  contain: layout style paint;
-  loading: lazy;
-  decoding: async;
-}
-
-.img-overlay.fade-out {
-  opacity: 0;
-  transition:
-    opacity 0.5s ease;
-  /* 只过渡 opacity — 位置/缩放由底层统一管理，覆盖层跟随父级 */
-}
-</style>
