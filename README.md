@@ -69,6 +69,42 @@ npm run tauri build
 npm run pack:characters   # 输出 dist-packs/characters.zip
 ```
 
+### Live2D 角色
+
+角色支持两种渲染方式，由 `character.json` 的 `render` 字段决定：
+
+- `"illustration"`（默认）：静态立绘，按 `pose / emotion / costume` 标签切图。
+- `"live2d"`：Live2D 动态模型（[easy-live2d](https://github.com/Panzer-Jack/easy-live2d) + pixi.js v8）。
+
+Live2D 角色目录结构：
+
+```
+<角色id>/
+  character.json        # render:"live2d" + live2d 配置块
+  prompt.txt
+  live2d/
+    <模型名>/
+      *.model3.json     # 模型入口（moc3 / 贴图 / 动作由它引用）
+      ...
+```
+
+`character.json` 的 `live2d` 配置块：
+
+| 字段 | 说明 |
+|---|---|
+| `model` | model3.json 相对角色目录的路径（必填） |
+| `scale` / `offsetX` / `offsetY` | 显示缩放与偏移（可选） |
+| `idleMotionGroup` | 空闲动作组（可选，缺省取首个组） |
+| `tapMotionGroup` | 点击反应动作组（可选） |
+| `mouseFollow` | 鼠标跟随（可选，默认 true） |
+| `expressions` / `motions` | 表情/动作组的中文描述注解（可选，帮助 AI 理解） |
+
+表情与动作会从 `.model3.json` 自动发现；AI 通过 `set_expression` / `play_motion` 工具控制。
+
+> **Cubism Core**：Live2D 渲染依赖 `public/Live2dCore/live2dcubismcore.js`（Live2D 专有运行时，已随仓库提供，受 Live2D 专有许可约束）。
+>
+> **模型授权**：Live2D 官方免费示例模型多数**禁止再分发**，不要打进对外发布的角色包；正式分发需使用带商用 + 再分发授权的模型。开发用模型已在 `.gitignore` 中忽略。
+
 ## 🔧 配置
 
 在设置面板中配置：
@@ -88,7 +124,7 @@ npm run pack:characters   # 输出 dist-packs/characters.zip
 | 框架 | [Tauri 2](https://tauri.app) |
 | 前端 | [Vue 3](https://vuejs.org) + TypeScript |
 | 状态管理 | [Pinia](https://pinia.vuejs.org) |
-| Live2D | [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) |
+| Live2D | [easy-live2d](https://github.com/Panzer-Jack/easy-live2d) + [pixi.js](https://pixijs.com) v8 |
 | TTS | 阿里云 CosyVoice（WebSocket 流式） |
 | AI | OpenAI 兼容 API |
 
