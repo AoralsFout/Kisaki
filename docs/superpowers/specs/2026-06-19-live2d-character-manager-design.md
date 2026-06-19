@@ -82,7 +82,7 @@ fn import_live2d_model(id: String, src_dir: String) -> Result<String, String>
 ```
 1. `sanitize_path_component(&id)`；`src_dir` 为 dialog 返回的绝对路径。
 2. 在 `src_dir` 找 `*.model3.json`（顶层；无则递归一层）；找不到 → `Err("未找到 model3.json")`。
-3. `name` = `src_dir` 末段；目标 `characters/<id>/live2d/<name>/`（`safe_join` 校验）；已存在先 `remove_dir_all`。
+3. `name` = `src_dir` 末段；目标 `characters/<id>/live2d/<name>/`（`safe_join` 校验）；**若目标已存在 → 报错（不覆盖）**，提示改名或先删旧模型。
 4. 递归拷贝（`copy_dir_all` 辅助：`fs::copy` 二进制安全，建子目录）。
 5. 返回 model3.json 相对角色目录路径，如 `live2d/<name>/<file>.model3.json`。
 
@@ -136,6 +136,7 @@ Props：`id`、`manifest`、可编辑 `config`（`update:config` + `markChanged`
 | 场景 | 行为 |
 |---|---|
 | 选的文件夹无 `model3.json` | `import_live2d_model` 报错，创建/导入提示失败 |
+| 导入同名模型（`live2d/<name>/` 已存在） | 报错，不覆盖；提示改名或先删除旧模型 |
 | live2d 角色 `model` 缺失/损坏 | 编辑器显示空态 + 导入按钮；预览占位；不崩 |
 | 导入大模型耗时 | 导入按钮 busy 态 |
 | 保存任意角色 | 保留 `render`/`live2d` 及未知字段（bug 已修） |
@@ -153,7 +154,7 @@ Props：`id`、`manifest`、可编辑 `config`（`update:config` + `markChanged`
 
 ## 8. 测试策略
 - 单元（vitest）：`buildCharacterJson`——live2d 保留 render/live2d、illustration 覆盖立绘字段、version→2、未知字段不丢；创建默认值按 render。
-- Rust：`import_live2d_model` 手动/集成（递归拷贝 + 找 model3.json + 路径安全 + 覆盖重导）。
+- Rust：`import_live2d_model` 手动/集成（递归拷贝 + 找 model3.json + 路径安全 + 同名报错）。
 - 手动 E2E：settings 创建 Live2D → 导入 Hiyori → 配置/注解 → 预览实时 → 保存 → 主窗口生效 → 重进编辑不丢失；立绘角色全流程无回归。
 
 ## 9. 未解决 / 未来扩展
