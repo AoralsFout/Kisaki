@@ -21,6 +21,10 @@ import type { VoiceInfo } from '../tts/types'
 import { SUPPORTED_LANGUAGES } from '../stores/language'
 import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
+import Live2DEditor from './Live2DEditor.vue'
+import Live2DPreview from './Live2DPreview.vue'
+import { loadLive2DManifest } from '../character'
+import type { Live2DManifest, Live2DConfig } from '../character'
 import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
 
 const charStore = useCharacterStore()
@@ -40,6 +44,8 @@ const editFile = ref<string | null>(null)
 const editableImages = ref<CharacterImageData[]>([])
 const editablePoses = ref<string[]>([])
 const editableCostumes = ref<string[]>([])
+const editableLive2dConfig = ref<Live2DConfig>({ model: '' })
+const live2dManifest = ref<Live2DManifest | null>(null)
 const hasChanges = ref(false)
 
 // ---- 创建角色表单 ----
@@ -250,8 +256,39 @@ function loadData() {
   selectedVoiceLang.value = data.voiceLanguage || 'ja-JP'
   selectedTextLang.value = data.textLanguage || 'zh-CN'
   editFile.value = null
+  if (charStore.render === 'live2d') {
+    editableLive2dConfig.value = JSON.parse(JSON.stringify(data.live2d ?? { model: '' }))
+    void reloadLive2DManifest()
+  }
   // 异步加载音色列表
   loadVoices()
+}
+
+/** 重新加载 Live2D 清单（依当前可编辑配置的模型；导入新模型后调用） */
+async function reloadLive2DManifest() {
+  live2dManifest.value = null
+  if (charStore.render !== 'live2d' || !editableLive2dConfig.value.model) return
+  try {
+    live2dManifest.value = await loadLive2DManifest(editingId.value, { live2d: editableLive2dConfig.value })
+  } catch (e) {
+    log.warn('加载 Live2D 清单失败: %s', (e as Error).message)
+  }
+}
+
+/** 编辑器内重新导入 Live2D 模型（选文件夹 → 后端拷贝 → 更新配置 + 重载清单） */
+async function handleImportLive2dModel() {
+  const picked = await open({ directory: true, multiple: false, title: '选择 Live2D 模型文件夹' })
+  if (typeof picked !== 'string') return
+  try {
+    const rel = await invoke<string>('import_live2d_model', { id: editingId.value, srcDir: picked })
+    editableLive2dConfig.value.model = rel
+    await reloadLive2DManifest()
+    markChanged()
+    saveMsg.value = '模型已导入'
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  } catch (e) {
+    saveError.value = '导入模型失败：' + (e instanceof Error ? e.message : String(e))
+  }
 }
 
 async function loadPrompt() {
@@ -463,9 +500,10 @@ async function saveAll() {
     edits.images = editableImages.value.map(img => ({
       file: img.file, pose: img.pose, costume: img.costume, emotions: [...img.emotions],
     }))
+  } else {
+    edits.live2d = editableLive2dConfig.value
   }
-  // live2d 角色的可编辑配置在 Phase 5 接入；当前 edits.live2d 留空 →
-  // buildCharacterJson 保留既有 live2d 块（修复点：不再丢 render/live2d）。
+  // buildCharacterJson 以 {...data} 起步，保留 render/live2d 及未知字段（修复数据损坏）。
   const newData = buildCharacterJson(data, render, edits)
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
@@ -681,6 +719,7 @@ async function importPack() {
             <textarea v-model="promptText" class="mgr-textarea" rows="8" @input="markChanged"></textarea>
           </section>
 
+          <template v-if="charStore.render === 'illustration'">
           <!-- 姿势列表 -->
           <section class="mgr-section">
             <h3 class="mgr-label"><i class="fas fa-person"></i> {{ t('character.mgr.poses') }}</h3>
@@ -720,6 +759,7 @@ async function importPack() {
               <button v-else class="tag-add" @click="addingCostume = true">{{ t('character.mgr.addTag') }}</button>
             </div>
           </section>
+          </template>
 
           <!-- 语音合成音色 -->
           <section class="mgr-section">
@@ -771,6 +811,7 @@ async function importPack() {
             </div>
           </section>
 
+          <template v-if="charStore.render === 'illustration'">
           <!-- 立绘网格 -->
           <section class="mgr-section">
             <h3 class="mgr-label"><i class="fas fa-image"></i> {{ t('character.mgr.imagesTitle') }}</h3>
@@ -798,11 +839,22 @@ async function importPack() {
             </div>
             <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFilePicked" />
           </section>
+          </template>
+
+          <!-- Live2D 编辑区 -->
+          <Live2DEditor
+            v-if="charStore.render === 'live2d'"
+            :manifest="live2dManifest"
+            :config="editableLive2dConfig"
+            @change="markChanged"
+            @import-model="handleImportLive2dModel"
+          />
         </div>
       </div>
 
-      <!-- 右栏：立绘预览 -->
+      <!-- 右栏：预览 -->
       <CharacterPreview
+        v-if="charStore.render === 'illustration'"
         :image="editingImage"
         :image-url="editingImageUrl"
         :poses="editablePoses"
@@ -814,6 +866,9 @@ async function importPack() {
         @delete="deleteImage"
         @close="editFile = null"
       />
+      <div v-else class="l2d-preview-panel">
+        <Live2DPreview :id="editingId" :config="editableLive2dConfig" />
+      </div>
     </div>
 
     <!-- 删除角色确认弹窗 -->
@@ -1310,6 +1365,14 @@ async function importPack() {
   font-family: monospace;
   color: #888;
   word-break: break-all;
+}
+
+/* Live2D 预览右栏 */
+.l2d-preview-panel {
+  width: 340px;
+  flex-shrink: 0;
+  background: #16162a;
+  border-left: 1px solid #2a2a4a;
 }
 
 .modal-footer {
