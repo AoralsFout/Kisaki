@@ -245,6 +245,7 @@ interface Live2DController {
 
 ## 9. 未解决的问题 / 未来扩展
 
+- **【已知问题】Live2D 鼠标跟随仅在窗口聚焦 + 鼠标按下时生效**（2026-06-19 验证发现）：easy-live2d 的 `MouseFollow` 依赖画布指针事件，而透明桌宠窗在透明区/失焦时被穿透（`setIgnoreCursorEvents`）和 OS 拦截，收不到 pointermove；其 look-at 又偏向 drag-gated。试过用 Rust 全局 `cursor-pos` 流合成 `pointermove` 喂画布——因合成事件 `isTrusted=false` 等原因无效（已回退该代码）。**后续修复方向**：用全局 `cursor-pos` 每帧驱动 Cubism look-at 参数（`ParamAngleX/Y`、`ParamEyeBallX/Y`、`ParamBodyAngleX`），在模型 update 后经 `setParameterValueById` 写入。
 - **TTS 口型同步**（v1 非目标）：用 `speak.ts` 的音频幅度驱动 `ParamMouthOpenY`，作为快速跟进项。
 - 角色管理器的 Live2D 预览/参数编辑（缩放/偏移/注解可视化编辑）。
 - 多模型同屏 / 模型热切换动画。
