@@ -5,7 +5,7 @@
  */
 import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
-import { getAgentCharData, getAgentController, setAgentCharData, getOnCharacterSwitched } from '../context'
+import { getAgentCharData, getAgentController, getAgentLive2DController, setAgentCharData, getOnCharacterSwitched } from '../context'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolCharacter')
@@ -33,6 +33,7 @@ function getStore() {
 
 /** 切换情绪 */
 export const setEmotionTool: Tool = {
+  appliesTo: 'illustration',
   definition: {
     type: 'function',
     function: {
@@ -68,6 +69,7 @@ export const setEmotionTool: Tool = {
 
 /** 切换姿势标签 */
 export const setStanceTool: Tool = {
+  appliesTo: 'illustration',
   definition: {
     type: 'function',
     function: {
@@ -103,6 +105,7 @@ export const setStanceTool: Tool = {
 
 /** 切换服装 */
 export const setCostumeTool: Tool = {
+  appliesTo: 'illustration',
   definition: {
     type: 'function',
     function: {
@@ -138,6 +141,7 @@ export const setCostumeTool: Tool = {
 
 /** 统一设置 */
 export const setLookTool: Tool = {
+  appliesTo: 'illustration',
   definition: {
     type: 'function',
     function: {
@@ -196,7 +200,8 @@ export const setScreenPoseTool: Tool = {
       log.warn('不支持的屏幕位置: %s', pose)
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
-    const ctrl = getAgentController()
+    const render = getAgentCharData()?.render ?? 'illustration'
+    const ctrl = render === 'live2d' ? getAgentLive2DController() : getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setScreenPose(pose as any)
     const label = POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose
@@ -219,6 +224,21 @@ export const getStateTool: Tool = {
     },
   },
   handler: async () => {
+    const render = getAgentCharData()?.render ?? 'illustration'
+    // Live2D 角色：读 Live2D 控制器状态
+    if (render === 'live2d') {
+      const l = getAgentLive2DController()
+      if (!l) return '角色控制器未初始化'
+      const s = l.getState()
+      const screenLabel = POSE_PRESETS[s.screenPose]?.label ?? s.screenPose
+      return [
+        `角色: ${s.character}`,
+        `表情: ${s.expression || '（默认）'}`,
+        `屏幕位置: ${screenLabel}`,
+        `可用表情: ${s.expressions.map(e => e.id).join('、') || '无'}`,
+        `可用动作: ${s.motions.map(m => m.group).join('、') || '无'}`,
+      ].join('\n')
+    }
     const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     const img = ctrl.currentImage.value
@@ -264,13 +284,13 @@ export const switchCharacterTool: Tool = {
   },
   handler: async (args) => {
     const id = String(args.character_id ?? '')
-    const store = getStore()
-    if (!store) return '角色数据未就绪'
-    if (!store.availableList.includes(id)) {
+    if (!_availableChars.includes(id)) {
       log.warn('未知角色: %s', id)
-      return `未知角色 "${id}"，可用: ${store.availableList.join(', ')}`
+      return `未知角色 "${id}"，可用: ${_availableChars.join(', ')}`
     }
-    const ctrl = getAgentController()
+    // 渲染无关切换：按当前角色 render 选控制器（两种控制器都实现 switchCharacter+charStore）
+    const render = getAgentCharData()?.render ?? 'illustration'
+    const ctrl = render === 'live2d' ? getAgentLive2DController() : getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     await ctrl.switchCharacter(id)
     // 切换后刷新 agent 上下文的角色数据（供本轮后续工具的枚举校验使用），

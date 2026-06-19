@@ -8,6 +8,8 @@ export {
 export type { CharacterData, CharacterImageData, RenderKind, Live2DConfig } from './loader'
 export { loadLive2DManifest, buildLive2DCatalog, live2dRedirect } from './live2d/manifest'
 export type { Live2DManifest, Live2DExpressionInfo, Live2DMotionInfo } from './live2d/manifest'
+export { useLive2DController } from './live2d/controller'
+export type { Live2DController } from './live2d/controller'
 export { findImages, pickRandomImage, FALLBACK_EMOTIONS } from './config'
 export type { PoseTag, EmotionTag, CostumeTag } from './config'
 export {

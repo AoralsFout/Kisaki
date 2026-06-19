@@ -17,6 +17,9 @@ const TOOL_ICONS: Record<string, string> = {
   set_character_stance: 'fa-person',
   set_character_costume: 'fa-shirt',
   set_character_look: 'fa-wand-magic-sparkles',
+  // Live2D 专属
+  set_expression: 'fa-face-grin-stars',
+  play_motion: 'fa-film',
   set_screen_pose: 'fa-up-down-left-right',
   get_character_state: 'fa-circle-info',
   switch_character: 'fa-rotate',
