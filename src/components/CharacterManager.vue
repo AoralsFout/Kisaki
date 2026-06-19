@@ -68,7 +68,7 @@ function resetCreateForm() {
 
 /** Live2D 创建：选模型文件夹 */
 async function pickModelFolder() {
-  const picked = await open({ directory: true, multiple: false, title: '选择 Live2D 模型文件夹' })
+  const picked = await open({ directory: true, multiple: false, title: t('character.mgr.live2d.pickModel') })
   if (typeof picked === 'string') newCharModelDir.value = picked
 }
 
@@ -159,7 +159,7 @@ async function submitCreateForm() {
   try {
     if (newCharRender.value === 'live2d') {
       if (!newCharModelDir.value) {
-        createError.value = '请先选择 Live2D 模型文件夹'
+        createError.value = t('character.mgr.live2d.errPickModel')
         return
       }
       // 先导入模型（会创建 characters/<id>/live2d/ 并拷贝），返回 model3.json 相对路径
@@ -277,17 +277,17 @@ async function reloadLive2DManifest() {
 
 /** 编辑器内重新导入 Live2D 模型（选文件夹 → 后端拷贝 → 更新配置 + 重载清单） */
 async function handleImportLive2dModel() {
-  const picked = await open({ directory: true, multiple: false, title: '选择 Live2D 模型文件夹' })
+  const picked = await open({ directory: true, multiple: false, title: t('character.mgr.live2d.pickModel') })
   if (typeof picked !== 'string') return
   try {
     const rel = await invoke<string>('import_live2d_model', { id: editingId.value, srcDir: picked })
     editableLive2dConfig.value.model = rel
     await reloadLive2DManifest()
     markChanged()
-    saveMsg.value = '模型已导入'
+    saveMsg.value = t('character.mgr.live2d.importedMsg')
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
-    saveError.value = '导入模型失败：' + (e instanceof Error ? e.message : String(e))
+    saveError.value = t('character.mgr.live2d.errImport', { msg: e instanceof Error ? e.message : String(e) })
   }
 }
 
@@ -618,6 +618,7 @@ async function importPack() {
         :available-list="displayList"
         :current-id="charStore.currentId"
         :get-character-name="charStore.getCharacterName"
+        :get-character-render="charStore.getCharacterRender"
         @select="enterEditor"
         @create="openCreateForm"
       />
@@ -660,17 +661,19 @@ async function importPack() {
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">渲染方式</label>
+                <label class="form-label">{{ t('character.mgr.live2d.renderType') }}</label>
                 <div class="render-radio">
-                  <label><input type="radio" value="illustration" v-model="newCharRender" /> 静态立绘</label>
-                  <label><input type="radio" value="live2d" v-model="newCharRender" /> Live2D</label>
+                  <label><input type="radio" value="illustration" v-model="newCharRender" /> {{ t('character.mgr.live2d.renderIllustration') }}</label>
+                  <label><input type="radio" value="live2d" v-model="newCharRender" /> {{ t('character.mgr.live2d.renderLive2d') }}</label>
                 </div>
               </div>
               <div v-if="newCharRender === 'live2d'" class="form-group">
-                <label class="form-label">Live2D 模型</label>
+                <label class="form-label">{{ t('character.mgr.live2d.model') }}</label>
                 <div class="model-pick">
-                  <button type="button" class="btn-pick" @click="pickModelFolder">选择模型文件夹</button>
-                  <span class="model-path">{{ newCharModelDir || '未选择文件夹' }}</span>
+                  <button type="button" class="btn-pick" @click="pickModelFolder">
+                    <i class="fas fa-folder-open"></i> {{ t('character.mgr.live2d.pickModel') }}
+                  </button>
+                  <span class="model-path">{{ newCharModelDir || t('character.mgr.live2d.noFolder') }}</span>
                 </div>
               </div>
               <p v-if="createError" class="form-error">{{ createError }}</p>
@@ -1341,15 +1344,19 @@ async function importPack() {
 .render-radio label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   cursor: pointer;
 }
+.render-radio input { accent-color: #4a7aff; cursor: pointer; }
 .model-pick {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 .btn-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   font-size: 12px;
   border: 1px solid #3a3a5a;
@@ -1358,10 +1365,9 @@ async function importPack() {
   color: #cdd;
   cursor: pointer;
   flex-shrink: 0;
+  transition: all 0.15s;
 }
-.btn-pick:hover {
-  background: #2a2a4a;
-}
+.btn-pick:hover { background: #2a2a4a; border-color: #4a7aff; color: #fff; }
 .model-path {
   font-size: 11px;
   font-family: monospace;

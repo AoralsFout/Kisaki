@@ -13,6 +13,8 @@ defineProps<{
   currentId: string
   /** 根据角色 ID 获取显示名称的函数 */
   getCharacterName?: (id: string) => string
+  /** 获取角色渲染类型（live2d 显示徽标） */
+  getCharacterRender?: (id: string) => string
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +31,7 @@ const emit = defineEmits<{
       class="char-card"
       @click="emit('select', id)"
     >
+      <div v-if="getCharacterRender?.(id) === 'live2d'" class="card-badge">{{ t('character.mgr.live2d.badge') }}</div>
       <div class="card-icon">
         <i class="fas fa-star"></i>
       </div>
@@ -97,5 +100,19 @@ const emit = defineEmits<{
   font-size: 11px;
   color: #888;
   margin-top: 2px;
+}
+
+.card-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #7c8cff;
+  background: rgba(74, 122, 255, 0.15);
+  border: 1px solid rgba(74, 122, 255, 0.4);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 </style>

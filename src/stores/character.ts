@@ -29,6 +29,8 @@ export const useCharacterStore = defineStore('character', () => {
   const availableList = ref<string[]>([])
   /** 角色 ID → 显示名称 缓存（供列表使用，避免逐个加载完整 JSON） */
   const charNames = ref<Record<string, string>>({})
+  /** 角色 ID → 渲染类型 缓存（列表徽标用） */
+  const charRenders = ref<Record<string, string>>({})
 
   // ── 角色视觉状态（供 controller + session 共享） ──
   const currentEmotion = ref('')
@@ -48,6 +50,11 @@ export const useCharacterStore = defineStore('character', () => {
   /** 获取角色的显示名称（缓存不到时 fallback 为 id 首字母大写） */
   function getCharacterName(id: string): string {
     return charNames.value[id] || id.charAt(0).toUpperCase() + id.slice(1)
+  }
+
+  /** 获取角色渲染类型（列表徽标用；缺省 illustration） */
+  function getCharacterRender(id: string): string {
+    return charRenders.value[id] || 'illustration'
   }
 
   /** 获取图片的完整 URL */
@@ -78,15 +85,19 @@ export const useCharacterStore = defineStore('character', () => {
     availableList.value = await listCharacters()
     // 异步加载每个角色的名称（静默失败，fallback 到 id）
     const names: Record<string, string> = {}
+    const renders: Record<string, string> = {}
     await Promise.allSettled(availableList.value.map(async (id) => {
       try {
         const charData = await loadCharacterJson(id)
         names[id] = charData.name
+        renders[id] = charData.render ?? 'illustration'
       } catch {
         names[id] = id.charAt(0).toUpperCase() + id.slice(1)
+        renders[id] = 'illustration'
       }
     }))
     charNames.value = names
+    charRenders.value = renders
   }
 
   /** 初始化（扫描列表 + 加载一个角色；零角色时保持 data=null 不崩） */
@@ -131,7 +142,7 @@ export const useCharacterStore = defineStore('character', () => {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
-    getImageUrl, getCharacterName,
+    getImageUrl, getCharacterName, getCharacterRender,
     applyVisualState, getVisualStateSnapshot,
     loadCharacter, refreshList, init,
   }
