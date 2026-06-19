@@ -930,6 +930,7 @@ async function importPack() {
   padding: 16px;
   overflow: hidden;
   height: 100%;
+  box-sizing: border-box; /* 含 padding，避免 height:100%+padding 溢出导致底部被裁切 */
   scrollbar-width: none;
 }
 .editor-left::-webkit-scrollbar {
@@ -1019,6 +1020,7 @@ async function importPack() {
   flex: 1;
   overflow-y: auto;
   padding-top: 12px;
+  padding-bottom: 16px;
 }
 
 /* 深色滚动条 */
