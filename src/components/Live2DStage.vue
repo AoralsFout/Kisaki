@@ -16,6 +16,7 @@ import { Application, Ticker } from 'pixi.js'
 import { useCharacterStore, loadLive2DManifest, live2dRedirect, useLive2DController, getPose } from '../character'
 import type { Live2DManifest } from '../character'
 import { setAgentLive2DController, setAgentLive2DManifest } from '../agent'
+import { startLive2DMask, stopLive2DMask } from '../passthrough/live2dMask'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('Live2DStage')
@@ -118,6 +119,7 @@ async function setupModel() {
     applyTransform()
     controller.attach(s, mf, { onScreenPose: applyTransform })
     setAgentLive2DController(controller)
+    startLive2DMask() // 启动穿透掩码定期快照
     log.info('Live2D 模型 ready: %s (idle=%s)', id, mf.idleGroup)
   })
   s.onLive2D('hit', () => {
@@ -145,6 +147,7 @@ onUnmounted(() => {
   controller.detach()
   setAgentLive2DController(null)
   setAgentLive2DManifest(null)
+  stopLive2DMask()
   try { sprite?.destroy() } catch { /* ignore */ }
   try { app?.destroy() } catch { /* ignore */ }
   sprite = null

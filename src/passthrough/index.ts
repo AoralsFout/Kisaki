@@ -13,7 +13,8 @@ import { ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { EVENT_CURSOR_POS, STORAGE_PASSTHROUGH_ENABLED } from '../constants'
-import { getMask } from './alphaMask'
+import { getMask, type AlphaMask } from './alphaMask'
+import { getLive2DMask } from './live2dMask'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('Passthrough')
@@ -40,26 +41,33 @@ function readEnabled(): boolean {
 const ALPHA_THRESHOLD = 16
 
 /**
- * 立绘命中测试：先矩形粗筛，再 alpha 像素精筛。
- * 因 img `height:100%` + 固有比例 + `object-fit:contain` 无 letterbox，
- * getBoundingClientRect（已含 translateX/scale/bottom 的浏览器计算结果）即图片
- * 显示区，(u,v) 线性映射到原图归一化坐标。掩码未就绪时退回矩形命中。
+ * 通用命中：矩形粗筛 + alpha 像素精筛。掩码未就绪时退回矩形命中（点已在矩形内）。
+ * (u,v) 线性映射依赖显示区无 letterbox：立绘 img 用 height:100%+contain，
+ * Live2D canvas 内容铺满画布，二者皆满足。
  */
-function hitCharacter(cx: number, cy: number): boolean {
-  const img = document.querySelector('img.img-base') as HTMLImageElement | null
-  if (!img) return false
-  const r = img.getBoundingClientRect()
+function hitAlphaRect(cx: number, cy: number, r: DOMRect, mask: AlphaMask | undefined): boolean {
   if (r.width === 0 || r.height === 0) return false
   if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return false
-
-  const mask = getMask(img.src)
-  if (!mask) return true // 掩码未就绪 → 退回矩形（点已在矩形内）
-
+  if (!mask) return true
   const u = (cx - r.left) / r.width
   const v = (cy - r.top) / r.height
   const mx = Math.min(mask.w - 1, Math.max(0, (u * mask.w) | 0))
   const my = Math.min(mask.h - 1, Math.max(0, (v * mask.h) | 0))
   return mask.data[my * mask.w + mx] > ALPHA_THRESHOLD
+}
+
+/**
+ * 角色命中测试：立绘用 .img-base + PNG alpha 掩码；Live2D 用 .live2d-canvas +
+ * 定期快照的 alpha 掩码（见 live2dMask.ts）。两者互斥（同一时刻只渲染一种）。
+ */
+function hitCharacter(cx: number, cy: number): boolean {
+  const img = document.querySelector('img.img-base') as HTMLImageElement | null
+  if (img) return hitAlphaRect(cx, cy, img.getBoundingClientRect(), getMask(img.src))
+
+  const canvas = document.querySelector('canvas.live2d-canvas') as HTMLCanvasElement | null
+  if (canvas) return hitAlphaRect(cx, cy, canvas.getBoundingClientRect(), getLive2DMask())
+
+  return false
 }
 
 /** 命中测试：true = 实体（应交互，不穿透） */
