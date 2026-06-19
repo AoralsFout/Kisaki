@@ -47,13 +47,23 @@ const showCreateForm = ref(false)
 const newCharId = ref('')
 const newCharName = ref('')
 const newCharDesc = ref('')
+const newCharRender = ref<'illustration' | 'live2d'>('illustration')
+const newCharModelDir = ref('') // Live2D：选中的模型文件夹绝对路径
 const createError = ref('')
 
 function resetCreateForm() {
   newCharId.value = ''
   newCharName.value = ''
   newCharDesc.value = ''
+  newCharRender.value = 'illustration'
+  newCharModelDir.value = ''
   createError.value = ''
+}
+
+/** Live2D 创建：选模型文件夹 */
+async function pickModelFolder() {
+  const picked = await open({ directory: true, multiple: false, title: '选择 Live2D 模型文件夹' })
+  if (typeof picked === 'string') newCharModelDir.value = picked
 }
 
 // ---- 行内添加输入 ----
@@ -141,20 +151,36 @@ async function submitCreateForm() {
   }
 
   try {
-    // invoke 已静态导入
-
-    const defaultJson = {
-      id, name, description: newCharDesc.value || name, version: 1,
-      prompt: '',
-      poses: ['standing'], emotions: ['idle'],
-      costumes: ['default'], images: [],
-      voice: '', voiceModel: '',
-      voiceLanguage: 'ja-JP', textLanguage: 'zh-CN',
+    if (newCharRender.value === 'live2d') {
+      if (!newCharModelDir.value) {
+        createError.value = '请先选择 Live2D 模型文件夹'
+        return
+      }
+      // 先导入模型（会创建 characters/<id>/live2d/ 并拷贝），返回 model3.json 相对路径
+      const modelRel = await invoke<string>('import_live2d_model', { id, srcDir: newCharModelDir.value })
+      const json = {
+        id, name, description: newCharDesc.value || name, version: 2, prompt: '',
+        render: 'live2d',
+        live2d: { model: modelRel, scale: 1, mouseFollow: true },
+        poses: [], emotions: [], costumes: [], images: [],
+        voice: '', voiceModel: '', voiceLanguage: 'ja-JP', textLanguage: 'zh-CN',
+      }
+      await invoke('write_character_file', {
+        id, filename: 'character.json', content: JSON.stringify(json, null, 2),
+      })
+    } else {
+      const defaultJson = {
+        id, name, description: newCharDesc.value || name, version: 2, prompt: '',
+        render: 'illustration',
+        poses: ['standing'], emotions: ['idle'],
+        costumes: ['default'], images: [],
+        voice: '', voiceModel: '',
+        voiceLanguage: 'ja-JP', textLanguage: 'zh-CN',
+      }
+      await invoke('write_character_file', {
+        id, filename: 'character.json', content: JSON.stringify(defaultJson, null, 2),
+      })
     }
-    await invoke('write_character_file', {
-      id, filename: 'character.json',
-      content: JSON.stringify(defaultJson, null, 2),
-    })
     await invoke('write_character_file', {
       id, filename: 'prompt.txt',
       content: `你是 ${name}，一个可爱的桌面宠物。`,
@@ -594,6 +620,20 @@ async function importPack() {
                   class="form-input"
                   :placeholder="t('character.mgr.descPlaceholder')"
                 />
+              </div>
+              <div class="form-group">
+                <label class="form-label">渲染方式</label>
+                <div class="render-radio">
+                  <label><input type="radio" value="illustration" v-model="newCharRender" /> 静态立绘</label>
+                  <label><input type="radio" value="live2d" v-model="newCharRender" /> Live2D</label>
+                </div>
+              </div>
+              <div v-if="newCharRender === 'live2d'" class="form-group">
+                <label class="form-label">Live2D 模型</label>
+                <div class="model-pick">
+                  <button type="button" class="btn-pick" @click="pickModelFolder">选择模型文件夹</button>
+                  <span class="model-path">{{ newCharModelDir || '未选择文件夹' }}</span>
+                </div>
               </div>
               <p v-if="createError" class="form-error">{{ createError }}</p>
             </div>
@@ -1232,6 +1272,44 @@ async function importPack() {
   font-size: 13px;
   color: #ef5350;
   margin: 0;
+}
+
+/* 创建表单：渲染方式 + Live2D 模型选择 */
+.render-radio {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #ccc;
+}
+.render-radio label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.model-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-pick {
+  padding: 6px 12px;
+  font-size: 12px;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  background: #1e1e38;
+  color: #cdd;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-pick:hover {
+  background: #2a2a4a;
+}
+.model-path {
+  font-size: 11px;
+  font-family: monospace;
+  color: #888;
+  word-break: break-all;
 }
 
 .modal-footer {
