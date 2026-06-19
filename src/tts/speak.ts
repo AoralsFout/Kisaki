@@ -32,6 +32,9 @@ interface TtsCommandResult {
   format: string
 }
 
+/** Live2D 口型播放器：播放给定音频 URL 并驱动模型口型；signal 中止即停。 */
+export type VoicePlayer = (audioUrl: string, signal: AbortSignal) => Promise<void>
+
 // ============================================================
 //  TtsEngine 类 — 封装所有 TTS 状态（原模块级 currentController）
 // ============================================================
@@ -40,6 +43,13 @@ export class TtsEngine {
   private currentController: AbortController | null = null
   /** 流序号，用于为每次流式播报生成唯一 stream_id（过滤旧流音频帧） */
   private streamSeq = 0
+  /** Live2D 口型播放钩子；注册后 TTS 改走"批合成 → blob → playVoice（带口型）" */
+  private voicePlayer: VoicePlayer | null = null
+
+  /** 注册/注销 Live2D 口型播放器（Live2DStage 在模型 ready/卸载时调用） */
+  setVoicePlayer(fn: VoicePlayer | null) {
+    this.voicePlayer = fn
+  }
 
   /** 语音播报是否开启 */
   isEnabled(): boolean {
@@ -116,6 +126,16 @@ export class TtsEngine {
     const wsUrl = getWsUrl(cvConfig)
     if (wsUrl.includes('{WorkspaceId}')) return
 
+    // Live2D 口型：注册了 voicePlayer 时走批合成 → blob → playVoice（带口型），不走流式
+    if (this.voicePlayer) {
+      try {
+        await this.speakBatchWithLipSync(text, voiceId, cvConfig, wsUrl, controller)
+      } finally {
+        if (this.currentController === controller) this.currentController = null
+      }
+      return
+    }
+
     // 检查 MediaSource 是否支持流式播放
     const mimeType = 'audio/mpeg'
     const canStream = MediaSource.isTypeSupported(mimeType)
@@ -133,6 +153,43 @@ export class TtsEngine {
       if (this.currentController === controller) {
         this.currentController = null
       }
+    }
+  }
+
+  /**
+   * Live2D 口型：批合成完整音频 → blob URL → voicePlayer（playVoice 带口型）。
+   * playVoice 失败时回退到 HTMLAudio 播放（有声音、无口型）。
+   */
+  private async speakBatchWithLipSync(
+    text: string,
+    voiceId: string,
+    cvConfig: ReturnType<typeof loadCosyVoiceConfig>,
+    wsUrl: string,
+    controller: AbortController,
+  ): Promise<void> {
+    let result: TtsCommandResult
+    try {
+      result = await invoke<TtsCommandResult>('cosyvoice_tts', {
+        apiKey: cvConfig.apiKey, model: cvConfig.model, voice: voiceId, text, wsUrl,
+      })
+    } catch (err) {
+      log.warn('口型合成失败', err)
+      return
+    }
+    if (controller.signal.aborted) return
+
+    const mimeType = result.format === 'mp3' ? 'audio/mpeg' : `audio/${result.format}`
+    const binaryStr = atob(result.audio_base64)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }))
+    try {
+      await this.voicePlayer!(url, controller.signal)
+    } catch (err) {
+      log.warn('playVoice 口型播放失败，回退 HTMLAudio', err)
+      if (!controller.signal.aborted) await this.playAudio(result.audio_base64, result.format, controller.signal)
+    } finally {
+      URL.revokeObjectURL(url)
     }
   }
 
@@ -314,3 +371,5 @@ export function speakTextStreaming(text: string, voiceId: string): Promise<void>
 export function cancelSpeak() { ttsEngine.cancel() }
 /** 检查是否正在播报 */
 export function isSpeaking(): boolean { return ttsEngine.isSpeaking() }
+/** 注册/注销 Live2D 口型播放器 */
+export function setVoicePlayer(fn: VoicePlayer | null) { ttsEngine.setVoicePlayer(fn) }

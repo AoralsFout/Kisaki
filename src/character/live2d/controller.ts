@@ -88,6 +88,19 @@ export function useLive2DController() {
     useSessionStore().saveCurrentSession()
   }
 
+  /** Live2D 口型：用 easy-live2d playVoice 播放语音并驱动口型；signal 中止即停 */
+  async function speakVoice(url: string, signal: AbortSignal): Promise<void> {
+    const s = sprite
+    if (!s) return
+    const onAbort = () => { try { s.stopVoice() } catch { /* ignore */ } }
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      await s.playVoice({ voicePath: url })
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
+  }
+
   function getState() {
     return {
       character: charStore.name,
@@ -101,7 +114,7 @@ export function useLive2DController() {
   return {
     ready, currentExpression, charStore,
     attach, detach,
-    setExpression, playMotion, setScreenPose, switchCharacter, getState,
+    setExpression, playMotion, setScreenPose, switchCharacter, speakVoice, getState,
   }
 }
 

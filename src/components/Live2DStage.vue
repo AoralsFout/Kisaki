@@ -11,6 +11,7 @@ import { useCharacterStore, useLive2DController } from '../character'
 import { useLive2DScene } from '../character/live2d/scene'
 import { setAgentLive2DController, setAgentLive2DManifest } from '../agent'
 import { startLive2DMask, stopLive2DMask } from '../passthrough/live2dMask'
+import { setVoicePlayer } from '../tts'
 
 const emit = defineEmits<{
   click: [event: MouseEvent]
@@ -34,12 +35,14 @@ const scene = useLive2DScene(
       controller.attach(sprite, manifest)
       setAgentLive2DController(controller)
       setAgentLive2DManifest(manifest)
+      setVoicePlayer((url, signal) => controller.speakVoice(url, signal)) // TTS 口型同步
       startLive2DMask()
     },
     onDispose: () => {
       controller.detach()
       setAgentLive2DController(null)
       setAgentLive2DManifest(null)
+      setVoicePlayer(null)
       stopLive2DMask()
     },
   },
