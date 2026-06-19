@@ -63,6 +63,7 @@ pub fn run() {
             character::list_data_dir_characters,
             character::get_data_dirs,
             character::read_character_file,
+            character::import_live2d_model,
             pack::export_character_pack,
             pack::import_character_pack,
             tts::cosyvoice_tts,
