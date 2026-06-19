@@ -7,9 +7,13 @@
 
 ---
 
-## Phase 0 — Spike 去风险（一次性验证，可丢弃）
+## Phase 0 — Spike 去风险（一次性验证，可丢弃）✅ 已完成（2026-06-19）
 
-> 目的：在写正式代码前，验证两个最大未知数。用 `live2d-example/public/models/Hiyori` 做素材。
+> 目的：在写正式代码前，验证两个最大未知数。用 Hiyori 做素材。
+>
+> **结论：两项均通过**（详见设计文档 §10）。关键修订，后续 Phase 必须照此实现：
+> - **0.1 asset:// 加载** → 必须用 `CubismSetting + redirectPath` 逐文件 `convertFileSrc` 重定向；直接传 `modelPath` 在 Windows 下 404。`loadLive2DManifest` 需返回 `modelJSON`+`modelDir`（→ 影响 Phase 2.2、3.3）。
+> - **0.2 alpha 提取** → 掩码取**主 canvas** 快照（`createImageBitmap`），且 `app.init` 必须传 `preserveDrawingBuffer:true`；`extract.pixels(sprite)` 取不到（→ 影响 Phase 3.3、5.1）。
 
 ### 0.1 Spike：asset:// 模型加载 ★最高优先
 - 【做什么】把 Hiyori 拷到 `characters/<测试角色>/live2d/Hiyori/`；临时写一个最小页面/组件，用 `convertFileSrc` 得到 `model3.json` 的 asset URL，喂给 `Live2DSprite.init({modelPath})`，确认模型、贴图、动作经 asset 协议全部加载。

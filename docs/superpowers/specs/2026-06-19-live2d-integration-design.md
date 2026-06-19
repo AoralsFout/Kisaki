@@ -249,4 +249,37 @@ interface Live2DController {
 - 角色管理器的 Live2D 预览/参数编辑（缩放/偏移/注解可视化编辑）。
 - 多模型同屏 / 模型热切换动画。
 - 自动发现的表情/动作中文描述可考虑 i18n。
-- 若 asset:// 相对路径方案受限，评估是否需要一个轻量本地静态服务或自定义 Cubism loader。
+- 若 asset:// 相对路径方案受限，评估是否需要一个轻量本地静态服务或自定义 Cubism loader。（→ 已由 §10.1 的 `redirectPath` 方案解决，无需本地服务。）
+
+## 10. Phase 0 Spike 结论（2026-06-19，已在真实 Tauri 窗口用 Hiyori 验证）
+
+两个最大风险均已验证通过，并据此修订上文实现细节。
+
+### 10.1 asset:// 加载 —— ✅ 可行（必须用 redirectPath）
+
+- 直接 `Live2DSprite.init({ modelPath: convertFileSrc(...model3.json) })` **失败**：`convertFileSrc` 把整条 Windows 绝对路径编码成单段（分隔符变 `%5C`/`%2F`），Cubism 靠"URL base + 相对路径"拼接 → `.moc3`/贴图/动作全部 404，模型空渲染（仍会误触发 `ready`）。
+- **修订（替代 §5.2/§5.3 的加载方式）**：用 `CubismSetting` + `redirectPath` 逐文件显式重定向：
+
+  ```ts
+  import { CubismSetting } from 'easy-live2d'
+  const modelDir = `${charactersPath}/${id}/${relDir}`           // live2d 模型所在目录（绝对）
+  const json = await (await fetch(convertFileSrc(`${modelDir}/${modelFile}`))).json()
+  const setting = new CubismSetting({ modelJSON: json })
+  setting.redirectPath(({ file }) => convertFileSrc(`${modelDir}/${file}`))
+  sprite.init({ modelSetting: setting, ticker: Ticker.shared, draggable: false })
+  ```
+
+  验证：5/5 文件（model3/moc3/2 贴图/motion）均 200，模型正常渲染（原始 2976×4175）。
+- **据此修订 §5.2**：`loadLive2DManifest` 顺带返回解析后的 `modelJSON` 与 `modelDir`，供 Live2DStage 构造 `CubismSetting`。无需本地静态服务或自定义 loader。
+
+### 10.2 透明画布 alpha 提取 —— ✅ 可行（取主画布，非 sprite）
+
+- `app.renderer.extract.pixels(sprite)` **失败**：easy-live2d 的 Cubism 渲染直接画到主帧缓冲，sprite 自身 RT 为空 → alpha 全 0（尺寸却正常）。
+- **修订（替代 §5.6 的快照源）**：掩码取**主 `<canvas>` 元素**快照——`app.init` 传 `preserveDrawingBuffer: true`，定时 `createImageBitmap(canvas)` → 降采样 2D `drawImage` → `getImageData` 读 alpha（复用 `alphaMask.ts` 形态）。验证：200×144 降采样，alpha>16 占 9.0%，alpha 正确保留。
+- 代价：`preserveDrawingBuffer:true` 有轻微性能开销，桌宠场景可接受。
+
+### 10.3 其它确认
+
+- 依赖：`easy-live2d@0.4.4` + `pixi.js@8.19` 安装并运行正常；`pixi-live2d-display` 已移除。
+- Cubism Core 实际路径为 `public/Live2dCore/live2dcubismcore.js`（用户已放置）；`index.html` 引用 `/Live2dCore/live2dcubismcore.js`（替代 §4.2/§5.8 中的 `public/core/`）。
+- easy-live2d 0.4.4 API 已核对：`init({ modelSetting | modelPath })`、`onLive2D('ready'|'hit'|'dragStart'|'dragMove'|'dragEnd')`、`startMotion({group,no,priority})`/`startRandomMotion`、`setExpression({expressionId|index})`、`getMotions(): MotionInfo[]` / `getExpressions(): ExpressionInfo[]`（可作 manifest 发现的补充来源）、`setParameterValueById`（口型同步备用）、`getModelCanvasSize()`、`Config.MotionGroupIdle/MouseFollow`。
