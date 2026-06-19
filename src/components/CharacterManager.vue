@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
+import { buildCharacterJson, type CharacterEdits } from '../character/characterJson'
 import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid } from '../tts'
 import { createLogger } from '../utils/logger'
 import { invoke } from '@tauri-apps/api/core'
@@ -422,22 +423,24 @@ async function saveAll() {
   const promptOk = await tauriWrite('prompt.txt', promptText.value)
   if (!promptOk) { saveError.value = t('character.msg.errSavePrompt'); return }
 
-  const collectedEmotions = [...new Set(editableImages.value.flatMap(img => img.emotions))]
-  const newData: Record<string, any> = {
-    id: data.id, name: data.name, description: data.description, version: data.version,
-    poses: [...editablePoses.value],
-    emotions: collectedEmotions,
-    costumes: [...editableCostumes.value],
-    images: editableImages.value.map(img => ({
+  const render = charStore.render
+  const edits: CharacterEdits = {
+    voice: selectedVoice.value || undefined,
+    voiceModel: selectedVoiceModel.value || undefined,
+    voiceLanguage: selectedVoiceLang.value,
+    textLanguage: selectedTextLang.value,
+  }
+  if (render === 'illustration') {
+    edits.poses = [...editablePoses.value]
+    edits.emotions = [...new Set(editableImages.value.flatMap(img => img.emotions))]
+    edits.costumes = [...editableCostumes.value]
+    edits.images = editableImages.value.map(img => ({
       file: img.file, pose: img.pose, costume: img.costume, emotions: [...img.emotions],
-    })),
+    }))
   }
-  if (selectedVoice.value) {
-    newData.voice = selectedVoice.value
-    newData.voiceModel = selectedVoiceModel.value || undefined
-  }
-  newData.voiceLanguage = selectedVoiceLang.value
-  newData.textLanguage = selectedTextLang.value
+  // live2d 角色的可编辑配置在 Phase 5 接入；当前 edits.live2d 留空 →
+  // buildCharacterJson 保留既有 live2d 块（修复点：不再丢 render/live2d）。
+  const newData = buildCharacterJson(data, render, edits)
 
   const jsonOk = await tauriWrite('character.json', JSON.stringify(newData, null, 2))
   if (!jsonOk) { saveError.value = t('character.msg.errSaveConfig'); return }
