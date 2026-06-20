@@ -6,7 +6,7 @@
  */
 
 /** 后备默认提示词（简短通用） */
-export const DEFAULT_SYSTEM_PROMPT = `你是用户的桌面宠物助手。请用亲切友好的语气和用户交流，保持对话自然流畅。你可以根据需要切换心情和姿势来表达自己。`
+export const DEFAULT_SYSTEM_PROMPT = `你是用户的桌面宠物助手。请用亲切友好的语气和用户交流，保持对话自然流畅。你可以使用提供给你的功能来表达自己。`
 
 /** 获取默认消息列表 */
 export function getDefaultMessages() {

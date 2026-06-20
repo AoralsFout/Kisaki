@@ -1026,12 +1026,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 更新角色 system prompt（含语言配置） */
-  function setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string) {
+  function setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string, render?: 'illustration' | 'live2d') {
     const _fn = 'setSystemPrompt'
     log.trace('[%s] ▶ prompt=%d字 voiceLang=%s displayLang=%s',
       _fn, prompt?.length || 0, voiceLang || '?', displayLang || '?')
     log.debug('[%s] prompt前50字: "%s"', _fn, (prompt || '').slice(0, 50))
-    chatContext.setSystemPrompt(prompt, voiceLang, displayLang)
+    chatContext.setSystemPrompt(prompt, voiceLang, displayLang, render)
     log.debug('[%s] ✓ system prompt 已更新', _fn)
     log.trace('[%s] ◀', _fn)
   }

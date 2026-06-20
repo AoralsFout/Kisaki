@@ -82,23 +82,21 @@ function buildTurnReminder(voiceLang: string, displayLang: string): string {
   return `[提醒] 通过调用 say 工具说话：voice=${langName(voiceLang)}台词，display=${langName(displayLang)}译文，两者都要给。`
 }
 
-/** 工具使用说明（自动追加到所有角色提示词末尾） */
-const TOOL_INSTRUCTIONS = `
+/** 工具使用说明（按渲染类型生成，自动追加到所有角色提示词末尾） */
+function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration'): string {
+  const head = `
 ## 🔧 函数调用规则（必须遵守）
-你只能通过函数调用与世界交互：**说话用 say**，改变外观用 set_character_* 等。普通正文不会改变你的任何状态；要让用户听到并看到你说的话，必须调用 say。
+你只能通过函数调用与世界交互：**说话用 say**，改变状态用相应函数。普通正文不会改变你的任何状态；要让用户听到并看到你说的话，必须调用 say。
 
 ### 你必须使用函数调用的场景
 1. 你要开口说任何话时 → 必须调用 say（这是唯一的说话方式）
-2. 用户要求你改变外观时 → 必须调用 set_character_* 相关函数
-3. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator
+2. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator`
+
+  const illustration = `
+3. 用户要求你改变外观时 → 必须调用 set_character_* 相关函数
 4. 你的情绪发生变化时 → 调用 set_character_emotion
 5. 你希望改变姿势或服装时 → 调用 set_character_stance / set_character_costume
 6. 你需要改变你在屏幕的大小或位置时 → 调用 set_screen_pose
-
-### 正确示例 ✅
-用户: "换个姿势"
-你调用 set_character_stance(...) 切换姿势，并调用 say(...) 说"好了~"
-（动作生效 ✅ 且把话说出来了 ✅）
 
 ### 可用函数列表
 - say(voice, display): 说出你的台词（唯一的说话方式）
@@ -113,6 +111,25 @@ const TOOL_INSTRUCTIONS = `
 - calculator(expression): 数学计算
 - switch_character(character_id): 切换到其他角色`
 
+  const live2d = `
+3. 你的情绪/表情变化时 → 调用 set_expression
+4. 你想做一个动作（招手、点头等）时 → 调用 play_motion
+5. 你需要改变你在屏幕的大小或位置时 → 调用 set_screen_pose
+
+### 可用函数列表（你是 Live2D 角色，没有立绘换装/姿势能力）
+- say(voice, display): 说出你的台词（唯一的说话方式）
+- set_expression(expression): 切换表情
+- play_motion(motion, index?): 播放一个动作动画
+- set_screen_pose(pose): 控制屏幕位置和大小
+- get_character_state(): 查询你当前的状态
+- get_time(timezone?): 获取当前时间
+- get_weather(city, days?): 查询天气
+- calculator(expression): 数学计算
+- switch_character(character_id): 切换到其他角色`
+
+  return head + (render === 'live2d' ? live2d : illustration)
+}
+
 /** 对话上下文管理器 */
 export class ChatContext {
   private messages: ChatMessage[] = []
@@ -120,6 +137,7 @@ export class ChatContext {
   private customPrompt: string | null = null
   private voiceLang: string = ''
   private displayLang: string = ''
+  private render: 'illustration' | 'live2d' = 'illustration'
   private maxContextTokens: number
 
   /**
@@ -160,20 +178,21 @@ export class ChatContext {
     if (!this.customPrompt || !this.voiceLang || !this.displayLang) return
     this.messages[0] = {
       role: 'system',
-      content: this.customPrompt + buildLangInstruction(this.voiceLang, this.displayLang) + TOOL_INSTRUCTIONS,
+      content: this.customPrompt + buildLangInstruction(this.voiceLang, this.displayLang) + buildToolInstructions(this.render),
     }
     log.debug('System prompt 已重建 (语音: %s, 显示: %s)', this.voiceLang, this.displayLang)
   }
 
   /** 设置自定义 system prompt（自动追加语言指令和工具说明） */
-  setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string) {
+  setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string, render?: 'illustration' | 'live2d') {
     this.customPrompt = prompt
     this.voiceLang = voiceLang || ''
     this.displayLang = displayLang || ''
+    this.render = render ?? 'illustration'
     const langInstruction = voiceLang && displayLang ? buildLangInstruction(voiceLang, displayLang) : ''
     this.messages[0] = {
       role: 'system',
-      content: prompt + langInstruction + TOOL_INSTRUCTIONS,
+      content: prompt + langInstruction + buildToolInstructions(this.render),
     }
     log.debug('System prompt 已设置 (语音: %s, 显示: %s)', voiceLang || '默认', displayLang || '默认')
   }

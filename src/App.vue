@@ -87,7 +87,7 @@ function applyCharacterPersona() {
   if (!charStore.prompt) return
   const voiceLang = charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE
   const displayLang = resolveDisplayLanguage(charStore.data?.textLanguage)
-  chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang)
+  chat.setSystemPrompt(charStore.prompt, voiceLang, displayLang, charStore.render)
 }
 
 /**
