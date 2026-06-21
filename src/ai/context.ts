@@ -108,8 +108,7 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 - get_character_state(): 查询你当前的状态
 - get_time(timezone?): 获取当前时间
 - get_weather(city, days?): 查询天气
-- calculator(expression): 数学计算
-- switch_character(character_id): 切换到其他角色`
+- calculator(expression): 数学计算`
 
   const live2d = `
 3. 你的情绪/表情变化时 → 调用 set_expression
@@ -124,8 +123,7 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 - get_character_state(): 查询你当前的状态
 - get_time(timezone?): 获取当前时间
 - get_weather(city, days?): 查询天气
-- calculator(expression): 数学计算
-- switch_character(character_id): 切换到其他角色`
+- calculator(expression): 数学计算`
 
   return head + (render === 'live2d' ? live2d : illustration)
 }

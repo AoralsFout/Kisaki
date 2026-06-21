@@ -2,7 +2,7 @@
   "id": "kisaki_noprompt",
   "name": "Kisaki 无提示词版",
   "description": "Kisaki 无提示词版",
-  "version": 1,
+  "version": 2,
   "poses": [
     "侧立",
     "正立"
@@ -527,5 +527,7 @@
     }
   ],
   "voiceLanguage": "ja-JP",
-  "textLanguage": "zh-CN"
+  "textLanguage": "zh-CN",
+  "voice": "cosyvoice-v3-flash-bailian-4d47d040ea9e4568898aa83dbfbf0bed",
+  "render": "illustration"
 }

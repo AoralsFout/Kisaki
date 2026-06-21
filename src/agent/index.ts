@@ -24,7 +24,7 @@ const log = createLogger('Agent')
 export function initTools() {
   registerAll(
     timeTool, weatherTool, calculatorTool,
-    setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, switchCharacterTool,
+    setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool, 
     setExpressionTool, playMotionTool,
     readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
     replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
