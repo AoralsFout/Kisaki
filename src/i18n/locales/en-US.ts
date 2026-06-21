@@ -174,7 +174,6 @@ export default {
     },
     about: {
       title: 'About',
-      version: 'Kisaki v0.1',
       desc1: 'A desktop mascot app built with Tauri + Vue 3',
       desc2: 'Supports AI chat, character switching, tool calls, and TTS voice playback',
       privacy: 'Data is stored locally only; your API Key is never uploaded to any third-party server.',

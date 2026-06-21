@@ -174,7 +174,6 @@ export default {
     },
     about: {
       title: 'について',
-      version: 'Kisaki v0.1',
       desc1: 'Tauri + Vue 3 で構築されたデスクトップマスコットアプリ',
       desc2: 'AI 会話、キャラクター切り替え、ツール呼び出し、TTS 音声読み上げに対応',
       privacy: 'データはローカルにのみ保存され、API Key は第三者のサーバーに送信されません。',

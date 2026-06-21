@@ -174,7 +174,6 @@ export default {
     },
     about: {
       title: '關於',
-      version: 'Kisaki v0.1',
       desc1: '基於 Tauri + Vue 3 建構的桌面桌寵應用程式',
       desc2: '支援 AI 對話、角色切換、工具呼叫、TTS 語音播報',
       privacy: '資料僅儲存在本機，API Key 不會上傳到任何第三方伺服器。',
