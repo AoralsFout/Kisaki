@@ -15,7 +15,7 @@ import WorkspaceChip from './components/WorkspaceChip.vue'
 import ToolActivityList from './components/ToolActivityList.vue'
 import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
-import DevPanel from './DevPanel.vue'
+import DevPanel from './components/settings/DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
@@ -24,7 +24,7 @@ import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
-import { setAvailableCharacters, setOnCharacterSwitched } from './agent'
+import { setAvailableCharacters, setOnCharacterSwitched, getAgentLive2DController } from './agent'
 import { createLogger } from './utils/logger'
 import {
   WINDOW_MAIN,
@@ -151,19 +151,27 @@ onMounted(async () => {
       const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
       channel.onmessage = (event) => {
         const { type, payload } = event.data ?? {}
-        const ctrl = getCharacterController()
-        if (!ctrl) return
-        if (type === 'set-pose') ctrl.setScreenPose(payload.key as any)
-        if (type === 'set-emotion') ctrl.setEmotion(payload.emotion as any)
-        if (type === 'set-stance') ctrl.setPoseTag(payload.stance as any)
-        if (type === 'set-costume') ctrl.setCostume(payload.costume as any)
+        const l2dCtrl = getAgentLive2DController()
+        if (type === 'set-pose') {
+          l2dCtrl?.setScreenPose(payload.key as any)
+          getCharacterController()?.setScreenPose(payload.key as any)
+          return
+        }
+        if (type === 'set-expression') { l2dCtrl?.setExpression(payload.expression as string); return }
+        if (type === 'play-motion') { l2dCtrl?.playMotion(payload.group as string, payload.index ?? 0); return }
+        if (type === 'set-stance') { getCharacterController()?.setPoseTag(payload.stance as string); return }
+        if (type === 'set-emotion') { getCharacterController()?.setEmotion(payload.emotion as string); return }
+        if (type === 'set-costume') { getCharacterController()?.setCostume(payload.costume as string); return }
         if (type === 'request-state') {
+          const ctrl = getCharacterController()
           channel.postMessage({
             type: 'state-update',
             payload: {
-              poseTag: ctrl.currentPoseTag.value,
-              emotion: ctrl.currentEmotion.value,
-              costume: ctrl.currentCostume.value,
+              poseTag: ctrl?.currentPoseTag.value ?? '',
+              emotion: ctrl?.currentEmotion.value ?? '',
+              costume: ctrl?.currentCostume.value ?? '',
+              screenPose: (ctrl ?? l2dCtrl)?.charStore?.currentScreenPose ?? 'full-center',
+              expression: l2dCtrl?.currentExpression.value ?? '',
             },
           })
         }

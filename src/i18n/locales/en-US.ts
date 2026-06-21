@@ -352,6 +352,11 @@ export default {
     full: 'Full',
     half: 'Half',
     headshot: 'Headshot',
+    expression: 'Expression',
+    motion: 'Motion',
+    defaultExpr: 'Default',
+    noExpression: 'No expressions available',
+    noMotion: 'No motions available',
   },
 
   logs: {

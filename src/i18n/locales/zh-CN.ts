@@ -355,6 +355,11 @@ export default {
     full: '全身',
     half: '半身',
     headshot: '头像',
+    expression: '表情',
+    motion: '动作',
+    defaultExpr: '默认',
+    noExpression: '无可用表情',
+    noMotion: '无可用动作',
   },
 
   logs: {

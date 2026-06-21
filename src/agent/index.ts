@@ -4,7 +4,7 @@
 export { register, registerAll, getTool, getDefinitions, listTools } from './registry'
 export { parseToolCalls, executeToolCall, executeToolCalls } from './executor'
 export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter } from './types'
-export { setAgentCharData, setAgentController, setOnCharacterSwitched, setAgentLive2DController, setAgentLive2DManifest } from './context'
+export { setAgentCharData, setAgentController, setOnCharacterSwitched, setAgentLive2DController, getAgentLive2DController, setAgentLive2DManifest } from './context'
 export { setAvailableCharacters } from './tools/character'
 export { SAY_TOOL_DEF, SAY_TOOL_NAME } from './tools/say'
 

@@ -352,6 +352,11 @@ export default {
     full: '全身',
     half: '半身',
     headshot: '顔',
+    expression: '表情',
+    motion: 'モーション',
+    defaultExpr: 'デフォルト',
+    noExpression: '利用可能な表情がありません',
+    noMotion: '利用可能なモーションがありません',
   },
 
   logs: {

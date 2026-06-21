@@ -352,6 +352,11 @@ export default {
     full: '全身',
     half: '半身',
     headshot: '頭像',
+    expression: '表情',
+    motion: '動作',
+    defaultExpr: '預設',
+    noExpression: '無可用表情',
+    noMotion: '無可用動作',
   },
 
   logs: {
