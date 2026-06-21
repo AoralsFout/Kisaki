@@ -357,6 +357,8 @@ export default {
     defaultExpr: 'デフォルト',
     noExpression: '利用可能な表情がありません',
     noMotion: '利用可能なモーションがありません',
+    loading: 'メインウィンドウの状態を待機中…',
+    noChar: 'デバッグ可能なキャラクターがありません',
   },
 
   logs: {

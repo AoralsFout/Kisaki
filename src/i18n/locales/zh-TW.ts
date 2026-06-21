@@ -357,6 +357,8 @@ export default {
     defaultExpr: '預設',
     noExpression: '無可用表情',
     noMotion: '無可用動作',
+    loading: '等待主視窗狀態…',
+    noChar: '無可除錯角色',
   },
 
   logs: {

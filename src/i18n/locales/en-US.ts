@@ -357,6 +357,8 @@ export default {
     defaultExpr: 'Default',
     noExpression: 'No expressions available',
     noMotion: 'No motions available',
+    loading: 'Waiting for main window state…',
+    noChar: 'No character to debug',
   },
 
   logs: {

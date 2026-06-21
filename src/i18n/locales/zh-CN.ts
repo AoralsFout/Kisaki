@@ -360,6 +360,8 @@ export default {
     defaultExpr: '默认',
     noExpression: '无可用表情',
     noMotion: '无可用动作',
+    loading: '等待主窗口状态…',
+    noChar: '无可调试角色',
   },
 
   logs: {

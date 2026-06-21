@@ -146,7 +146,8 @@ onMounted(async () => {
     }
   }, 1000)
 
-  if (!isDev) {
+  // Dev 面板通信：仅主窗口响应，避免设置窗口/日志窗口的 handler 干扰
+  if (!isDev && !isSettings && !isLogs) {
     try {
       const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
       channel.onmessage = (event) => {
@@ -167,6 +168,7 @@ onMounted(async () => {
           channel.postMessage({
             type: 'state-update',
             payload: {
+              currentId: charStore.currentId,
               poseTag: ctrl?.currentPoseTag.value ?? '',
               emotion: ctrl?.currentEmotion.value ?? '',
               costume: ctrl?.currentCostume.value ?? '',
