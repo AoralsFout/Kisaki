@@ -443,3 +443,123 @@ pub(crate) async fn cosyvoice_tts_stream(
         }
     }
 }
+
+// ---- GPT-SoVITS TTS（通过 Rust 代理请求以绕过 CORS） ----
+
+/// GPT-SoVITS 专用 HTTP 客户端：禁用系统代理，避免本地回环请求（127.0.0.1）被系统 HTTP 代理拦截
+fn gptsovits_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))
+}
+
+/// GPT-SoVITS 合成结果
+#[derive(Serialize)]
+pub(crate) struct GptSoVitsResult {
+    pub(crate) audio_base64: String,
+    pub(crate) format: String,
+}
+
+/// 通过 Rust 后端请求 GPT-SoVITS API（解决 webview CORS 限制）
+#[tauri::command]
+pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String> {
+    let response = gptsovits_client()?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("GPT-SoVITS 请求失败: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("GPT-SoVITS API 错误 ({}): {}", status, body));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("audio/wav")
+        .to_string();
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    if bytes.is_empty() {
+        return Err("GPT-SoVITS 返回空音频".to_string());
+    }
+
+    let engine = base64::engine::general_purpose::STANDARD;
+    let audio_base64 = engine.encode(&bytes);
+
+    let format = if content_type.contains("ogg") {
+        "ogg"
+    } else if content_type.contains("aac") {
+        "aac"
+    } else if content_type.contains("raw") || content_type.contains("L16") {
+        "raw"
+    } else {
+        "wav"
+    }.to_string();
+
+    eprintln!("GPT-SoVITS 合成完成: {} bytes ({})", bytes.len(), format);
+
+    Ok(GptSoVitsResult { audio_base64, format })
+}
+
+/// GPT-SoVITS 流式合成 — 逐 chunk emit 给前端，前端边收边播
+#[tauri::command]
+pub(crate) async fn gptsovits_tts_stream(
+    app_handle: tauri::AppHandle,
+    stream_id: String,
+    url: String,
+) -> Result<(), String> {
+    eprintln!("GPT-SoVITS 流式请求: stream_id={}", stream_id);
+
+    let response = gptsovits_client()?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("GPT-SoVITS 请求失败: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("GPT-SoVITS API 错误 ({}): {}", status, body));
+    }
+
+    let engine = base64::engine::general_purpose::STANDARD;
+    let mut chunk_count = 0u32;
+
+    let mut stream = response.bytes_stream();
+    use futures_util::StreamExt;
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("读取流失败: {}", e))?;
+        if chunk.is_empty() {
+            continue;
+        }
+        chunk_count += 1;
+        let data = engine.encode(&chunk);
+        let is_last = false; // 还不知道是否最后，最后单独发结束信号
+        let _ = app_handle.emit("tts-audio-chunk", TtsChunk {
+            stream_id: stream_id.clone(),
+            data,
+            format: "wav".to_string(),
+            is_last,
+        });
+    }
+
+    // 发送结束标记
+    let _ = app_handle.emit("tts-audio-chunk", TtsChunk {
+        stream_id: stream_id.clone(),
+        data: String::new(),
+        format: "wav".to_string(),
+        is_last: true,
+    });
+
+    eprintln!("GPT-SoVITS 流式完成: stream_id={}, {} chunks", stream_id, chunk_count);
+    Ok(())
+}

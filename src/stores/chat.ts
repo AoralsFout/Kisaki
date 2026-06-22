@@ -21,7 +21,7 @@ import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolResult } from '../agent'
 import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm, isDangerousTool, dangerousToolSummary } from '../agent/toolPolicy'
-import { speakTextStreaming, cancelSpeak } from '../tts'
+import { speakTextStreaming, cancelSpeak, getTtsProvider } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
 import { t } from '../i18n'
@@ -813,8 +813,15 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const charStore = useCharacterStore()
+      const provider = getTtsProvider()
       const voiceId = charStore.data?.voice
-      if (!voiceId) {
+
+      if (provider === 'none') {
+        log.trace('[%s] TTS 已禁用（提供者为 none），跳过', _fn)
+        return
+      }
+      // CosyVoice 需要 voiceId；GPT-SoVITS 不需要
+      if (provider === 'cosyvoice' && !voiceId) {
         log.trace('[%s] 无 voiceId 配置，跳过 TTS', _fn)
         return
       }
@@ -823,7 +830,7 @@ export const useChatStore = defineStore('chat', () => {
         _fn, voiceId, voiceLang, text.length)
       log.debug('[%s] TTS 文本: "%s"', _fn, text.slice(0, 120))
       const ttsTimer = debugTimer(_fn)
-      await speakTextStreaming(text, voiceId)
+      await speakTextStreaming(text, voiceId || '')
       // 仅在成功播放后记下去重文本（失败/取消时不记录，允许重试）
       lastTtsText = text
       ttsTimer.stop()

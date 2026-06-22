@@ -1,5 +1,5 @@
 /**
- * CosyVoice TTS 播报服务
+ * CosyVoice & GPT-SoVITS TTS 播报服务
  *
  * 封装为 TtsEngine 类，消除模块级可变状态。
  * 导出单例 ttsEngine 供正常使用，也支持创建独立实例用于测试。
@@ -7,12 +7,17 @@
  * 支持两种模式：
  *   1. speakText — 批处理模式（等全部合成完再播放）
  *   2. speakTextStreaming — 流式模式（边合成边播放）
+ *
+ * 根据 localStorage 中的 TTS 提供者设置自动切换：
+ *   - 'cosyvoice' → 通过 Rust 后端调用阿里云 CosyVoice WebSocket API
+ *   - 'gptsovits' → 通过 HTTP 调用本地 GPT-SoVITS API
  */
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { loadCosyVoiceConfig, getWsUrl } from './config'
+import { loadCosyVoiceConfig, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
+import { synthesizeWithGptSoVits, playAudioBlob, buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
 import { createLogger } from '../utils/logger'
-import { STORAGE_TTS_ENABLED } from '../constants'
+import { STORAGE_TTS_ENABLED, DEFAULT_VOICE_LANGUAGE } from '../constants'
 
 const log = createLogger('TTS')
 
@@ -81,11 +86,19 @@ export class TtsEngine {
   /** 合成并播报文本（批处理模式） */
   async speakText(text: string, voiceId: string): Promise<void> {
     if (!this.isEnabled()) return
+    const provider = getTtsProvider()
+    if (provider === 'none') return
     this.cancel()
 
     const controller = new AbortController()
     this.currentController = controller
 
+    if (provider === 'gptsovits') {
+      await this.speakWithGptSoVits(text, controller)
+      return
+    }
+
+    // ── CosyVoice 批处理 ──
     const cvConfig = loadCosyVoiceConfig()
     if (!cvConfig.apiKey || !voiceId) return
 
@@ -115,11 +128,24 @@ export class TtsEngine {
   /** 合成并流式播报文本（边接收边播放，延迟更低） */
   async speakTextStreaming(text: string, voiceId: string): Promise<void> {
     if (!this.isEnabled()) return
+    const provider = getTtsProvider()
+    if (provider === 'none') return
     this.cancel()
 
     const controller = new AbortController()
     this.currentController = controller
 
+    if (provider === 'gptsovits') {
+      // Live2D 口型：注册了 voicePlayer 时走批合成（含口型驱动），否则走 PCM 流式
+      if (this.voicePlayer) {
+        await this.speakWithGptSoVits(text, controller)
+      } else {
+        await this.speakGptSoVitsStream(text, controller)
+      }
+      return
+    }
+
+    // ── CosyVoice 流式处理 ──
     const cvConfig = loadCosyVoiceConfig()
     if (!cvConfig.apiKey || !voiceId) return
 
@@ -154,6 +180,186 @@ export class TtsEngine {
         this.currentController = null
       }
     }
+  }
+
+  /**
+   * GPT-SoVITS 流式合成：Rust 逐 chunk → Tauri event → 前端 Web Audio 连续 PCM 播放
+   *
+   * 服务端返回 [44字节WAV头][裸PCM...] 单条连续流，网络分片边界任意，
+   * 故不能把每个 chunk 当独立音频文件播；交由 PcmStreamPlayer 重组并无缝排程。
+   */
+  private async speakGptSoVitsStream(
+    text: string,
+    controller: AbortController,
+  ): Promise<void> {
+    const config = loadGptSoVitsConfig()
+    if (!config.apiUrl) {
+      log.warn('GPT-SoVITS API URL 未配置，跳过 TTS')
+      return
+    }
+
+    const charParams = await this.getGptSoVitsCharacterParams()
+    if (!charParams.refAudioPath) {
+      log.warn('GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
+      return
+    }
+
+    if (controller.signal.aborted) return
+
+    const streamId = String(++this.streamSeq)
+    const url = buildGptSoVitsStreamUrl(
+      text,
+      charParams.refAudioPath,
+      charParams.textLang,
+      charParams.promptText || undefined,
+      charParams.promptLang || undefined,
+    )
+
+    log.debug('GPT-SoVITS 流式请求: stream_id=%s', streamId)
+
+    // Web Audio 连续 PCM 播放器：收到字节即排程播放，无缝衔接、低延迟
+    const player = new PcmStreamPlayer()
+    let streamError: string | null = null
+
+    const onAbort = () => player.dispose()
+    controller.signal.addEventListener('abort', onAbort, { once: true })
+
+    const unlisten = await listen<TtsChunk>('tts-audio-chunk', (event) => {
+      if (event.payload.stream_id !== streamId) return
+      if (controller.signal.aborted || streamError) return
+
+      if (event.payload.is_last) {
+        player.end()
+        return
+      }
+
+      try {
+        const binaryStr = atob(event.payload.data)
+        const bytes = new Uint8Array(binaryStr.length)
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+        player.push(bytes)
+      } catch { /* 跳过损坏块 */ }
+    })
+
+    try {
+      await invoke('gptsovits_tts_stream', { streamId, url })
+    } catch (err) {
+      streamError = (err as Error).message
+    }
+
+    try {
+      // 后端命令返回 = 字节已全部发完；标记结束并等待已排程音频播放完毕。
+      // 安全超时兜底，即便漏发 is_last 也不会无限等待。
+      if (!controller.signal.aborted && !streamError) {
+        player.end()
+        await Promise.race([
+          player.waitDone(),
+          new Promise<void>((resolve) => setTimeout(resolve, 60000)),
+        ])
+      }
+    } finally {
+      unlisten()
+      controller.signal.removeEventListener('abort', onAbort)
+      player.dispose()
+      if (this.currentController === controller) {
+        this.currentController = null
+      }
+    }
+
+    if (streamError) {
+      log.warn('GPT-SoVITS 流式合成失败: %s', streamError)
+    }
+  }
+
+  /**
+   * GPT-SoVITS 批合成：加载配置、获取角色级参数、调用 HTTP API、播放
+   */
+  private async speakWithGptSoVits(
+    text: string,
+    controller: AbortController,
+  ): Promise<void> {
+    const config = loadGptSoVitsConfig()
+    if (!config.apiUrl) {
+      log.warn('GPT-SoVITS API URL 未配置，跳过 TTS')
+      return
+    }
+
+    // 获取角色级参数（参考音频必须从角色数据获取）
+    const charParams = await this.getGptSoVitsCharacterParams()
+    if (!charParams.refAudioPath) {
+      log.warn('GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
+      return
+    }
+
+    if (controller.signal.aborted) return
+
+    try {
+      const result = await synthesizeWithGptSoVits({
+        text,
+        refAudioPath: charParams.refAudioPath,
+        promptText: charParams.promptText || undefined,
+        promptLang: charParams.promptLang || undefined,
+        textLang: charParams.textLang,
+      })
+
+      if (controller.signal.aborted) return
+
+      // Live2D 口型：走 voicePlayer
+      if (this.voicePlayer) {
+        const url = URL.createObjectURL(result.blob)
+        try {
+          await this.voicePlayer(url, controller.signal)
+        } catch {
+          log.warn('playVoice 口型播放失败，回退 HTMLAudio')
+          if (!controller.signal.aborted) {
+            await playAudioBlob(result.blob, controller.signal)
+          }
+        } finally {
+          URL.revokeObjectURL(url)
+        }
+      } else {
+        await playAudioBlob(result.blob, controller.signal)
+      }
+    } catch (err) {
+      log.warn('GPT-SoVITS 合成/播放失败: %s', (err as Error).message)
+    } finally {
+      if (this.currentController === controller) {
+        this.currentController = null
+      }
+    }
+  }
+
+  /**
+   * 从当前角色数据中提取 GPT-SoVITS 参数
+   * 角色级字段覆盖全局默认值
+   */
+  private async getGptSoVitsCharacterParams(): Promise<{
+    refAudioPath: string
+    promptText: string
+    promptLang: string
+    textLang: string
+  }> {
+    try {
+      // 惰性获取 Pinia store（使用 getActivePinia 避免循环依赖）
+      const { getActivePinia } = await import('pinia')
+      const pinia = getActivePinia()
+      if (pinia) {
+        const { useCharacterStore } = await import('../stores/character')
+        const store = useCharacterStore(pinia)
+        const data = store.data
+        if (data) {
+          return {
+            refAudioPath: (data as any).gptsovitsRefAudio || '',
+            promptText: (data as any).gptsovitsPromptText || '',
+            promptLang: (data as any).gptsovitsPromptLang || '',
+            textLang: data.voiceLanguage || DEFAULT_VOICE_LANGUAGE,
+          }
+        }
+      }
+    } catch {
+      // Pinia store 不可用时（非 Tauri/测试环境）返回空值
+    }
+    return { refAudioPath: '', promptText: '', promptLang: '', textLang: DEFAULT_VOICE_LANGUAGE }
   }
 
   /**

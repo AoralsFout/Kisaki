@@ -32,6 +32,25 @@ export interface CosyVoiceRegion {
   workspaceId?: string
 }
 
+/** TTS 提供者 */
+export type TtsProvider = 'none' | 'cosyvoice' | 'gptsovits'
+
+/** GPT-SoVITS 配置 */
+export interface GptSoVitsConfig {
+  /** API 服务地址（默认 http://127.0.0.1:9880） */
+  apiUrl: string
+  /** Top-k 采样 */
+  topK: number
+  /** Top-p 采样 */
+  topP: number
+  /** 采样温度 */
+  temperature: number
+  /** 语速 */
+  speedFactor: number
+  /** 输出格式 */
+  mediaType: 'wav' | 'ogg' | 'aac' | 'raw'
+}
+
 /** 音色信息（从服务端查询返回） */
 export interface VoiceInfo {
   /** 音色 ID */

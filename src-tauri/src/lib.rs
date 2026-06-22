@@ -68,6 +68,8 @@ pub fn run() {
             pack::import_character_pack,
             tts::cosyvoice_tts,
             tts::cosyvoice_tts_stream,
+            tts::gptsovits_tts,
+            tts::gptsovits_tts_stream,
             log::append_log_entries,
             log::read_log_file,
             log::export_log_file,

@@ -89,6 +89,12 @@ export interface CharacterData {
   voiceModel?: string
   /** TTS 合成用语言，如 "ja-JP"、"zh-CN"、"en-US" */
   voiceLanguage?: string
+  /** GPT-SoVITS 参考音频路径（角色级覆盖全局配置） */
+  gptsovitsRefAudio?: string
+  /** GPT-SoVITS 参考音频转录文本（角色级覆盖全局配置） */
+  gptsovitsPromptText?: string
+  /** GPT-SoVITS 参考音频语言（角色级覆盖全局配置） */
+  gptsovitsPromptLang?: string
   /** 默认文本显示语言，如 "zh-CN"、"en-US"、"ja-JP" */
   textLanguage?: string
   /** 渲染方式：静态立绘（默认）或 Live2D 动态模型 */

@@ -13,6 +13,12 @@ export const STORAGE_AI_CONFIG = 'deskpet-ai-config'
 /** CosyVoice TTS 配置（API Key, model, region） */
 export const STORAGE_COSYVOICE_CONFIG = 'deskpet-cosyvoice-config'
 
+/** GPT-SoVITS 本地 TTS 配置 */
+export const STORAGE_GPTSOVITS_CONFIG = 'deskpet-gptsovits-config'
+
+/** TTS 提供者选择：'none' | 'cosyvoice' | 'gptsovits' */
+export const STORAGE_TTS_PROVIDER = 'deskpet-tts-provider'
+
 /** TTS 开关状态 */
 export const STORAGE_TTS_ENABLED = 'deskpet-tts-enabled'
 

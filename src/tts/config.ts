@@ -1,9 +1,9 @@
 /**
- * CosyVoice 配置管理（localStorage）
+ * CosyVoice & GPT-SoVITS 配置管理（localStorage）
  */
-import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion } from './types'
+import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'
 import { createLogger } from '../utils/logger'
-import { STORAGE_COSYVOICE_CONFIG } from '../constants'
+import { STORAGE_COSYVOICE_CONFIG, STORAGE_GPTSOVITS_CONFIG, STORAGE_TTS_PROVIDER } from '../constants'
 import { encrypt, decrypt } from '../utils/crypto'
 
 const log = createLogger('TTSConfig')
@@ -134,4 +134,52 @@ export function getHttpUrl(config: CosyVoiceConfig): string {
     return region.httpUrl.replace('{WorkspaceId}', region.workspaceId)
   }
   return region.httpUrl
+}
+
+// ─── GPT-SoVITS 配置 ───────────────────────────────────
+
+const GPTSOVITS_KEY = STORAGE_GPTSOVITS_CONFIG
+const PROVIDER_KEY = STORAGE_TTS_PROVIDER
+
+export const DEFAULT_GPTSOVITS_CONFIG: GptSoVitsConfig = {
+  apiUrl: 'http://127.0.0.1:9880',
+  topK: 15,
+  topP: 1.0,
+  temperature: 1.0,
+  speedFactor: 1.0,
+  mediaType: 'ogg',
+}
+
+export function loadGptSoVitsConfig(): GptSoVitsConfig {
+  try {
+    const raw = localStorage.getItem(GPTSOVITS_KEY)
+    if (raw) {
+      return { ...DEFAULT_GPTSOVITS_CONFIG, ...JSON.parse(raw) } as GptSoVitsConfig
+    }
+  } catch { /* ignore */ }
+  return { ...DEFAULT_GPTSOVITS_CONFIG }
+}
+
+export function saveGptSoVitsConfig(config: GptSoVitsConfig) {
+  localStorage.setItem(GPTSOVITS_KEY, JSON.stringify(config))
+  log.debug('GPT-SoVITS 配置已保存 (apiUrl: %s)', config.apiUrl)
+}
+
+export function isGptSoVitsConfigValid(config: GptSoVitsConfig): boolean {
+  return Boolean(config.apiUrl)
+}
+
+/** 获取当前 TTS 提供者 */
+export function getTtsProvider(): TtsProvider {
+  try {
+    const raw = localStorage.getItem(PROVIDER_KEY)
+    if (raw === 'none' || raw === 'cosyvoice' || raw === 'gptsovits') return raw
+  } catch { /* ignore */ }
+  return 'none'  // 默认不使用 TTS
+}
+
+/** 设置当前 TTS 提供者 */
+export function setTtsProvider(provider: TtsProvider) {
+  localStorage.setItem(PROVIDER_KEY, provider)
+  log.debug('TTS 提供者已切换: %s', provider)
 }

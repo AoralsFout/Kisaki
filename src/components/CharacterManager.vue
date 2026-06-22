@@ -2,13 +2,13 @@
 /**
  * 角色管理 - 角色列表 + 编辑器
  */
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache } from '../character/loader'
 import { buildCharacterJson, type CharacterEdits } from '../character/characterJson'
-import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid } from '../tts'
+import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid, getTtsProvider } from '../tts'
 import { createLogger } from '../utils/logger'
 import { invoke } from '@tauri-apps/api/core'
 import { save, open } from '@tauri-apps/plugin-dialog'
@@ -28,6 +28,16 @@ import type { Live2DManifest, Live2DConfig } from '../character'
 import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
 
 const charStore = useCharacterStore()
+const ttsProvider = ref(getTtsProvider())
+
+// 监听 TTS 提供者变更（跨窗口）；组件卸载时移除，避免监听器泄漏
+const onTtsProviderStorage = (e: StorageEvent) => {
+  if (e.key === 'deskpet-tts-provider') {
+    ttsProvider.value = getTtsProvider()
+  }
+}
+onMounted(() => window.addEventListener('storage', onTtsProviderStorage))
+onUnmounted(() => window.removeEventListener('storage', onTtsProviderStorage))
 
 const { t } = useI18n()
 
@@ -88,6 +98,24 @@ const selectedVoice = ref('')
 const selectedVoiceModel = ref('')
 const selectedVoiceLang = ref(DEFAULT_VOICE_LANGUAGE)
 const selectedTextLang = ref(DEFAULT_TEXT_LANGUAGE)
+
+// GPT-SoVITS 角色级覆盖
+const gsRefAudio = ref('')
+const gsPromptText = ref('')
+const gsPromptLang = ref('')
+
+/** 文件选择：参考音频 */
+async function pickRefAudio() {
+  const picked = await open({
+    title: t('character.mgr.gptsovitsPickAudio'),
+    multiple: false,
+    filters: [{ name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a'] }],
+  })
+  if (typeof picked === 'string') {
+    gsRefAudio.value = picked
+    markChanged()
+  }
+}
 
 // 音色试听
 const voicePreviewing = ref(false)
@@ -255,6 +283,9 @@ function loadData() {
   selectedVoiceModel.value = data.voiceModel ?? ''
   selectedVoiceLang.value = data.voiceLanguage || 'ja-JP'
   selectedTextLang.value = data.textLanguage || 'zh-CN'
+  gsRefAudio.value = (data as any).gptsovitsRefAudio ?? ''
+  gsPromptText.value = (data as any).gptsovitsPromptText ?? ''
+  gsPromptLang.value = (data as any).gptsovitsPromptLang || 'ja-JP'
   editFile.value = null
   if (charStore.render === 'live2d') {
     editableLive2dConfig.value = JSON.parse(JSON.stringify(data.live2d ?? { model: '' }))
@@ -492,6 +523,11 @@ async function saveAll() {
     voiceModel: selectedVoiceModel.value || undefined,
     voiceLanguage: selectedVoiceLang.value,
     textLanguage: selectedTextLang.value,
+    // 不加 `|| undefined`：传原始空串，buildCharacterJson 才能区分「未编辑」(undefined)
+    // 与「清空」('')，让用户清空输入框时真正删除该字段（否则会保留旧值，无法清空）
+    gptsovitsRefAudio: gsRefAudio.value,
+    gptsovitsPromptText: gsPromptText.value,
+    gptsovitsPromptLang: gsPromptLang.value,
   }
   if (render === 'illustration') {
     edits.poses = [...editablePoses.value]
@@ -764,8 +800,8 @@ async function importPack() {
           </section>
           </template>
 
-          <!-- 语音合成音色 -->
-          <section class="mgr-section">
+          <!-- 语音合成：CosyVoice -->
+          <section v-if="ttsProvider === 'cosyvoice'" class="mgr-section">
             <h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.voiceTitle') }}</h3>
             <div class="voice-select-row">
               <select v-model="selectedVoice" class="voice-select" @change="markChanged">
@@ -797,7 +833,43 @@ async function importPack() {
             <p v-else-if="selectedVoice" class="voice-hint-ok">
               <i class="fas fa-check-circle"></i> {{ t('character.mgr.voiceSelectedHint') }}
             </p>
+          </section>
 
+          <!-- 语音合成：GPT-SoVITS -->
+          <section v-if="ttsProvider === 'gptsovits'" class="mgr-section">
+            <h3 class="mgr-label"><i class="fas fa-server"></i> GPT-SoVITS</h3>
+            <p class="mgr-desc">{{ t('character.mgr.gptsovitsDesc') }}</p>
+
+            <div class="form-group gs-field">
+              <label class="lang-label">{{ t('character.mgr.gptsovitsRefAudio') }}</label>
+              <div class="file-picker-row">
+                <input v-model="gsRefAudio" class="form-input file-picker-input" type="text" readonly
+                  :placeholder="t('character.mgr.gptsovitsRefAudioPlaceholder')" @click="pickRefAudio" />
+                <button class="btn-browse" @click="pickRefAudio" :title="t('character.mgr.gptsovitsPickAudio')">
+                  <i class="fas fa-folder-open"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group gs-field">
+              <label class="lang-label">{{ t('character.mgr.gptsovitsPromptText') }}</label>
+              <input v-model="gsPromptText" class="form-input" type="text"
+                :placeholder="t('character.mgr.gptsovitsPromptTextPlaceholder')" @change="markChanged" />
+            </div>
+
+            <div class="form-group gs-field">
+              <label class="lang-label">{{ t('character.mgr.gptsovitsPromptLang') }}</label>
+              <select v-model="gsPromptLang" class="voice-select" @change="markChanged">
+                <option value="ja-JP">日本語</option>
+                <option value="zh-CN">中文</option>
+                <option value="en-US">English</option>
+                <option value="ko-KR">한국어</option>
+              </select>
+            </div>
+          </section>
+
+          <!-- 语音合成：语言设置（两引擎共用，none 时隐藏） -->
+          <section v-if="ttsProvider !== 'none'" class="mgr-section">
             <div class="lang-row">
               <div class="lang-field">
                 <label class="lang-label">{{ t('character.mgr.ttsLang') }}</label>
@@ -1735,5 +1807,49 @@ async function importPack() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── GPT-SoVITS 角色配置字段间距 ── */
+.gs-field {
+  margin-bottom: 12px;
+}
+
+/* ── 文件选择器（参考音频） ── */
+.file-picker-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.file-picker-input {
+  flex: 1;
+  cursor: pointer;
+  background: #16162a !important;
+  color: #888 !important;
+}
+
+.file-picker-input:not(:placeholder-shown) {
+  color: #e0e0e0 !important;
+}
+
+.btn-browse {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #3a3a5c;
+  border-radius: 8px;
+  background: #1e1e38;
+  color: #a0a0c0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-browse:hover {
+  border-color: #7c5cfc;
+  color: #b8a8ff;
+  background: #2a2050;
 }
 </style>

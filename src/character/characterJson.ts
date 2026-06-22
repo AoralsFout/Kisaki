@@ -13,6 +13,10 @@ export interface CharacterEdits {
   voiceModel?: string
   voiceLanguage: string
   textLanguage: string
+  // —— GPT-SoVITS 角色级覆盖 ——
+  gptsovitsRefAudio?: string
+  gptsovitsPromptText?: string
+  gptsovitsPromptLang?: string
   // —— 立绘角色字段 ——
   poses?: string[]
   emotions?: string[]
@@ -37,6 +41,16 @@ export function buildCharacterJson(
   out.voiceModel = edits.voiceModel || undefined
   out.voiceLanguage = edits.voiceLanguage
   out.textLanguage = edits.textLanguage
+  // GPT-SoVITS 角色级覆盖（显式 undefined 时删除旧值）
+  if (edits.gptsovitsRefAudio !== undefined) {
+    out.gptsovitsRefAudio = edits.gptsovitsRefAudio || undefined
+  }
+  if (edits.gptsovitsPromptText !== undefined) {
+    out.gptsovitsPromptText = edits.gptsovitsPromptText || undefined
+  }
+  if (edits.gptsovitsPromptLang !== undefined) {
+    out.gptsovitsPromptLang = edits.gptsovitsPromptLang || undefined
+  }
 
   if (render === 'live2d') {
     out.live2d = { ...(data.live2d ?? {}), ...(edits.live2d ?? {}) }
