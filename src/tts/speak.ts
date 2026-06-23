@@ -136,12 +136,8 @@ export class TtsEngine {
     this.currentController = controller
 
     if (provider === 'gptsovits') {
-      // Live2D 口型：注册了 voicePlayer 时走批合成（含口型驱动），否则走 PCM 流式
-      if (this.voicePlayer) {
-        await this.speakWithGptSoVits(text, controller)
-      } else {
-        await this.speakGptSoVitsStream(text, controller)
-      }
+      // Live2D 角色暂不应用口型同步，统一走 PCM 流式输出（低延迟，无口型驱动）
+      await this.speakGptSoVitsStream(text, controller)
       return
     }
 
