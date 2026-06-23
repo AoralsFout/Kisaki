@@ -86,7 +86,7 @@ export async function synthesizeWithGptSoVits(
   searchParams.set('ref_audio_path', refAudioPath)
   if (params.promptText) searchParams.set('prompt_text', params.promptText)
   if (promptLang) searchParams.set('prompt_lang', promptLang)
-  searchParams.set('media_type', config.mediaType)
+  searchParams.set('media_type', 'wav')
   searchParams.set('streaming_mode', '0')
   searchParams.set('top_k', String(config.topK))
   searchParams.set('top_p', String(config.topP))

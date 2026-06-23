@@ -171,8 +171,6 @@ export default {
       gptsovitsTopP: 'Top-P',
       gptsovitsTemperature: '溫度',
       gptsovitsSpeed: '語速',
-      gptsovitsMediaType: '輸出格式',
-      gptsovitsMediaTypeHint: '僅批次處理模式生效；串流模式固定使用 WAV。',
       gptsovitsRefAudioNote: '參考音訊路徑請在角色管理器中為每個角色單獨設定。',
       // 共用
       displayLang: '顯示語言',

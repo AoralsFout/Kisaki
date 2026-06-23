@@ -171,8 +171,6 @@ export default {
       gptsovitsTopP: 'Top-P',
       gptsovitsTemperature: '温度',
       gptsovitsSpeed: '速度係数',
-      gptsovitsMediaType: '出力形式',
-      gptsovitsMediaTypeHint: 'バッチモードのみ有効。ストリーミングは常に WAV を使用します。',
       gptsovitsRefAudioNote: '参照音声のパスはキャラクター管理画面で個別に設定してください。',
       // 共通
       displayLang: '表示言語',

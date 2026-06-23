@@ -147,7 +147,6 @@ export const DEFAULT_GPTSOVITS_CONFIG: GptSoVitsConfig = {
   topP: 1.0,
   temperature: 1.0,
   speedFactor: 1.0,
-  mediaType: 'ogg',
 }
 
 export function loadGptSoVitsConfig(): GptSoVitsConfig {

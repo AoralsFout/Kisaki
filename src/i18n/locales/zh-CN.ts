@@ -174,8 +174,6 @@ export default {
       gptsovitsTopP: 'Top-P',
       gptsovitsTemperature: '温度',
       gptsovitsSpeed: '语速',
-      gptsovitsMediaType: '输出格式',
-      gptsovitsMediaTypeHint: '仅批处理模式生效；流式模式固定使用 WAV。',
       gptsovitsRefAudioNote: '参考音频路径请在角色管理器中为每个角色单独设置。',
       // 共用
       displayLang: '显示语言',

@@ -171,8 +171,6 @@ export default {
       gptsovitsTopP: 'Top-P',
       gptsovitsTemperature: 'Temperature',
       gptsovitsSpeed: 'Speed factor',
-      gptsovitsMediaType: 'Output format',
-      gptsovitsMediaTypeHint: 'Applies to batch mode only; streaming always uses WAV.',
       gptsovitsRefAudioNote: 'Set the reference audio path per character in the Character Manager.',
       // Common
       displayLang: 'Display language',

@@ -47,8 +47,6 @@ export interface GptSoVitsConfig {
   temperature: number
   /** 语速 */
   speedFactor: number
-  /** 输出格式 */
-  mediaType: 'wav' | 'ogg' | 'aac' | 'raw'
 }
 
 /** 音色信息（从服务端查询返回） */

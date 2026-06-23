@@ -246,16 +246,6 @@ function handleGsSave() {
             <label class="form-label">{{ t('settings.tts.gptsovitsSpeed') }}</label>
             <input v-model.number="gsConfig.speedFactor" class="form-input" type="number" min="0.5" max="2.0" step="0.1" />
           </div>
-          <div class="form-group form-group-half">
-            <label class="form-label">{{ t('settings.tts.gptsovitsMediaType') }}</label>
-            <select v-model="gsConfig.mediaType" class="form-select">
-              <option value="wav">WAV</option>
-              <option value="ogg">OGG</option>
-              <option value="aac">AAC</option>
-              <option value="raw">RAW</option>
-            </select>
-            <p class="form-hint">{{ t('settings.tts.gptsovitsMediaTypeHint') }}</p>
-          </div>
         </div>
       </template>
 
