@@ -31,8 +31,3 @@ tokio = { version = "1", features = ["rt", "net", "time"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream"] }
 tauri-plugin-dialog = "2.7.1"
 zip = "2"
-
-# 全局光标位置（鼠标穿透命中测试用）——仅 Windows，按 feature 裁剪以控制体积
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
-
