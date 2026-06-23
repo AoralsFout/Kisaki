@@ -6,6 +6,7 @@ mod fileio;
 mod log;
 mod pack;
 mod path;
+mod tray;
 mod tts;
 
 use std::path::PathBuf;
@@ -51,6 +52,9 @@ pub fn run() {
             // 收不到 mousemove，无法判断何时切回，故独立轮询全局光标位置 emit
             // 给前端，由前端命中测试后切换 set_ignore_cursor_events。仅 Windows。
             cursor::start_polling(app.handle().clone());
+
+            // ─── 系统托盘（无边框窗口的跨平台唤回 / 退出入口） ───
+            tray::setup_tray(app.handle())?;
 
             Ok(())
         })
