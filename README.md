@@ -23,6 +23,15 @@
 - [Rust](https://www.rust-lang.org/tools/install)
 - Windows / macOS / Linux
 
+> **Linux 额外依赖**：需安装 Tauri 的 WebView 与系统托盘所需的系统库（Debian/Ubuntu）：
+>
+> ```bash
+> sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+>   libayatana-appindicator3-dev libxdo-dev libssl-dev build-essential
+> ```
+>
+> 鼠标穿透依赖全局光标坐标，在 **X11** 下可用；**Wayland** 因协议限制无法获取全局光标，穿透不可用（已知限制）。
+
 ### 安装 & 运行
 
 ```bash
@@ -47,7 +56,9 @@ npm run tauri build
 | 环境 | 角色目录 |
 |------|---------|
 | 开发（`tauri dev`） | 项目根 `characters/`（随 git 追踪，方便开发调试） |
-| 生产（已安装） | 用户数据目录，Windows 为 `%APPDATA%\Roaming\com.kisaki.app\characters` |
+| 生产 · Windows | `%APPDATA%\com.kisaki.app\characters`（即 `C:\Users\<用户>\AppData\Roaming\com.kisaki.app\characters`） |
+| 生产 · macOS | `~/Library/Application Support/com.kisaki.app/characters` |
+| 生产 · Linux | `$XDG_DATA_HOME/com.kisaki.app/characters`（默认 `~/.local/share/com.kisaki.app/characters`） |
 
 > 生产环境首次启动时角色目录为空，桌宠会提示「还没有角色」。点击「添加角色」进入 **设置 → 角色**，导入一个角色包或新建角色即可开始聊天。应用内的所有改动都保存在用户数据目录，升级或重装不会丢失。
 

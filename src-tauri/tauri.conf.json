@@ -38,6 +38,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }
