@@ -84,6 +84,22 @@ jobs:
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
 
+      # 确保 Release 存在（首次上传前创建，后续幂等）
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if ! gh release view "$TAG" &>/dev/null; then
+            echo "Creating release $TAG ..."
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes
+          else
+            echo "Release $TAG already exists."
+          fi
+
       - name: Upload artifacts to Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,10 +107,10 @@ jobs:
         run: |
           set -e
           TAG="${{ github.ref_name }}"
-          echo "Uploading artifacts to Release: $TAG ($GH_REPO)"
+          echo "Uploading artifacts to Release: $TAG"
           for dir in kisaki-*/; do
             echo "  ── $dir ──"
-            find "$dir" -type f -print | while read -r file; do
+            find "$dir" -type f | while read -r file; do
               echo "    ↑ ${file#$dir}"
               gh release upload "$TAG" "$file" --clobber
             done
