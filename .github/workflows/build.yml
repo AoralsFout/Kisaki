@@ -87,12 +87,16 @@ jobs:
       - name: Upload artifacts to Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -e
           TAG="${{ github.ref_name }}"
-          echo "Uploading artifacts to Release: $TAG"
-          find . -path './kisaki-*/' -prune -o -type f -print | while read -r file; do
-            echo "  ↑ $file"
-            gh release upload "$TAG" "$file" --clobber
+          echo "Uploading artifacts to Release: $TAG ($GH_REPO)"
+          for dir in kisaki-*/; do
+            echo "  ── $dir ──"
+            find "$dir" -type f -print | while read -r file; do
+              echo "    ↑ ${file#$dir}"
+              gh release upload "$TAG" "$file" --clobber
+            done
           done
           echo "✔ All artifacts uploaded to $TAG"
