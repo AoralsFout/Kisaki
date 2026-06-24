@@ -110,7 +110,8 @@ jobs:
           echo "Uploading artifacts to Release: $TAG"
           for dir in kisaki-*/; do
             echo "  ── $dir ──"
-            find "$dir" -type f | while read -r file; do
+            # 只上传最终安装包（排除 AppDir 等中间目录）
+            find "$dir" -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -print | while read -r file; do
               echo "    ↑ ${file#$dir}"
               gh release upload "$TAG" "$file" --clobber
             done
