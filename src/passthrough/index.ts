@@ -13,7 +13,7 @@ import { ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { EVENT_CURSOR_POS, STORAGE_PASSTHROUGH_ENABLED } from '../constants'
-import { getMask, type AlphaMask } from './alphaMask'
+import { getMask, buildMask, type AlphaMask } from './alphaMask'
 import { getLive2DMask } from './live2dMask'
 import { createLogger } from '../utils/logger'
 
@@ -62,7 +62,11 @@ function hitAlphaRect(cx: number, cy: number, r: DOMRect, mask: AlphaMask | unde
  */
 function hitCharacter(cx: number, cy: number): boolean {
   const img = document.querySelector('img.img-base') as HTMLImageElement | null
-  if (img) return hitAlphaRect(cx, cy, img.getBoundingClientRect(), getMask(img.src))
+  if (img) {
+    // 图片未加载完成时无实际可见内容 → 穿透
+    if (!img.complete) return false
+    return hitAlphaRect(cx, cy, img.getBoundingClientRect(), getMask(img.src))
+  }
 
   const canvas = document.querySelector('canvas.live2d-canvas') as HTMLCanvasElement | null
   if (canvas) return hitAlphaRect(cx, cy, canvas.getBoundingClientRect(), getLive2DMask())
@@ -106,6 +110,13 @@ export async function initPassthrough(): Promise<void> {
   } catch (e) {
     log.warn('窗口几何初始化失败（非 Tauri 环境?）: %s', (e as Error).message)
     return
+  }
+
+  // 预构建立绘 alpha 掩码：在注册光标监听器前确保 mask 就绪，
+  // 避免首次启动时 mask 异步构建未完成导致穿透/实体误判。
+  const initialImg = document.querySelector('img.img-base') as HTMLImageElement | null
+  if (initialImg?.src) {
+    await buildMask(initialImg.src)
   }
 
   await listen<{ x: number; y: number }>(EVENT_CURSOR_POS, ({ payload }) => {

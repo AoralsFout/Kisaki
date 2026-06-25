@@ -14,7 +14,7 @@
     "idleMotionGroup": "Zhuangkeai",
     "expressions": {
       "Chijing": "吃惊",
-      "Dazhihui": "大智慧",
+      "Dazhihui": "呆",
       "Mimiyan": "眯眯眼",
       "Saihong": "腮红",
       "Yanjing": "眼镜",
@@ -42,5 +42,8 @@
   "images": [],
   "voiceLanguage": "ja-JP",
   "textLanguage": "zh-CN",
-  "voice": "cosyvoice-v3-flash-bailian-c6a1efc801334c73badc403bd87f2a30"
+  "voice": "cosyvoice-v3-flash-bailian-c6a1efc801334c73badc403bd87f2a30",
+  "gptsovitsRefAudio": "E:\\AI\\GPT-SoVITS-v2pro-20250604\\samples\\miku_sample_03.wav",
+  "gptsovitsPromptText": "来てくれてありがとう、出番を待ってたよ、歌いたくて、うずうずしてたんだ、嬉しい、ありがとう、次の曲も、よろしくね",
+  "gptsovitsPromptLang": "ja-JP"
 }

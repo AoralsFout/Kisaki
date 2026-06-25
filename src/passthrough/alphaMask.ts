@@ -25,6 +25,8 @@ export interface AlphaMask {
 
 /** url → 掩码缓存。值为 'pending' 表示构建中，防止重复构建 */
 const cache = new Map<string, AlphaMask | 'pending'>()
+/** 正在执行中的构建 Promise，供重复调用者等待同一 URL 的构建完成 */
+const pendingPromises = new Map<string, Promise<void>>()
 
 /** 取已构建的掩码（构建中或未构建返回 undefined → 命中退回矩形） */
 export function getMask(url: string): AlphaMask | undefined {
@@ -32,10 +34,31 @@ export function getMask(url: string): AlphaMask | undefined {
   return m && m !== 'pending' ? m : undefined
 }
 
-/** 构建并缓存某图的 alpha 掩码（幂等；失败则删除占位，下次可重试） */
+/**
+ * 构建并缓存某图的 alpha 掩码（幂等）。
+ * - 已缓存（含构建中）：若同 URL 有正在执行的构建则等待它完成，否则直接返回。
+ * - 未缓存：启动构建，返回 Promise，并发调用者可复用同一 Promise。
+ */
 export async function buildMask(url: string): Promise<void> {
-  if (!url || cache.has(url)) return
+  if (!url) return
+  // 已有缓存（含 'pending'）→ 若有在途构建则等它完成
+  if (cache.has(url)) {
+    const p = pendingPromises.get(url)
+    if (p) await p
+    return
+  }
+
   cache.set(url, 'pending')
+  const promise = _build(url)
+  pendingPromises.set(url, promise)
+  try {
+    await promise
+  } finally {
+    pendingPromises.delete(url)
+  }
+}
+
+async function _build(url: string): Promise<void> {
   try {
     const resp = await fetch(url)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)

@@ -529,5 +529,8 @@
   "voiceLanguage": "ja-JP",
   "textLanguage": "zh-CN",
   "voice": "cosyvoice-v3-flash-bailian-4d47d040ea9e4568898aa83dbfbf0bed",
-  "render": "illustration"
+  "render": "illustration",
+  "gptsovitsRefAudio": "E:\\AI\\GPT-SoVITS-v2pro-20250604\\samples\\Kisaki_sample.wav",
+  "gptsovitsPromptText": "思えば、運転士の方には申し訳ないことをしてしまいました。それだけが気がかりです。",
+  "gptsovitsPromptLang": "ja-JP"
 }
