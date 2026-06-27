@@ -142,6 +142,7 @@ export default {
       title: 'Web Search',
       desc: 'Let the AI search the web for real-time info when needed. Keys are stored locally (encrypted).',
       enable: 'Enable web search',
+      enableDesc: 'Let the AI fetch real-time info from the web when needed',
       provider: 'Search provider',
       apiKey: 'API Key',
       baseURL: 'Instance URL',

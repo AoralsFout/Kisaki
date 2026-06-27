@@ -385,21 +385,41 @@ function closeWindow() {
   background: #4a7aff;
 }
 
-/* ---- 开关行（复选框 + 文字） ---- */
-.switch-row {
+/* ---- Provider 选择 Tab（互斥选择：TTS 引擎 / 搜索服务） ---- */
+.provider-tabs {
   display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: #ccc;
-  cursor: pointer;
+  margin-top: 4px;
 }
 
-/* ---- 字段提示文字 ---- */
-.field-hint {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: #777;
+.provider-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
+  background: #1e1e38;
+  color: #a0a0c0;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.provider-tab:hover {
+  border-color: #4a7aff;
+  color: #4a7aff;
+  background: rgba(74, 122, 255, 0.1);
+}
+
+.provider-tab.active {
+  border-color: #4a7aff;
+  background: rgba(74, 122, 255, 0.15);
+  color: #9bb4ff;
+  font-weight: 600;
 }
 
 /* ---- 操作按钮 ---- */

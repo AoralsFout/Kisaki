@@ -142,6 +142,7 @@ export default {
       title: 'ウェブ検索',
       desc: '必要に応じて AI がウェブで最新情報を検索します。Key はローカルに暗号化保存されます。',
       enable: 'ウェブ検索を有効化',
+      enableDesc: '必要に応じて AI がウェブから最新情報を取得できるようにします',
       provider: '検索サービス',
       apiKey: 'API Key',
       baseURL: 'インスタンス URL',

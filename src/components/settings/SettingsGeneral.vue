@@ -24,7 +24,7 @@ function onAutoExecChange() {
 
 <template>
   <div class="content-section">
-    <h2 class="section-title">{{ t('settings.general.title') }}</h2>
+    <h2 class="section-title"><i class="fas fa-sliders"></i> {{ t('settings.general.title') }}</h2>
     <p class="section-desc">{{ t('settings.general.desc') }}</p>
 
     <div class="form-group">

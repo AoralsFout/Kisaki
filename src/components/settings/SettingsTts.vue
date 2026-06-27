@@ -301,41 +301,6 @@ function handleGsSave() {
   margin-top: 8px;
 }
 
-/* ── Provider Tabs ── */
-.provider-tabs {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.provider-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 16px;
-  border: 1px solid #3a3a5c;
-  border-radius: 8px;
-  background: #1e1e38;
-  color: #a0a0c0;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-}
-
-.provider-tab:hover {
-  border-color: #5a5a8c;
-  color: #d0d0e0;
-}
-
-.provider-tab.active {
-  border-color: #7c5cfc;
-  background: #2a2050;
-  color: #b8a8ff;
-  font-weight: 600;
-}
-
 /* ── Form row ── */
 .form-row {
   display: flex;

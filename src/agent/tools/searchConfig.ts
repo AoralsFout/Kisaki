@@ -35,10 +35,10 @@ export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
 }
 
 /** 提供方展示信息（供设置 UI 使用） */
-export const SEARCH_PROVIDERS: { value: SearchProvider; label: string; needsKey: boolean; needsBaseURL: boolean }[] = [
-  { value: 'tavily', label: 'Tavily', needsKey: true, needsBaseURL: false },
-  { value: 'brave', label: 'Brave Search', needsKey: true, needsBaseURL: false },
-  { value: 'searxng', label: 'SearXNG（自建）', needsKey: false, needsBaseURL: true },
+export const SEARCH_PROVIDERS: { value: SearchProvider; label: string; icon: string; needsKey: boolean; needsBaseURL: boolean }[] = [
+  { value: 'tavily', label: 'Tavily', icon: 'fa-bolt', needsKey: true, needsBaseURL: false },
+  { value: 'brave', label: 'Brave Search', icon: 'fa-shield-halved', needsKey: true, needsBaseURL: false },
+  { value: 'searxng', label: 'SearXNG（自建）', icon: 'fa-server', needsKey: false, needsBaseURL: true },
 ]
 
 /** 解密后的 API Key 缓存（避免每次搜索都重新解密） */

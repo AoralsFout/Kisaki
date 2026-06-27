@@ -145,6 +145,7 @@ export default {
       title: '联网搜索',
       desc: '让 AI 在需要时联网检索实时信息。Key 仅保存在本地（加密）。',
       enable: '启用联网搜索',
+      enableDesc: '允许 AI 在需要时联网检索实时信息',
       provider: '搜索服务',
       apiKey: 'API Key',
       baseURL: '实例地址',

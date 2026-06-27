@@ -142,6 +142,7 @@ export default {
       title: '聯網搜尋',
       desc: '讓 AI 在需要時聯網檢索即時資訊。Key 僅儲存在本機（加密）。',
       enable: '啟用聯網搜尋',
+      enableDesc: '允許 AI 在需要時聯網檢索即時資訊',
       provider: '搜尋服務',
       apiKey: 'API Key',
       baseURL: '實例位址',
