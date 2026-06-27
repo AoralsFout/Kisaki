@@ -138,6 +138,17 @@ export default {
       model: 'Model',
       configOk: 'Configuration valid',
     },
+    search: {
+      title: 'Web Search',
+      desc: 'Let the AI search the web for real-time info when needed. Keys are stored locally (encrypted).',
+      enable: 'Enable web search',
+      provider: 'Search provider',
+      apiKey: 'API Key',
+      baseURL: 'Instance URL',
+      baseURLPlaceholder: 'http://127.0.0.1:8080',
+      keyHint: 'Get a Tavily key at tavily.com, or a Brave key at brave.com/search/api',
+      configOk: 'Configuration valid',
+    },
     tts: {
       title: 'Voice Synthesis',
       desc: 'Select a TTS engine and configure parameters for character voice playback.',

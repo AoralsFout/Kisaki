@@ -379,6 +379,29 @@ function closeWindow() {
   background: rgba(74, 122, 255, 0.1);
 }
 
+.preset-btn.active {
+  border-color: #4a7aff;
+  color: #fff;
+  background: #4a7aff;
+}
+
+/* ---- 开关行（复选框 + 文字） ---- */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+/* ---- 字段提示文字 ---- */
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #777;
+}
+
 /* ---- 操作按钮 ---- */
 .form-actions {
   display: flex;

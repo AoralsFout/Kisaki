@@ -138,6 +138,17 @@ export default {
       model: '模型',
       configOk: '設定可用',
     },
+    search: {
+      title: '聯網搜尋',
+      desc: '讓 AI 在需要時聯網檢索即時資訊。Key 僅儲存在本機（加密）。',
+      enable: '啟用聯網搜尋',
+      provider: '搜尋服務',
+      apiKey: 'API Key',
+      baseURL: '實例位址',
+      baseURLPlaceholder: 'http://127.0.0.1:8080',
+      keyHint: 'Tavily 於 tavily.com 申請，Brave 於 brave.com/search/api 申請',
+      configOk: '設定可用',
+    },
     tts: {
       title: '語音合成',
       desc: '選擇 TTS 引擎並設定參數，用於角色語音朗讀。',

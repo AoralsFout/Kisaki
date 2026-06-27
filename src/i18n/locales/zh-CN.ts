@@ -141,6 +141,17 @@ export default {
       model: '模型',
       configOk: '配置可用',
     },
+    search: {
+      title: '联网搜索',
+      desc: '让 AI 在需要时联网检索实时信息。Key 仅保存在本地（加密）。',
+      enable: '启用联网搜索',
+      provider: '搜索服务',
+      apiKey: 'API Key',
+      baseURL: '实例地址',
+      baseURLPlaceholder: 'http://127.0.0.1:8080',
+      keyHint: 'Tavily 在 tavily.com 申请，Brave 在 brave.com/search/api 申请',
+      configOk: '配置可用',
+    },
     tts: {
       title: '语音合成',
       desc: '选择 TTS 引擎并配置参数，用于角色语音朗读。',

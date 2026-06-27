@@ -138,6 +138,17 @@ export default {
       model: 'モデル',
       configOk: '設定は有効です',
     },
+    search: {
+      title: 'ウェブ検索',
+      desc: '必要に応じて AI がウェブで最新情報を検索します。Key はローカルに暗号化保存されます。',
+      enable: 'ウェブ検索を有効化',
+      provider: '検索サービス',
+      apiKey: 'API Key',
+      baseURL: 'インスタンス URL',
+      baseURLPlaceholder: 'http://127.0.0.1:8080',
+      keyHint: 'Tavily は tavily.com、Brave は brave.com/search/api で取得',
+      configOk: '設定は有効です',
+    },
     tts: {
       title: '音声合成',
       desc: 'TTS エンジンを選択し、キャラクターの音声読み上げのパラメータを設定します。',
