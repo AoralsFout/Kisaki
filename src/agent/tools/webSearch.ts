@@ -7,7 +7,7 @@
  */
 import type { Tool } from '../types'
 import { createLogger } from '../../utils/logger'
-import { loadSearchConfig, isSearchConfigValid, type SearchConfig } from './searchConfig'
+import { loadSearchConfigSecure, isSearchConfigValid, type SearchConfig } from './searchConfig'
 import { searchHttpJson } from './searchHttp'
 
 const log = createLogger('ToolWebSearch')
@@ -53,7 +53,9 @@ export const webSearchTool: Tool = {
     },
   },
   handler: async (args) => {
-    const config = loadSearchConfig()
+    // 用 secure 版：主窗口重启后内存解密缓存为空，必须在此解密，否则会把
+    // localStorage 里的「加密 Key」原样发出去 → 搜索服务返回 401。
+    const config = await loadSearchConfigSecure()
     if (!isSearchConfigValid(config)) {
       return '联网搜索未启用或未配置，请在「设置 → API」中开启并填写搜索服务信息'
     }

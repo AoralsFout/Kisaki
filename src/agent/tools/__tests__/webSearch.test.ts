@@ -12,10 +12,10 @@ vi.mock('../searchHttp', () => ({
   searchHttpJson: (...args: unknown[]) => httpMock(...args),
 }))
 
-// ── mock 配置（loadSearchConfig 可变，isSearchConfigValid 用真实规则） ──
+// ── mock 配置（loadSearchConfigSecure 可变，isSearchConfigValid 用真实规则） ──
 let mockConfig: { provider: string; apiKey: string; baseURL: string; enabled: boolean }
 vi.mock('../searchConfig', () => ({
-  loadSearchConfig: () => mockConfig,
+  loadSearchConfigSecure: () => Promise.resolve(mockConfig),
   isSearchConfigValid: (c: typeof mockConfig) => {
     if (!c?.enabled) return false
     if (c.provider === 'searxng') return Boolean(c.baseURL)
