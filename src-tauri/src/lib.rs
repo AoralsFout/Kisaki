@@ -8,6 +8,7 @@ mod pack;
 mod path;
 mod tray;
 mod tts;
+mod websearch;
 
 use std::path::PathBuf;
 
@@ -91,6 +92,7 @@ pub fn run() {
             backup::agent_checkpoint_backup,
             backup::agent_checkpoint_rollback,
             backup::agent_checkpoint_clear_session,
+            websearch::web_search_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

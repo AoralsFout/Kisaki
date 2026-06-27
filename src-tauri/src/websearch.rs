@@ -1,0 +1,61 @@
+//! 联网搜索 HTTP 转发
+//!
+//! WebView 的 `fetch` 受 CORS 限制，多数搜索 API（Brave / SearXNG 实例）不放开
+//! 浏览器跨域。此命令用 reqwest 在 Rust 侧转发请求，避开 CORS，同时让 API Key
+//! 不经过 WebView 网络栈。前端 `searchHttp.ts` 优先调用本命令。
+
+use std::collections::HashMap;
+use std::time::Duration;
+
+/// 转发一次搜索 HTTP 请求，返回响应体文本（JSON 字符串）。
+///
+/// - `method`：GET / POST（大小写不敏感，默认 GET）
+/// - `headers`：附加请求头（如 Authorization、X-Subscription-Token）
+/// - `body`：POST 的 JSON 字符串
+#[tauri::command]
+pub(crate) async fn web_search_fetch(
+    url: String,
+    method: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
+
+    let method = method.unwrap_or_else(|| "GET".to_string());
+    let mut req = match method.to_uppercase().as_str() {
+        "POST" => client.post(&url),
+        _ => client.get(&url),
+    };
+
+    if let Some(h) = headers {
+        for (k, v) in &h {
+            req = req.header(k, v);
+        }
+    }
+    if let Some(b) = body {
+        req = req
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(b);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("搜索请求失败: {}", e))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    if !status.is_success() {
+        let snippet: String = text.chars().take(200).collect();
+        return Err(format!("HTTP {}: {}", status.as_u16(), snippet));
+    }
+
+    Ok(text)
+}
