@@ -36,27 +36,35 @@ export interface SearchHttpRequest {
 /**
  * 发送搜索请求并返回解析后的 JSON。
  * 失败（非 2xx / 网络错误 / 超时）抛出 Error，由工具 handler 兜底。
+ *
+ * Tauri 环境：只走 Rust 转发并直接抛出其错误 —— 不回退 fetch，
+ * 因为 WebView fetch 对多数 provider 必然撞 CORS，回退只会把真实的
+ * 后端错误（DNS/TLS/代理/超时）掩盖成无意义的 "Failed to fetch"。
  */
 export async function searchHttpJson<T = any>(req: SearchHttpRequest): Promise<T> {
   if (isTauri()) {
-    try {
-      return await viaInvoke<T>(req)
-    } catch (err) {
-      // Rust 转发失败（命令缺失等）→ 回退 fetch，最大化可用性
-      log.warn('Rust 转发失败，回退 fetch: %s', (err as Error).message)
-    }
+    return viaInvoke<T>(req)
   }
   return viaFetch<T>(req)
 }
 
 /** 经 Tauri Rust 命令转发 */
 async function viaInvoke<T>(req: SearchHttpRequest): Promise<T> {
-  const text = await invoke<string>('web_search_fetch', {
-    url: req.url,
-    method: req.method ?? 'GET',
-    headers: req.headers ?? {},
-    body: req.body !== undefined ? JSON.stringify(req.body) : null,
-  })
+  let text: string
+  try {
+    text = await invoke<string>('web_search_fetch', {
+      url: req.url,
+      method: req.method ?? 'GET',
+      headers: req.headers ?? {},
+      body: req.body !== undefined ? JSON.stringify(req.body) : null,
+    })
+  } catch (err) {
+    // 注意：invoke 失败时 reject 的是 Rust 端 Err(String)，是「字符串」而非 Error 对象，
+    // 直接读 .message 会得到 undefined。这里统一归一化为可读文本再抛出。
+    const msg = typeof err === 'string' ? err : ((err as Error)?.message ?? String(err))
+    log.warn('Rust 转发失败: %s', msg)
+    throw new Error(msg)
+  }
   return JSON.parse(text) as T
 }
 

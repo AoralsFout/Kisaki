@@ -7,6 +7,19 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// 把错误的 source 链拼成单行文本，便于前端/日志一眼定位根因
+/// （如 "error sending request <- tcp connect error <- 由于目标计算机积极拒绝…"）。
+fn err_chain(e: &dyn std::error::Error) -> String {
+    let mut s = e.to_string();
+    let mut src = e.source();
+    while let Some(inner) = src {
+        s.push_str(" <- ");
+        s.push_str(&inner.to_string());
+        src = inner.source();
+    }
+    s
+}
+
 /// 转发一次搜索 HTTP 请求，返回响应体文本（JSON 字符串）。
 ///
 /// - `method`：GET / POST（大小写不敏感，默认 GET）
@@ -22,7 +35,7 @@ pub(crate) async fn web_search_fetch(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", err_chain(&e)))?;
 
     let method = method.unwrap_or_else(|| "GET".to_string());
     let mut req = match method.to_uppercase().as_str() {
@@ -44,13 +57,13 @@ pub(crate) async fn web_search_fetch(
     let resp = req
         .send()
         .await
-        .map_err(|e| format!("搜索请求失败: {}", e))?;
+        .map_err(|e| format!("搜索请求失败: {}", err_chain(&e)))?;
 
     let status = resp.status();
     let text = resp
         .text()
         .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        .map_err(|e| format!("读取响应失败: {}", err_chain(&e)))?;
 
     if !status.is_success() {
         let snippet: String = text.chars().take(200).collect();
