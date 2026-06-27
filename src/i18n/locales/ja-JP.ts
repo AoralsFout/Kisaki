@@ -124,6 +124,7 @@ export default {
     nav: {
       general: '一般',
       api: 'API 設定',
+      search: 'ウェブ検索',
       character: 'キャラ管理',
       tts: '音声合成',
       dev: 'Dev',

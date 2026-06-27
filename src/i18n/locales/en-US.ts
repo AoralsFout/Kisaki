@@ -124,6 +124,7 @@ export default {
     nav: {
       general: 'General',
       api: 'API',
+      search: 'Web Search',
       character: 'Characters',
       tts: 'Voice',
       dev: 'Dev',

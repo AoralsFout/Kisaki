@@ -124,6 +124,7 @@ export default {
     nav: {
       general: '一般',
       api: 'API 設定',
+      search: '聯網搜尋',
       character: '角色管理',
       tts: '語音合成',
       dev: 'Dev',

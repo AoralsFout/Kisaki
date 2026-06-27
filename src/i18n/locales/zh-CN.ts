@@ -127,6 +127,7 @@ export default {
     nav: {
       general: '通用',
       api: 'API 配置',
+      search: '联网搜索',
       character: '角色管理',
       tts: '语音合成',
       dev: 'Dev',

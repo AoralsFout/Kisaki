@@ -14,6 +14,7 @@ import DevPanel from './settings/DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import SettingsGeneral from './settings/SettingsGeneral.vue'
 import SettingsApi from './settings/SettingsApi.vue'
+import SettingsSearch from './settings/SettingsSearch.vue'
 import SettingsTts from './settings/SettingsTts.vue'
 import SettingsAbout from './settings/SettingsAbout.vue'
 
@@ -23,7 +24,7 @@ const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_S
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 导航 ----
-type Tab = 'general' | 'api' | 'character' | 'tts' | 'dev' | 'about'
+type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about'
 const activeTab = ref<Tab>('general')
 
 onMounted(() => {
@@ -32,7 +33,7 @@ onMounted(() => {
   }
   // 支持通过 URL ?tab=character 定位标签页
   const tabParam = new URLSearchParams(window.location.search).get('tab')
-  const validTabs: Tab[] = ['general', 'api', 'character', 'tts', 'dev', 'about']
+  const validTabs: Tab[] = ['general', 'api', 'search', 'character', 'tts', 'dev', 'about']
   if (tabParam && (validTabs as string[]).includes(tabParam)) {
     activeTab.value = tabParam as Tab
   }
@@ -79,6 +80,10 @@ function closeWindow() {
           <i class="fas fa-plug nav-icon"></i>
           <span>{{ t('settings.nav.api') }}</span>
         </button>
+        <button :class="['nav-item', { active: activeTab === 'search' }]" @click="activeTab = 'search'">
+          <i class="fas fa-globe nav-icon"></i>
+          <span>{{ t('settings.nav.search') }}</span>
+        </button>
         <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
           <i class="fas fa-masks-theater nav-icon"></i>
           <span>{{ t('settings.nav.character') }}</span>
@@ -101,6 +106,7 @@ function closeWindow() {
       <main :class="['content', { 'content-flush': activeTab === 'character' }]">
         <SettingsGeneral v-if="activeTab === 'general'" />
         <SettingsApi v-if="activeTab === 'api'" />
+        <SettingsSearch v-if="activeTab === 'search'" />
         <SettingsTts v-if="activeTab === 'tts'" />
 
         <div v-if="activeTab === 'character'" class="content-section content-wide">
