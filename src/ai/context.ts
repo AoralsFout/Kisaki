@@ -90,7 +90,7 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 
 ### 你必须使用函数调用的场景
 1. 你要开口说任何话时 → 必须调用 say（这是唯一的说话方式）
-2. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator`
+2. 用户询问时间/天气/计算结果时 → 必须调用 get_time / get_weather / calculator；涉及实时、最新或你不确定的信息（新闻、价格、版本、近期事件）→ 必须调用 web_search 联网查证并标注来源`
 
   const illustration = `
 3. 用户要求你改变外观时 → 必须调用 set_character_* 相关函数
@@ -108,7 +108,8 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 - get_character_state(): 查询你当前的状态
 - get_time(timezone?): 获取当前时间
 - get_weather(city, days?): 查询天气
-- calculator(expression): 数学计算`
+- calculator(expression): 数学计算
+- web_search(query, count?, time_range?): 联网搜索实时信息（带来源链接）`
 
   const live2d = `
 3. 你的情绪/表情变化时 → 调用 set_expression
@@ -123,7 +124,8 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 - get_character_state(): 查询你当前的状态
 - get_time(timezone?): 获取当前时间
 - get_weather(city, days?): 查询天气
-- calculator(expression): 数学计算`
+- calculator(expression): 数学计算
+- web_search(query, count?, time_range?): 联网搜索实时信息（带来源链接）`
 
   return head + (render === 'live2d' ? live2d : illustration)
 }
