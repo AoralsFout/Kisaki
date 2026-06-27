@@ -57,6 +57,7 @@ export default {
       get_time: '時刻を取得',
       get_weather: '天気を確認',
       calculator: '計算',
+      web_search: 'ウェブ検索',
       set_character_emotion: '表情を変更',
       set_character_stance: 'ポーズを変更',
       set_character_costume: '衣装を変更',

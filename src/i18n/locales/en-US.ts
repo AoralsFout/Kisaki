@@ -57,6 +57,7 @@ export default {
       get_time: 'Read time',
       get_weather: 'Check weather',
       calculator: 'Calculate',
+      web_search: 'Web Search',
       set_character_emotion: 'Change emotion',
       set_character_stance: 'Change pose',
       set_character_costume: 'Change costume',

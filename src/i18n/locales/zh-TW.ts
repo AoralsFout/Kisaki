@@ -57,6 +57,7 @@ export default {
       get_time: '讀取時間',
       get_weather: '查詢天氣',
       calculator: '計算',
+      web_search: '聯網搜尋',
       set_character_emotion: '切換表情',
       set_character_stance: '切換姿勢',
       set_character_costume: '切換服裝',

@@ -12,6 +12,7 @@ const TOOL_ICONS: Record<string, string> = {
   get_time: 'fa-clock',
   get_weather: 'fa-cloud-sun',
   calculator: 'fa-calculator',
+  web_search: 'fa-globe',
   // 角色动作类
   set_character_emotion: 'fa-face-smile',
   set_character_stance: 'fa-person',

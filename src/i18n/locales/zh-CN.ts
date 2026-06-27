@@ -60,6 +60,7 @@ export default {
       get_time: '读取时间',
       get_weather: '查询天气',
       calculator: '计算',
+      web_search: '联网搜索',
       set_character_emotion: '切换表情',
       set_character_stance: '切换姿势',
       set_character_costume: '切换服装',

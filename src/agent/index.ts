@@ -13,6 +13,7 @@ import { registerAll, listTools } from './registry'
 import { timeTool } from './tools/time'
 import { weatherTool } from './tools/weather'
 import { calculatorTool } from './tools/calculator'
+import { webSearchTool } from './tools/webSearch'
 import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool } from './tools/character'
 import { setExpressionTool, playMotionTool } from './tools/live2d'
 import { readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
@@ -23,7 +24,7 @@ const log = createLogger('Agent')
 /** 初始化所有内置工具 */
 export function initTools() {
   registerAll(
-    timeTool, weatherTool, calculatorTool,
+    timeTool, weatherTool, calculatorTool, webSearchTool,
     setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool,
     setExpressionTool, playMotionTool,
     readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
