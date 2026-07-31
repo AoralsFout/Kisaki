@@ -113,7 +113,10 @@ pub(crate) fn agent_checkpoint_backup(
         existed,
         blob,
     });
-    save_manifest(&cp, &mani)
+    save_manifest(&cp, &mani)?;
+    // 顺手清理本会话过期的旧检查点，防止缓存无限膨胀
+    prune_old_checkpoints(&cp);
+    Ok(())
 }
 
 /// 回档：把给定检查点（**从新到旧**传入）的备份依次回放。
@@ -165,6 +168,47 @@ pub(crate) fn agent_checkpoint_rollback(
     Ok(())
 }
 
+/// 检查点保留策略：超过该天数的旧检查点会被自动清理。
+/// 被清理的检查点无法再做文件回档（rollbackTo 对缺失目录会安全跳过），
+/// 但 30 天前的文件回档诉求本就基本无效，换取 app_cache 不无限膨胀。
+const CHECKPOINT_MAX_AGE_DAYS: u64 = 30;
+
+/// 从检查点目录名解析年龄（秒）。目录名 = 前端消息 id（`<Date.now()>-<rand>`）。
+fn checkpoint_age_seconds(dir_name: &str) -> Option<u64> {
+    let ts_str = dir_name.split('-').next()?;
+    let ts: u64 = ts_str.parse().ok()?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis() as u64;
+    Some(now_ms.saturating_sub(ts) / 1000)
+}
+
+/// 清理指定会话目录下超过年龄阈值的旧检查点（防止备份缓存无限膨胀）。
+/// 在每次新增备份后调用。
+fn prune_old_checkpoints(cp: &Path) {
+    let Some(session_dir) = cp.parent() else { return };
+    let max_age = CHECKPOINT_MAX_AGE_DAYS * 24 * 3600;
+    let Ok(entries) = fs::read_dir(session_dir) else { return };
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+        if let Some(age) = checkpoint_age_seconds(name) {
+            if age > max_age {
+                eprintln!(
+                    "[kisaki] 清理过期检查点（{} 天前）: {}",
+                    age / 86400,
+                    p.display()
+                );
+                let _ = fs::remove_dir_all(&p);
+            }
+        }
+    }
+}
+
 /// 清空某会话的全部备份（会话删除 / 清空对话时调用）。
 #[tauri::command]
 pub(crate) fn agent_checkpoint_clear_session(session_id: String) -> Result<(), String> {
@@ -173,4 +217,53 @@ pub(crate) fn agent_checkpoint_clear_session(session_id: String) -> Result<(), S
         fs::remove_dir_all(&dir).map_err(|e| format!("清理备份失败: {}", e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_age_seconds_parses_frontend_ids() {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        // 刚创建
+        let fresh = checkpoint_age_seconds(&format!("{}-abc123", now_ms));
+        assert!(fresh.is_some() && fresh.unwrap() < 60);
+        // 三天前
+        let old = checkpoint_age_seconds(&format!("{}-xyz", now_ms - 3 * 86400 * 1000));
+        assert!(old.is_some() && old.unwrap() > 2 * 86400);
+        // 非法名 → 无法解析（跳过清理）
+        assert!(checkpoint_age_seconds("not-a-timestamp").is_none());
+    }
+
+    #[test]
+    fn prune_removes_only_old_checkpoints() {
+        let session_dir = std::env::temp_dir().join(format!(
+            "kisaki-backup-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&session_dir);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        // 一个 40 天前的旧检查点 + 一个刚创建的检查点
+        let old_dir = session_dir.join(format!("{}-old", now_ms - 40 * 86400 * 1000));
+        let fresh_dir = session_dir.join(format!("{}-fresh", now_ms));
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::create_dir_all(&fresh_dir).unwrap();
+
+        // 以 fresh 检查点路径触发清理
+        prune_old_checkpoints(&fresh_dir);
+
+        assert!(!old_dir.exists(), "过期检查点应被清理");
+        assert!(fresh_dir.exists(), "新检查点不应被清理");
+
+        let _ = fs::remove_dir_all(&session_dir);
+    }
 }

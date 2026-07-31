@@ -352,6 +352,7 @@ export default {
     rename: 'Rename',
     delete: 'Delete',
     closeAria: 'Close',
+    storageFullWarning: 'Local storage is full; chat history may not be saved. Try deleting some old sessions.',
   },
 
   chat: {

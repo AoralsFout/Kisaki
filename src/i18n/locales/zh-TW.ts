@@ -352,6 +352,7 @@ export default {
     rename: '重新命名',
     delete: '刪除',
     closeAria: '關閉',
+    storageFullWarning: '本機儲存空間不足，對話歷史可能無法儲存。請刪除部分舊對話後再試。',
   },
 
   chat: {

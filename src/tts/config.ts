@@ -4,7 +4,7 @@
 import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'
 import { createLogger } from '../utils/logger'
 import { STORAGE_COSYVOICE_CONFIG, STORAGE_GPTSOVITS_CONFIG, STORAGE_TTS_PROVIDER } from '../constants'
-import { encrypt, decrypt } from '../utils/crypto'
+import { encrypt, resolveStoredSecret } from '../utils/crypto'
 
 const log = createLogger('TTSConfig')
 const STORAGE_KEY = STORAGE_COSYVOICE_CONFIG
@@ -91,20 +91,24 @@ export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
   // 已有解密缓存
   if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
 
-  if (config.apiKey && config.apiKey.length > 20 && !config.apiKey.startsWith('sk-')) {
-    const decrypted = await decrypt(config.apiKey)
-    if (decrypted !== config.apiKey) {
-      setDecryptedApiKeyCache(decrypted)
-      // 仅缓存解密结果，不把明文写回 localStorage（保持加密 + 避免跨窗口 storage 事件回环）
-      return { ...config, apiKey: decrypted }
-    }
+  if (!config.apiKey) return config
+
+  const resolved = await resolveStoredSecret(
+    config.apiKey,
+    (k) => k.startsWith('sk-') || k.length <= 20,
+  )
+  if (resolved.key === null) {
+    log.error('CosyVoice API Key 解密失败，已清除失效配置，请重新填写')
+    const cleaned = { ...config, apiKey: '' }
+    saveCosyVoiceConfig(cleaned)
+    return cleaned
   }
-  if (config.apiKey && config.apiKey.startsWith('sk-')) {
-    setDecryptedApiKeyCache(config.apiKey)
-    const encrypted = await encrypt(config.apiKey)
-    saveCosyVoiceConfig({ ...config, apiKey: encrypted })
+  setDecryptedApiKeyCache(resolved.key)
+  if (resolved.needsResave) {
+    const encryptedKey = await encrypt(resolved.key)
+    saveCosyVoiceConfig({ ...config, apiKey: encryptedKey })
   }
-  return config
+  return { ...config, apiKey: resolved.key }
 }
 
 // 跨窗口配置同步：设置窗口保存后，其它窗口失效解密缓存并重新解密。

@@ -7,6 +7,42 @@ use serde::Serialize;
 
 use crate::path::{characters_dir, sanitize_path_component};
 
+/// 单条目解压上限（防止超大文件一次性读入内存）
+const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+/// 单包解压总量上限（防止 zip 炸弹耗尽磁盘）
+const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// 单包条目数上限
+const MAX_ENTRIES: usize = 100_000;
+/// 扫描阶段读取 character.json 的上限（仅用于提取 id）
+const MAX_MANIFEST_JSON_BYTES: usize = 1024 * 1024;
+/// 分块读取缓冲区大小
+const READ_CHUNK_SIZE: usize = 64 * 1024;
+
+/// 带上限分块读取压缩条目内容。
+/// `cap` 为 0 表示不限制。超出上限返回 Err，避免恶意包把巨型文件撑爆内存。
+fn read_entry_limited(entry: &mut zip::read::ZipFile, cap: u64) -> Result<Vec<u8>, String> {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; READ_CHUNK_SIZE];
+    let mut total: u64 = 0;
+    loop {
+        let n = entry
+            .read(&mut chunk)
+            .map_err(|e| format!("读取压缩条目失败: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        total += n as u64;
+        if cap > 0 && total > cap {
+            return Err(format!(
+                "条目过大（超过 {} MiB 上限）",
+                cap / (1024 * 1024)
+            ));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    Ok(buf)
+}
+
 /// 角色包导入结果
 #[derive(Serialize)]
 pub(crate) struct ImportResult {
@@ -90,6 +126,14 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("解析角色包失败: {}", e))?;
 
+    if archive.len() > MAX_ENTRIES {
+        return Err(format!(
+            "角色包条目过多（{} > {}），疑似恶意压缩包",
+            archive.len(),
+            MAX_ENTRIES
+        ));
+    }
+
     eprintln!(
         "[kisaki] 导入角色包: {}（{} 个条目）",
         src_path,
@@ -123,8 +167,13 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
             .map(|p| p.to_path_buf())
             .unwrap_or_default();
         // 优先取 character.json 内的 id 字段；回退到所在目录名
-        let mut content = String::new();
-        let _ = entry.read_to_string(&mut content);
+        let content = match read_entry_limited(&mut entry, MAX_MANIFEST_JSON_BYTES as u64) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => {
+                eprintln!("[kisaki]   character.json 读取失败，跳过: {}", e);
+                continue;
+            }
+        };
         let id_from_json = serde_json::from_str::<serde_json::Value>(&content)
             .ok()
             .and_then(|v| v.get("id").and_then(|x| x.as_str()).map(|s| s.trim().to_string()))
@@ -172,6 +221,7 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
     }
 
     // 第二遍：解压属于 to_import 角色的条目，按角色根前缀重映射到 characters_dir/<id>/...
+    let mut total_extracted: u64 = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let enclosed = match entry.enclosed_name() {
@@ -201,8 +251,14 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            let buf = read_entry_limited(&mut entry, MAX_ENTRY_BYTES)?;
+            total_extracted += buf.len() as u64;
+            if total_extracted > MAX_TOTAL_BYTES {
+                return Err(format!(
+                    "角色包解压总量超过 {} GiB 上限，已中止导入（防 zip 炸弹）",
+                    MAX_TOTAL_BYTES / (1024 * 1024 * 1024)
+                ));
+            }
             fs::write(&target, &buf).map_err(|e| format!("写入文件失败: {}", e))?;
         }
     }
@@ -217,4 +273,59 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
         imported, skipped
     );
     Ok(ImportResult { imported, skipped })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// 构造一个包含单个条目的内存 zip，返回其字节
+    fn make_zip(entry_name: &str, content: &[u8]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file(entry_name, options).unwrap();
+        writer.write_all(content).unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn read_entry_limited_ok_within_cap() {
+        let bytes = make_zip("a.txt", b"hello world");
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let data = read_entry_limited(&mut entry, 1024).unwrap();
+        assert_eq!(data, b"hello world");
+    }
+
+    #[test]
+    fn read_entry_limited_rejects_oversized() {
+        let payload = vec![b'x'; 2048];
+        let bytes = make_zip("big.bin", &payload);
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let err = read_entry_limited(&mut entry, 1024).unwrap_err();
+        assert!(err.contains("过大"), "应提示条目过大，实际: {}", err);
+    }
+
+    #[test]
+    fn read_entry_limited_unlimited() {
+        let payload = vec![b'y'; 5000];
+        let bytes = make_zip("u.bin", &payload);
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let data = read_entry_limited(&mut entry, 0).unwrap();
+        assert_eq!(data.len(), 5000);
+    }
+
+    #[test]
+    fn entries_cap_constants_are_sane() {
+        // 常量自检：确保上限为正且总量大于单条目
+        assert!(MAX_ENTRY_BYTES > 0);
+        assert!(MAX_TOTAL_BYTES > MAX_ENTRY_BYTES);
+        assert!(MAX_ENTRIES > 1000);
+    }
 }

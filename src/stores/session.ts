@@ -73,10 +73,16 @@ function loadJSON<T>(key: string, fallback: T): T {
   return fallback
 }
 
-function saveJSON(key: string, value: unknown) {
+function saveJSON(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value))
-  } catch { /* ignore */ }
+    return true
+  } catch (e) {
+    // 典型原因：localStorage 配额耗尽（WebView 通常约 10MB）。
+    // 不再静默忽略——否则用户会以为历史已保存，重启后才发现丢失。
+    log.error('本地存储写入失败（key=%s），数据未能持久化: %s', key, (e as Error)?.message || String(e))
+    return false
+  }
 }
 
 // ─── Store ────────────────────────────────────────────────
@@ -86,6 +92,8 @@ export const useSessionStore = defineStore('session', () => {
   const sessions = ref<Session[]>([])
   const currentSessionId = ref<string>('')
   const ready = ref(false)
+  /** 本地存储是否发生写入失败（配额满等）；成功后自动清除 */
+  const persistError = ref(false)
 
   // ── 计算属性 ──
   const currentSession = computed(() =>
@@ -158,8 +166,13 @@ export const useSessionStore = defineStore('session', () => {
   // ── 持久化 ──
 
   function persistSessions() {
-    saveJSON(STORAGE_SESSIONS, sessions.value)
-    saveJSON(STORAGE_CURRENT_SESSION, currentSessionId.value)
+    const sessionsOk = saveJSON(STORAGE_SESSIONS, sessions.value)
+    const currentOk = saveJSON(STORAGE_CURRENT_SESSION, currentSessionId.value)
+    const ok = sessionsOk && currentOk
+    persistError.value = !ok
+    if (!ok) {
+      log.error('本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复')
+    }
   }
 
   // ── 会话操作 ──
@@ -497,6 +510,7 @@ export const useSessionStore = defineStore('session', () => {
     sessions,
     currentSessionId,
     ready,
+    persistError,
     // 计算
     currentSession,
     sessionList,

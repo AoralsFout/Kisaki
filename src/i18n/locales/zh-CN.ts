@@ -355,6 +355,7 @@ export default {
     rename: '重命名',
     delete: '删除',
     closeAria: '关闭',
+    storageFullWarning: '本地存储空间不足，对话历史可能无法保存。请删除一些旧会话后再试。',
   },
 
   chat: {

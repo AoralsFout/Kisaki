@@ -352,6 +352,7 @@ export default {
     rename: '名前を変更',
     delete: '削除',
     closeAria: '閉じる',
+    storageFullWarning: 'ローカルストレージの容量が不足しており、会話履歴を保存できない可能性があります。古いセッションを削除してからお試しください。',
   },
 
   chat: {

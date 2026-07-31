@@ -6,7 +6,7 @@
  */
 import { createLogger } from '../../utils/logger'
 import { STORAGE_SEARCH_CONFIG } from '../../constants'
-import { encrypt, decrypt } from '../../utils/crypto'
+import { encrypt, resolveStoredSecret } from '../../utils/crypto'
 
 const log = createLogger('SearchConfig')
 const STORAGE_KEY = STORAGE_SEARCH_CONFIG
@@ -89,22 +89,24 @@ export async function loadSearchConfigSecure(): Promise<SearchConfig> {
   const config = loadSearchConfig()
   if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
 
-  // 已加密：长度足够且非明文前缀 → 尝试解密
-  if (config.apiKey && config.apiKey.length > 20 && !config.apiKey.startsWith('tvly-')) {
-    const decrypted = await decrypt(config.apiKey)
-    if (decrypted !== config.apiKey) {
-      setDecryptedApiKeyCache(decrypted)
-      // 仅缓存解密结果，不写回明文（保持磁盘加密 + 避免跨窗口 storage 回环）
-      return { ...config, apiKey: decrypted }
-    }
+  if (!config.apiKey) return config
+
+  const resolved = await resolveStoredSecret(
+    config.apiKey,
+    (k) => k.startsWith('tvly-') || k.length <= 20,
+  )
+  if (resolved.key === null) {
+    log.error('搜索 API Key 解密失败，已清除失效配置，请重新填写')
+    const cleaned = { ...config, apiKey: '' }
+    saveSearchConfig(cleaned)
+    return cleaned
   }
-  // 旧明文（Tavily key 以 tvly- 开头）→ 迁移为加密存储
-  if (config.apiKey && config.apiKey.startsWith('tvly-')) {
-    setDecryptedApiKeyCache(config.apiKey)
-    const encrypted = await encrypt(config.apiKey)
-    saveSearchConfig({ ...config, apiKey: encrypted })
+  setDecryptedApiKeyCache(resolved.key)
+  if (resolved.needsResave) {
+    const encryptedKey = await encrypt(resolved.key)
+    saveSearchConfig({ ...config, apiKey: encryptedKey })
   }
-  return config
+  return { ...config, apiKey: resolved.key }
 }
 
 // 跨窗口配置同步：设置窗口保存后，其它窗口失效解密缓存并重新解密。

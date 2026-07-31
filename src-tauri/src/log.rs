@@ -5,6 +5,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::path::log_dir;
 
+/// 单个日志文件大小上限（超过则轮转）
+const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+/// 保留的轮转日志数量（.1 ~ .N，外加当前文件）
+const MAX_LOG_ROTATIONS: u32 = 3;
+
+/// 轮转日志文件：当前文件超过大小上限时，
+/// 依次后移（.1 → .2 → …），最旧的删除，当前文件改为 .1 后重新创建。
+fn rotate_log_if_needed(path: &std::path::Path) {
+    let Ok(meta) = fs::metadata(path) else { return };
+    if meta.len() <= MAX_LOG_BYTES {
+        return;
+    }
+    // 删除最旧的轮转文件
+    let last = format!("{}.{}", path.display(), MAX_LOG_ROTATIONS);
+    let _ = fs::remove_file(&last);
+    // 依次后移
+    for i in (1..MAX_LOG_ROTATIONS).rev() {
+        let from = format!("{}.{}", path.display(), i);
+        let to = format!("{}.{}", path.display(), i + 1);
+        let _ = fs::rename(&from, &to);
+    }
+    let _ = fs::rename(path, format!("{}.1", path.display()));
+}
+
 /// 日志条目结构（与前端约定）
 #[derive(Deserialize)]
 pub(crate) struct LogEntryPayload {
@@ -38,6 +62,8 @@ pub(crate) fn append_log_entries(filename: String, entries: Vec<LogEntryPayload>
     }
 
     let path = log_dir().join(&filename);
+    // 超过大小上限先轮转，避免单文件无限增长
+    rotate_log_if_needed(&path);
     // 追加模式写入
     let mut file = fs::OpenOptions::new()
         .create(true)

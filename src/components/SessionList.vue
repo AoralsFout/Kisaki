@@ -116,6 +116,12 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
           </div>
         </div>
 
+        <!-- 存储告警：配额满时提示用户，避免历史静默丢失 -->
+        <div v-if="sessionStore.persistError" class="session-storage-warning" data-pet-solid>
+          <i class="fas fa-triangle-exclamation"></i>
+          <span>{{ t('session.storageFullWarning') }}</span>
+        </div>
+
         <!-- 会话列表 -->
         <div class="session-list">
           <div v-if="sessionStore.sessionList.length === 0" class="empty-hint">
@@ -217,6 +223,22 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
   align-items: center;
   padding: 14px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+/* ---- 存储告警 ---- */
+.session-storage-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 170, 60, 0.12);
+  border: 1px solid rgba(255, 170, 60, 0.35);
+  color: #ffc56b;
+  font-size: 12px;
+  line-height: 1.5;
   flex-shrink: 0;
 }
 

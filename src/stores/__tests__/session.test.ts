@@ -38,6 +38,22 @@ describe('useSessionStore', () => {
     expect(store.currentSession!.messages).toEqual([])
   })
 
+  it('本地存储写入失败时置 persistError 并记录日志', () => {
+    const store = useSessionStore()
+    store.init()
+    expect(store.persistError).toBe(false)
+
+    // 模拟配额耗尽：setItem 抛 QuotaExceededError
+    const originalSetItem = localStorageMock.setItem.getMockImplementation()
+    localStorageMock.setItem.mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    store.createSession()
+
+    expect(store.persistError).toBe(true)
+    localStorageMock.setItem.mockImplementation(originalSetItem!)
+  })
+
   it('可以创建新会话', () => {
     const store = useSessionStore()
     store.init()
