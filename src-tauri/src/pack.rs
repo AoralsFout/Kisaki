@@ -228,12 +228,18 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
             Some(p) => p.to_path_buf(),
             None => continue,
         };
-        // 找到此条目所属的待导入角色根（按 zip 内前缀匹配）
+        // 找到此条目所属的待导入角色根（按 zip 内前缀匹配）。
+        // 用「最长前缀优先」：空前缀（根级 character.json）会匹配所有条目，
+        // 必须让更具体的目录前缀胜出，否则根级角色会吞掉嵌套角色的所有条目。
         let mut mapped: Option<(String, PathBuf)> = None;
         for (id, prefix) in &to_import {
             if let Ok(rel) = enclosed.strip_prefix(prefix) {
-                mapped = Some((id.clone(), rel.to_path_buf()));
-                break;
+                let better = mapped
+                    .as_ref()
+                    .map_or(true, |(_, cur)| rel.components().count() < cur.components().count());
+                if better {
+                    mapped = Some((id.clone(), rel.to_path_buf()));
+                }
             }
         }
         let (id, rel) = match mapped {

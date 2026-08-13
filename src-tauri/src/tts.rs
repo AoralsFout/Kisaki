@@ -78,11 +78,13 @@ where
 
 // ─── WebSocket 连接池（复用 TCP+TLS 连接，减少握手开销） ─────
 
-/// 缓存的 WebSocket 连接（与连接时间戳）
+/// 缓存的 WebSocket 连接（与连接时间戳、端点/凭据指纹）
 struct CachedWsConnection {
     write: WsWriteHalf,
     read: WsReadHalf,
     created_at: std::time::Instant,
+    ws_url: String,
+    api_key: String,
 }
 
 /// TTS WebSocket 连接池（最多缓存 1 个连接，30 秒过期）
@@ -97,27 +99,42 @@ impl TtsConnectionPool {
         }
     }
 
-    /// 获取缓存的连接（过期或不可用时返回 None）
-    pub(crate) async fn take_connection(&self, max_age_secs: u64) -> Option<(WsWriteHalf, WsReadHalf)> {
+    /// 获取缓存的连接（过期、端点/凭据变化或不可用时返回 None）
+    pub(crate) async fn take_connection(
+        &self,
+        ws_url: &str,
+        api_key: &str,
+        max_age_secs: u64,
+    ) -> Option<(WsWriteHalf, WsReadHalf)> {
         let mut guard = self.inner.lock().await;
         let cached = guard.take()?;
-        if cached.created_at.elapsed().as_secs() < max_age_secs {
+        let fresh = cached.created_at.elapsed().as_secs() < max_age_secs;
+        let same_endpoint = cached.ws_url == ws_url && cached.api_key == api_key;
+        if fresh && same_endpoint {
             Some((cached.write, cached.read))
         } else {
-            // 过期连接直接丢弃
+            // 过期或端点/凭据变化：丢弃，避免把旧凭据的连接用于新配置
             drop(cached);
             None
         }
     }
 
-    /// 归还连接供后续复用
-    pub(crate) async fn put_connection(&self, write: WsWriteHalf, read: WsReadHalf) {
+    /// 归还连接供后续复用（记录其端点/凭据指纹）
+    pub(crate) async fn put_connection(
+        &self,
+        write: WsWriteHalf,
+        read: WsReadHalf,
+        ws_url: String,
+        api_key: String,
+    ) {
         let mut guard = self.inner.lock().await;
         // 替换旧连接，旧的会被 drop（触发 close frame）
         *guard = Some(CachedWsConnection {
             write,
             read,
             created_at: std::time::Instant::now(),
+            ws_url,
+            api_key,
         });
     }
 }
@@ -196,7 +213,12 @@ async fn cosyvoice_send_text(
     text: &str,
 ) -> Result<(), String> {
     loop {
-        match read.next().await {
+        // 读取 task-started 最多等 30 秒，避免半开连接永久挂起
+        let msg = match timeout(Duration::from_secs(30), read.next()).await {
+            Ok(m) => m,
+            Err(_) => return Err("等待 task-started 超时（30 秒无响应）".to_string()),
+        };
+        match msg {
             Some(Ok(Message::Text(text_msg))) => {
                 let (event, _) = parse_ws_event(&text_msg)?;
                 if event == "task-started" {
@@ -252,8 +274,8 @@ async fn acquire_or_connect(
     model: &str,
     voice: &str,
 ) -> Result<(WsWriteHalf, WsReadHalf, String, bool), String> {
-    // 尝试从连接池获取（5 秒内的连接可复用 TCP 连接）
-    if let Some((mut write, read)) = pool.take_connection(5).await {
+    // 尝试从连接池获取（5 秒内且端点/凭据一致才可复用 TCP 连接）
+    if let Some((mut write, read)) = pool.take_connection(ws_url, api_key, 5).await {
         // 在已有连接上发送新 run-task（复用 TCP/TLS 握手）
         match run_task_on_connection(&mut write, model, voice).await {
             Ok(task_id) => return Ok((write, read, task_id, true)),
@@ -341,7 +363,7 @@ pub(crate) async fn cosyvoice_tts(
     let result = audio_receive_batch(&mut write, &mut read, &task_id, &text).await;
     match &result {
         // 仅在成功且来自连接池时归还连接；出错的连接可能已失效，丢弃而非污染连接池
-        Ok(_) if from_pool => pool.put_connection(write, read).await,
+        Ok(_) if from_pool => pool.put_connection(write, read, ws_url, api_key).await,
         _ => ws_graceful_close(&mut write, &mut read).await,
     }
     result
@@ -426,7 +448,7 @@ pub(crate) async fn cosyvoice_tts_stream(
     match recv_result {
         Ok(()) => {
             if from_pool {
-                pool.put_connection(write, read).await;
+                pool.put_connection(write, read, ws_url, api_key).await;
             } else {
                 ws_graceful_close(&mut write, &mut read).await;
             }

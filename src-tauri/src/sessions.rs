@@ -16,10 +16,9 @@ use crate::path::sessions_file;
 fn atomic_write(path: &Path, data: &str) -> Result<(), String> {
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, data).map_err(|e| format!("写入会话临时文件失败: {}", e))?;
-    // Windows 的 rename 不允许覆盖已存在目标，先移除旧文件再替换（窗口极小）
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| format!("替换旧会话文件失败: {}", e))?;
-    }
+    // fs::rename 在 Unix 上原子；Windows 上 Rust 用 MoveFileEx(REPLACE_EXISTING)，
+    // 可直接覆盖已存在目标。因此不要先 remove 目标——那会留下「旧文件已删、
+    // 新文件未落」的丢数据窗口（进程中断即丢失全部会话）。
     fs::rename(&tmp, path).map_err(|e| format!("写入会话文件失败: {}", e))
 }
 
