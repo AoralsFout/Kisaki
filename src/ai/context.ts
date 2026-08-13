@@ -168,9 +168,21 @@ export class ChatContext {
     this.reset()
   }
 
+  /** 估算单条消息的 token（含 tool_calls 参数体与 tool_call_id） */
+  private estimateMessageTokens(m: ChatMessage): number {
+    let text = m.content || ''
+    if (m.tool_calls) {
+      for (const tc of m.tool_calls) {
+        text += tc.function.name + tc.function.arguments
+      }
+    }
+    if (m.tool_call_id) text += m.tool_call_id
+    return estimateTokens(text)
+  }
+
   /** 当前上下文估计 token 总数（用于裁剪决策） */
   get estimatedTokens(): number {
-    return this.messages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0)
+    return this.messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0)
   }
 
   /** 重建 system prompt（应用语言指令变更） */
@@ -273,27 +285,38 @@ export class ChatContext {
   /**
    * 裁剪超出 token 阈值的上下文
    *
-   * 策略（按优先级）：
-   * 1. 保留 system prompt（索引 0）
-   * 2. 从最旧的非 system 消息开始移除
-   * 3. 直到估计 token 数 ≤ maxContextTokens
+   * 策略：
+   * 1. 保留 system prompt（索引 0）与当前进行中的回合（最后一条 user）。
+   * 2. 从最旧的「完整回合」开始移除（一个回合 = 一条 user + 其后所有 assistant/tool，
+   *    直到下一条 user 之前），保证移除后仍是合法的 API 消息序列
+   *    （不会留下孤儿 tool 回执，也不会以 assistant 开头）。
+   * 3. 直到估计 token 数 ≤ maxContextTokens。
    *
-   * 快速路径：消息数量 ≤ 2×maxRounds 时跳过检查（小对话无需裁剪）。
+   * 不再有「消息数 ≤ 2×maxRounds 就跳过」的快速路径：单条 tool 结果可高达 1000 字符，
+   * 消息数少但 token 超预算时会直接导致 API 上下文超限。
    */
   private prune() {
     if (this.messages.length <= 1) return
 
-    // 快速路径：消息数远低于阈值时不检查 token
-    const rest = this.messages.slice(1)
-    if (rest.length <= this.maxRounds * 2) return
-
-    // Token 感知裁剪：移除最旧的非 system 消息直到 token 数低于阈值
     let tokens = this.estimatedTokens
+    if (tokens <= this.maxContextTokens) return
+
     let removedCount = 0
     while (this.messages.length > 1 && tokens > this.maxContextTokens) {
-      const removed = this.messages.splice(1, 1)[0]
-      tokens -= estimateTokens(removed.content || '')
-      removedCount++
+      // 找第二个 user 消息的索引（第一个 user 在索引 1）
+      let secondUserIndex = 2
+      while (
+        secondUserIndex < this.messages.length &&
+        this.messages[secondUserIndex].role !== 'user'
+      ) {
+        secondUserIndex++
+      }
+      // 没有第二个 user（只剩当前回合）→ 无法再安全裁剪，停止
+      if (secondUserIndex >= this.messages.length) break
+
+      const removed = this.messages.splice(1, secondUserIndex - 1)
+      tokens -= removed.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0)
+      removedCount += removed.length
     }
 
     if (this.messages.length <= 1) {
