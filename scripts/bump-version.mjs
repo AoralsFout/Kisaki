@@ -38,7 +38,7 @@ console.log('  ✔ src-tauri/Cargo.toml');
 
 // 5) 提交 + tag
 if (!syncOnly) {
-  execSync('git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json', { stdio: 'inherit' });
+  execSync('git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/tauri.conf.json', { stdio: 'inherit' });
   execSync(`git commit -m "chore: bump version to ${ver}"`, { stdio: 'inherit' });
   execSync(`git tag v${ver}`, { stdio: 'inherit' });
   console.log(`\n  ✔ git commit & tag v${ver}\n`);
