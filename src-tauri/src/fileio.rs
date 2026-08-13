@@ -25,13 +25,28 @@ const MAX_ENTRIES_SCANNED: usize = 20000;
 /// 搜索命中行文本的最大保留长度。
 const SEARCH_LINE_MAX: usize = 200;
 
-/// 校验 root 是有效目录并规范化返回。
+/// 校验 root 是有效目录、已授权，并规范化返回。
 pub(crate) fn check_root(root: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(root);
     if !p.is_dir() {
         return Err("工作目录无效或已不存在".to_string());
     }
-    p.canonicalize().map_err(|e| format!("无法解析工作目录: {}", e))
+    let canon = p.canonicalize().map_err(|e| format!("无法解析工作目录: {}", e))?;
+    if !crate::path::is_workspace_authorized(&canon) {
+        return Err("工作目录未经授权，请先在界面中通过「设置工作区」选择授权目录".to_string());
+    }
+    Ok(canon)
+}
+
+/// 登记用户通过目录选择框授权的工作目录（加入后端白名单）。
+/// 前端在用户选择目录时调用；fileio / command 只接受白名单内的 root。
+#[tauri::command]
+pub(crate) fn agent_authorize_workspace(root: String) -> Result<(), String> {
+    let p = PathBuf::from(&root);
+    if !p.is_dir() {
+        return Err("工作目录无效或已不存在".to_string());
+    }
+    crate::path::authorize_workspace(&p)
 }
 
 /// 读取工作目录内某文本文件的内容（UTF-8）。

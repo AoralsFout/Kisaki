@@ -108,6 +108,8 @@ export default {
         timeout: '{sec} 秒',
         noWorkspace: '未設定工作目錄',
         noRollback: '此操作不受回檔保護：透過命令修改或刪除的檔案無法自動備份和還原，請確認命令無誤後再執行。',
+        untrustedDesc: '說明由 AI 生成，僅供參考，請以命令本身為準',
+        fullAccess: '此命令以目前使用者完整權限執行，可讀寫任意檔案（不受工作目錄限制），請確認命令安全',
       },
     },
   },

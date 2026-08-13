@@ -450,6 +450,7 @@ pub(crate) async fn cosyvoice_tts_stream(
 fn gptsovits_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .no_proxy()
+        .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))
 }

@@ -129,6 +129,7 @@ pub fn run() {
             log::read_log_file,
             log::export_log_file,
             log::list_log_files,
+            fileio::agent_authorize_workspace,
             fileio::agent_read_file,
             fileio::agent_write_file,
             fileio::agent_append_file,

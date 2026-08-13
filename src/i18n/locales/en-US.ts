@@ -108,6 +108,8 @@ export default {
         timeout: '{sec}s',
         noWorkspace: 'No workspace set',
         noRollback: 'Not protected by rollback: files modified or deleted by this command cannot be auto-restored. Please verify the command before executing.',
+        untrustedDesc: 'Description is AI-generated — trust the command itself, not this summary',
+        fullAccess: 'This command runs with your full user permissions and can read/write any file (not limited to the workspace). Verify it is safe.',
       },
     },
   },

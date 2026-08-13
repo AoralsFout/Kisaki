@@ -1,6 +1,7 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 // ─── 数据目录 ─────────────────────────────────────────
 // 双路径策略：
@@ -162,6 +163,34 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
         return Err("路径越权访问被拒绝".to_string());
     }
     Ok(target)
+}
+
+// ─── 工作目录授权白名单 ─────────────────────────────
+// 防御纵深：后端只允许在前端通过目录选择框「授权」过的目录内读写/执行，
+// 即使 WebView 被攻破，也无法把任意 root 传给 fileio/command 命令。
+// 用 LazyLock 惰性初始化，避免与 init_dirs 的 OnceLock 初始化顺序耦合。
+
+static AUTHORIZED_ROOTS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// 登记一个用户授权的工作目录（规范化后加入白名单）。
+pub(crate) fn authorize_workspace(root: &Path) -> Result<(), String> {
+    let canon = root
+        .canonicalize()
+        .map_err(|e| format!("无法解析工作目录: {}", e))?;
+    AUTHORIZED_ROOTS
+        .lock()
+        .map_err(|_| "工作目录授权锁失败".to_string())?
+        .insert(canon);
+    Ok(())
+}
+
+/// 判断某（已规范化的）路径是否在授权白名单内。
+pub(crate) fn is_workspace_authorized(root: &Path) -> bool {
+    AUTHORIZED_ROOTS
+        .lock()
+        .map(|s| s.contains(root))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

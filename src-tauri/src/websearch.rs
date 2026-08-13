@@ -7,6 +7,9 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// 搜索响应体大小上限（10 MiB），防超大响应撑爆内存
+const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
+
 /// 把错误的 source 链拼成单行文本，便于前端/日志一眼定位根因
 /// （如 "error sending request <- tcp connect error <- 由于目标计算机积极拒绝…"）。
 fn err_chain(e: &dyn std::error::Error) -> String {
@@ -32,6 +35,12 @@ pub(crate) async fn web_search_fetch(
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
 ) -> Result<String, String> {
+    // SSRF 缓解：只允许 http/https，阻断 file:// 等本地协议
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "无效的 URL".to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("仅允许 http/https 协议".to_string());
+    }
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -60,10 +69,18 @@ pub(crate) async fn web_search_fetch(
         .map_err(|e| format!("搜索请求失败: {}", err_chain(&e)))?;
 
     let status = resp.status();
-    let text = resp
-        .text()
+    let bytes = resp
+        .bytes()
         .await
         .map_err(|e| format!("读取响应失败: {}", err_chain(&e)))?;
+    if bytes.len() > MAX_RESPONSE_BYTES {
+        return Err(format!(
+            "搜索响应过大（{} 字节，上限 {} 字节）",
+            bytes.len(),
+            MAX_RESPONSE_BYTES
+        ));
+    }
+    let text = String::from_utf8_lossy(&bytes).into_owned();
 
     if !status.is_success() {
         let snippet: String = text.chars().take(200).collect();

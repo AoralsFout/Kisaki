@@ -54,8 +54,11 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
         </div>
       </div>
 
-      <!-- 描述（可选） -->
-      <div v-if="descriptionText" class="cc-desc">{{ descriptionText }}</div>
+      <!-- 描述（模型生成，仅供参考，不可信） -->
+      <div v-if="descriptionText" class="cc-desc">
+        <div class="cc-desc-label">{{ t('app.confirm.command.untrustedDesc') }}</div>
+        {{ descriptionText }}
+      </div>
 
       <!-- 命令代码块 -->
       <div class="cc-command-wrap">
@@ -72,6 +75,12 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
           <i class="fas fa-hourglass-half"></i>
           <span>{{ t('app.confirm.command.timeout', { sec: timeoutSecs }) }}</span>
         </div>
+      </div>
+
+      <!-- 完整权限风险提示 -->
+      <div class="cc-warning cc-warning-danger">
+        <i class="fas fa-skull-crossbones"></i>
+        <span>{{ t('app.confirm.command.fullAccess') }}</span>
       </div>
 
       <!-- 回档风险提示 -->
@@ -157,6 +166,14 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
   border-left: 2px solid #f0b85c;
 }
 
+.cc-desc-label {
+  font-size: 10px;
+  color: #f0b85c;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 2px;
+}
+
 /* 命令代码块 */
 .cc-command-wrap {
   background: rgba(0, 0, 0, 0.4);
@@ -219,6 +236,12 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
 .cc-warning .fas {
   font-size: 11px;
   flex-shrink: 0;
+}
+
+.cc-warning-danger {
+  background: rgba(224, 100, 100, 0.12);
+  border-color: rgba(224, 100, 100, 0.28);
+  color: #f0a0a0;
 }
 
 /* 动作按钮 */

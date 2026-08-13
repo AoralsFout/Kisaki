@@ -397,6 +397,10 @@ export const useSessionStore = defineStore('session', () => {
     session.workspaceRoot = path
     session.updatedAt = Date.now()
     persistSessions()
+    // 登记到后端授权白名单（fileio/command 只接受已授权目录）
+    invoke('agent_authorize_workspace', { root: path }).catch((e) => {
+      log.warn('登记工作目录授权失败: %s', (e as Error)?.message || String(e))
+    })
     log.info('已设置会话工作目录: %s', path)
   }
 
@@ -422,6 +426,13 @@ export const useSessionStore = defineStore('session', () => {
    */
   async function restoreSessionState(session: Session) {
     const charStore = useCharacterStore()
+
+    // 0. 重新登记会话已授权的工作目录（后端白名单按进程驻留，重启后需重新登记）
+    if (session.workspaceRoot) {
+      invoke('agent_authorize_workspace', { root: session.workspaceRoot }).catch((e) => {
+        log.warn('恢复工作目录授权失败: %s', (e as Error)?.message || String(e))
+      })
+    }
 
     // 1. 切换到会话绑定的角色（若不同且存在）
     if (

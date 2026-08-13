@@ -86,6 +86,9 @@ pub(crate) fn agent_checkpoint_backup(
     root: String,
     rel_path: String,
 ) -> Result<(), String> {
+    // 校验 root 已授权（与 fileio 一致），防止绕过授权直接读取任意文件到缓存
+    crate::fileio::check_root(&root)?;
+
     let cp = checkpoint_dir(&session_id, &checkpoint_id)?;
     fs::create_dir_all(cp.join("blobs")).map_err(|e| format!("创建备份目录失败: {}", e))?;
 

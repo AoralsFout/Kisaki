@@ -1,8 +1,12 @@
-//! AI 工作目录命令执行
+//! AI 命令执行
 //!
-//! 供前端 agent 工具调用，让 AI 在「用户授权的工作目录」内执行 shell 命令。
-//! 沙箱模型与 fileio 一致：
-//!   - 工作目录（root）由用户在前端通过目录选择框手动授权，按会话存储在前端。
+//! 供前端 agent 工具调用，让 AI 执行 shell 命令。
+//!
+//! ⚠ 这**不是** OS 沙箱：命令以当前用户完整权限运行（可读写全盘、联网），
+//! `current_dir` 只是初始工作目录，命令可自由 `cd` 到任意位置。
+//! 真正的安全边界是：① 前端每次执行都弹确认卡（CommandConfirm）；② 后端 root
+//! 白名单（check_root 只接受已授权目录）。
+//! 其余约定：
 //!   - 输出写入 <root>/.kisaki_cmd_output/，路径返回给前端，AI 通过 read_file 读取。
 //!   - 超时控制：默认 30 秒，最大 300 秒，超时自动 kill 子进程。
 
@@ -325,6 +329,8 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
+        // 授权该临时目录，否则 check_root 会拒绝未授权工作目录
+        crate::path::authorize_workspace(&base).unwrap();
 
         let command = chatty_command();
         let result =
