@@ -418,103 +418,105 @@ export class TtsEngine {
     const blobUrl = URL.createObjectURL(mediaSource)
     audio.src = blobUrl
 
-    // 取消时立即暂停播放（后端任务会因 30s 读超时或服务端结束而自行收尾）
-    controller.signal.addEventListener('abort', () => {
-      try { audio.pause() } catch { /* ignore */ }
-    }, { once: true })
+    // 用 finally 兜底回收 MediaSource / blobUrl / Audio / unlisten，避免任何
+    // 提前返回或异常路径（SourceBuffer 打开失败、listen 失败等）泄漏资源。
+    let unlisten: (() => void) | null = null
+    try {
+      // 取消时立即暂停播放（后端任务会因 30s 读超时或服务端结束而自行收尾）
+      controller.signal.addEventListener('abort', () => {
+        try { audio.pause() } catch { /* ignore */ }
+      }, { once: true })
 
-    const sourceBuffer = await new Promise<SourceBuffer>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('MediaSource 打开超时')), 5000)
-      mediaSource.onsourceopen = () => {
-        clearTimeout(timeout)
-        try {
-          const sb = mediaSource.addSourceBuffer(mimeType)
-          resolve(sb)
-        } catch (e) {
-          reject(new Error(`添加 SourceBuffer 失败: ${e}`))
-        }
-      }
-    })
-
-    if (controller.signal.aborted) {
-      this.cleanupMediaSource(mediaSource, blobUrl, audio)
-      return
-    }
-
-    const pendingChunks: ArrayBuffer[] = []
-    let streamError: string | null = null
-    let firstChunkAppended = false
-
-    let resolveStreamComplete: (() => void) | null = null
-    const streamComplete = new Promise<void>((resolve) => {
-      resolveStreamComplete = resolve
-    })
-
-    const flushBuffer = () => {
-      if (sourceBuffer.updating || pendingChunks.length === 0) return
-      const chunk = pendingChunks.shift()!
-      sourceBuffer.appendBuffer(chunk)
-    }
-
-    sourceBuffer.addEventListener('updateend', () => { flushBuffer() })
-
-    const unlisten = await listen<TtsChunk>('tts-audio-chunk', (event) => {
-      // 过滤掉非本次流（已被取代的旧流）的音频帧
-      if (event.payload.stream_id !== streamId) return
-      if (controller.signal.aborted || streamError) return
-      if (event.payload.is_last) {
-        resolveStreamComplete?.()
-        flushBuffer()
-        return
-      }
-      try {
-        const binaryStr = atob(event.payload.data)
-        const bytes = new Uint8Array(binaryStr.length)
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-        pendingChunks.push(bytes.buffer as ArrayBuffer)
-        flushBuffer()
-        if (!firstChunkAppended) {
-          firstChunkAppended = true
-          audio.play().catch(e => log.warn('音频播放启动失败', e))
-        }
-      } catch { /* 跳过损坏块 */ }
-    })
-
-    const invokePromise = invoke('cosyvoice_tts_stream', {
-      streamId, apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
-    })
-
-    try { await invokePromise } catch (err) { streamError = (err as Error).message }
-
-    if (!controller.signal.aborted && !streamError) {
-      // 等待全部音频帧追加完成；安全超时兜底，即便后端漏发 is_last 也不会无限等待
-      await Promise.race([
-        streamComplete,
-        new Promise<void>((resolve) => setTimeout(resolve, 60000)),
-      ])
-      await new Promise<void>((resolve) => {
-        if (!sourceBuffer.updating && pendingChunks.length === 0) { resolve(); return }
-        const onUpdateEnd = () => {
-          if (!sourceBuffer.updating && pendingChunks.length === 0) {
-            sourceBuffer.removeEventListener('updateend', onUpdateEnd)
-            resolve()
+      const sourceBuffer = await new Promise<SourceBuffer>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('MediaSource 打开超时')), 5000)
+        mediaSource.onsourceopen = () => {
+          clearTimeout(timeout)
+          try {
+            const sb = mediaSource.addSourceBuffer(mimeType)
+            resolve(sb)
+          } catch (e) {
+            reject(new Error(`添加 SourceBuffer 失败: ${e}`))
           }
         }
-        sourceBuffer.addEventListener('updateend', onUpdateEnd)
       })
-      if (mediaSource.readyState === 'open') {
-        try { mediaSource.endOfStream() } catch { /* ignore */ }
-      }
-      await new Promise<void>((resolve) => {
-        audio.onended = () => resolve()
-        audio.onerror = () => resolve()
-        const estimatedMs = Math.min(text.length * 100 + 5000, 30000)
-        setTimeout(() => { audio.pause(); resolve() }, estimatedMs)
-      })
-    }
 
-    unlisten()
-    this.cleanupMediaSource(mediaSource, blobUrl, audio)
+      if (controller.signal.aborted) return
+
+      const pendingChunks: ArrayBuffer[] = []
+      let streamError: string | null = null
+      let firstChunkAppended = false
+
+      let resolveStreamComplete: (() => void) | null = null
+      const streamComplete = new Promise<void>((resolve) => {
+        resolveStreamComplete = resolve
+      })
+
+      const flushBuffer = () => {
+        if (sourceBuffer.updating || pendingChunks.length === 0) return
+        const chunk = pendingChunks.shift()!
+        sourceBuffer.appendBuffer(chunk)
+      }
+
+      sourceBuffer.addEventListener('updateend', () => { flushBuffer() })
+
+      unlisten = await listen<TtsChunk>('tts-audio-chunk', (event) => {
+        // 过滤掉非本次流（已被取代的旧流）的音频帧
+        if (event.payload.stream_id !== streamId) return
+        if (controller.signal.aborted || streamError) return
+        if (event.payload.is_last) {
+          resolveStreamComplete?.()
+          flushBuffer()
+          return
+        }
+        try {
+          const binaryStr = atob(event.payload.data)
+          const bytes = new Uint8Array(binaryStr.length)
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+          pendingChunks.push(bytes.buffer as ArrayBuffer)
+          flushBuffer()
+          if (!firstChunkAppended) {
+            firstChunkAppended = true
+            audio.play().catch(e => log.warn('音频播放启动失败', e))
+          }
+        } catch { /* 跳过损坏块 */ }
+      })
+
+      const invokePromise = invoke('cosyvoice_tts_stream', {
+        streamId, apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
+      })
+
+      try { await invokePromise } catch (err) { streamError = (err as Error).message }
+
+      if (!controller.signal.aborted && !streamError) {
+        // 等待全部音频帧追加完成；安全超时兜底，即便后端漏发 is_last 也不会无限等待
+        await Promise.race([
+          streamComplete,
+          new Promise<void>((resolve) => setTimeout(resolve, 60000)),
+        ])
+        await new Promise<void>((resolve) => {
+          if (!sourceBuffer.updating && pendingChunks.length === 0) { resolve(); return }
+          const onUpdateEnd = () => {
+            if (!sourceBuffer.updating && pendingChunks.length === 0) {
+              sourceBuffer.removeEventListener('updateend', onUpdateEnd)
+              resolve()
+            }
+          }
+          sourceBuffer.addEventListener('updateend', onUpdateEnd)
+        })
+        if (mediaSource.readyState === 'open') {
+          try { mediaSource.endOfStream() } catch { /* ignore */ }
+        }
+        await new Promise<void>((resolve) => {
+          audio.onended = () => resolve()
+          audio.onerror = () => resolve()
+          const estimatedMs = Math.min(text.length * 100 + 5000, 30000)
+          setTimeout(() => { audio.pause(); resolve() }, estimatedMs)
+        })
+      }
+    } finally {
+      unlisten?.()
+      this.cleanupMediaSource(mediaSource, blobUrl, audio)
+    }
   }
 
   /** 清理 MediaSource 资源 */

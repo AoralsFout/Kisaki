@@ -245,28 +245,40 @@ export const useChatStore = defineStore('chat', () => {
   /** 等待用户确认的 resolver */
   let confirmResolver: ((d: ConfirmDecision) => void) | null = null
 
+  /** 确认卡无响应超时（5 分钟）：超时自动拒绝，避免用户离开后永久挂起阻塞 isProcessing */
+  const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
+
   /** 设待确认项并等待用户决定（在确认卡按钮触发 resolveConfirm 后兑现） */
   function waitUserConfirm(tc: ToolCall, signal: AbortSignal): Promise<ConfirmDecision> {
     return new Promise((resolve) => {
       // 已取消：直接拒绝，避免无人应答而卡住循环
       if (signal.aborted) { resolve('reject'); return }
+
+      let settled = false
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      function finish(d: ConfirmDecision) {
+        if (settled) return
+        settled = true
+        if (timeoutId !== null) clearTimeout(timeoutId)
+        signal.removeEventListener('abort', onAbort)
+        confirmResolver = null
+        pendingConfirm.value = null
+        resolve(d)
+      }
+      function onAbort() { finish('reject') }
+
+      timeoutId = setTimeout(() => {
+        log.warn('文件操作确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        finish('reject')
+      }, CONFIRM_TIMEOUT_MS)
+
       pendingConfirm.value = {
         id: tc.id,
         toolName: tc.name,
         path: mutatingPath(tc.name, tc.arguments) || '',
         args: tc.arguments,
       }
-      const onAbort = () => {
-        confirmResolver = null
-        pendingConfirm.value = null
-        resolve('reject')
-      }
-      confirmResolver = (d) => {
-        signal.removeEventListener('abort', onAbort)
-        confirmResolver = null
-        pendingConfirm.value = null
-        resolve(d)
-      }
+      confirmResolver = (d) => finish(d)
       signal.addEventListener('abort', onAbort, { once: true })
     })
   }
@@ -286,23 +298,32 @@ export const useChatStore = defineStore('chat', () => {
   function waitCommandConfirm(tc: ToolCall, signal: AbortSignal): Promise<'allow' | 'reject'> {
     return new Promise((resolve) => {
       if (signal.aborted) { resolve('reject'); return }
+
+      let settled = false
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      function finish(d: 'allow' | 'reject') {
+        if (settled) return
+        settled = true
+        if (timeoutId !== null) clearTimeout(timeoutId)
+        signal.removeEventListener('abort', onAbort)
+        commandConfirmResolver = null
+        pendingCommandConfirm.value = null
+        resolve(d)
+      }
+      function onAbort() { finish('reject') }
+
+      timeoutId = setTimeout(() => {
+        log.warn('命令执行确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        finish('reject')
+      }, CONFIRM_TIMEOUT_MS)
+
       pendingCommandConfirm.value = {
         id: tc.id,
         toolName: tc.name,
         path: dangerousToolSummary(tc.name, tc.arguments) || '',
         args: tc.arguments,
       }
-      const onAbort = () => {
-        commandConfirmResolver = null
-        pendingCommandConfirm.value = null
-        resolve('reject')
-      }
-      commandConfirmResolver = (d) => {
-        signal.removeEventListener('abort', onAbort)
-        commandConfirmResolver = null
-        pendingCommandConfirm.value = null
-        resolve(d)
-      }
+      commandConfirmResolver = (d) => finish(d)
       signal.addEventListener('abort', onAbort, { once: true })
     })
   }
