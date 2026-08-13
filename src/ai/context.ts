@@ -223,11 +223,12 @@ export class ChatContext {
   /**
    * 添加带 tool_calls 的助手消息
    * 例如: {"role":"assistant","content":null,"tool_calls":[...]}
+   * @param content 可选正文（文本工具兜底时，剥离工具调用后的正文附在此处）
    */
-  addAssistantToolCall(toolCalls: any[]) {
+  addAssistantToolCall(toolCalls: any[], content?: string) {
     this.messages.push({
       role: 'assistant',
-      content: '',
+      content: content ?? '',
       tool_calls: toolCalls,
     })
     log.debug('助手工具调用已添加: %d 个', toolCalls.length)

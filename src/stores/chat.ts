@@ -509,6 +509,8 @@ export const useChatStore = defineStore('chat', () => {
 
     /** 把最终台词落地：写气泡、入 UI 历史、触发 TTS */
     const deliver = (voice: string, display: string) => {
+      // 已取消：翻译兜底期间被用户中止时，不交付、不落盘、不播报
+      if (myAbort.signal.aborted) return
       currentBubbleText.value = display
       isTyping.value = true
       addMessage('assistant', display, currentThinking.value, voice)
@@ -521,6 +523,8 @@ export const useChatStore = defineStore('chat', () => {
      * 助手回合始终表现为 say 调用，避免“纯文本回合”污染范式、诱导模型后续不再调工具。
      */
     const commitSyntheticSay = (voice: string, display: string) => {
+      // 已取消：不污染上下文
+      if (myAbort.signal.aborted) return
       const sayId = `say_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       chatContext.addAssistantToolCall([{
         id: sayId,
@@ -635,7 +639,14 @@ export const useChatStore = defineStore('chat', () => {
             isUsingTools.value = true
             currentBubbleText.value = ""
             const cleanText = agentService.stripTextToolCalls(finalText)
-            if (cleanText) chatContext.addAssistantMessage(cleanText)
+            // 与 FC 路径同范式：assistant 消息带 tool_calls（正文附剥离工具调用后的文本），
+            // 随后逐个写 tool 回执。避免「无 tool_calls 的孤儿 tool 结果」导致下次请求 400。
+            const textToolCallsData = textCalls.map(tc => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+            }))
+            chatContext.addAssistantToolCall(textToolCallsData, cleanText || undefined)
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
               beginActivity(tc.id, tc.name || '?')
@@ -674,8 +685,12 @@ export const useChatStore = defineStore('chat', () => {
           isUsingTools.value = actionCalls.length > 0
           currentBubbleText.value = ""
 
-          // 整条 assistant tool_calls 消息入上下文（含 say，保证调用 id 与回执对应）
-          chatContext.addAssistantToolCall(result.calls)
+          // 只把「会写回执」的调用入上下文：动作工具 + 第一条 say。
+          // 多余的 say 直接丢弃，否则会产生无回执的孤儿 tool_call id（下次请求 400）。
+          const keptIds = new Set<string>()
+          for (const c of actionCalls) if (c.id) keptIds.add(c.id)
+          if (sayCall?.id) keptIds.add(sayCall.id)
+          chatContext.addAssistantToolCall(result.calls.filter(c => c.id && keptIds.has(c.id)))
 
           // 先执行动作工具（让立绘先变）
           for (let ti = 0; ti < actionCalls.length; ti++) {
