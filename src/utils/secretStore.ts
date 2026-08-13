@@ -48,14 +48,21 @@ export async function keychainSet(kind: SecretKind, value: string): Promise<bool
   }
 }
 
-/** 从密钥链读取；不可用 / 条目缺失返回 null */
-export async function keychainGet(kind: SecretKind): Promise<string | null> {
-  if (!(await keychainAvailable())) return null
+/** 密钥链读取结果：区分「条目确实不存在」与「读取失败（瞬时/不可用）」 */
+export type KeychainGetResult =
+  | { status: 'ok'; value: string }
+  | { status: 'missing' }   // 条目确实不存在
+  | { status: 'error' }     // 读取失败 / 密钥链不可用
+
+/** 从密钥链读取；区分「条目缺失」与「读取失败」，供调用方决定是否破坏性清理配置 */
+export async function keychainGet(kind: SecretKind): Promise<KeychainGetResult> {
+  if (!(await keychainAvailable())) return { status: 'error' }
   try {
-    return await invoke<string | null>('secure_store_get', { key: kind })
+    const v = await invoke<string | null>('secure_store_get', { key: kind })
+    return v ? { status: 'ok', value: v } : { status: 'missing' }
   } catch (e) {
     log.error('读取密钥链失败（%s）', (e as Error)?.message || String(e))
-    return null
+    return { status: 'error' }
   }
 }
 
@@ -94,10 +101,15 @@ export async function resolveSecret(
   stored: string,
   storageMarker: 'keychain' | undefined,
   looksPlaintext: (k: string) => boolean,
-): Promise<{ key: string | null; needsResave: boolean; storage: SecretStorage }> {
+): Promise<{ key: string | null; needsResave: boolean; storage: SecretStorage; readError?: boolean }> {
   if (storageMarker === 'keychain') {
-    const k = await keychainGet(kind)
-    if (k) return { key: k, needsResave: false, storage: 'keychain' }
+    const r = await keychainGet(kind)
+    if (r.status === 'ok') return { key: r.value, needsResave: false, storage: 'keychain' }
+    if (r.status === 'error') {
+      // 瞬时读取失败：保留 keyStorage 标记，返回 readError 让调用方不清除配置
+      return { key: null, needsResave: false, storage: 'keychain', readError: true }
+    }
+    // 条目确实不存在
     log.error('密钥链中找不到 %s（可能被清理或换机），需要重新配置', kind)
     return { key: null, needsResave: false, storage: 'keychain' }
   }

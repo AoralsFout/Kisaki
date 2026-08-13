@@ -112,10 +112,10 @@ describe('resolveStoredSecret', () => {
     expect(r.needsResave).toBe(false)
   })
 
-  it('无法识别的长字符串按明文保守处理', async () => {
+  it('无法识别的长字符串按明文处理并标记需重新加密', async () => {
     const mod = await import('../crypto')
     const r = await mod.resolveStoredSecret('some-other-provider-key-1234567890', () => false)
     expect(r.key).toBe('some-other-provider-key-1234567890')
-    expect(r.needsResave).toBe(false)
+    expect(r.needsResave).toBe(true)
   })
 })

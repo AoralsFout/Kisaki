@@ -107,6 +107,10 @@ export async function loadSearchConfigSecure(): Promise<SearchConfig> {
     (k) => k.startsWith('tvly-') || k.length <= 20,
   )
   if (resolved.key === null) {
+    if (resolved.readError) {
+      log.error('搜索 API Key 读取失败（瞬时），保留配置待重试')
+      return { ...config, apiKey: '' }
+    }
     log.error('搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
     const { keyStorage: _marker, ...rest } = config
     saveSearchConfig({ ...rest, apiKey: '' })

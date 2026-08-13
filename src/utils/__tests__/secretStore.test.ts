@@ -81,6 +81,17 @@ describe('resolveSecret', () => {
     expect(r.key).toBeNull()
   })
 
+  it('keychain 标记但读取失败（瞬时）→ readError=true（调用方不应清除配置）', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'secure_store_get') return Promise.reject(new Error('dbus error'))
+      return Promise.resolve()
+    })
+    const mod = await loadSecretStore()
+    const r = await mod.resolveSecret('ai_api_key', '', 'keychain', (k) => k.startsWith('sk-'))
+    expect(r.key).toBeNull()
+    expect(r.readError).toBe(true)
+  })
+
   it('本地旧数据在密钥链可用时自动迁移', async () => {
     const mod = await loadSecretStore()
     const r = await mod.resolveSecret(

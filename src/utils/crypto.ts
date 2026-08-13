@@ -103,7 +103,7 @@ async function getLegacyKey(): Promise<CryptoKey> {
 
 /**
  * 加密明文，返回带版本前缀的密文：`kisaki:v1:<base64(iv+ciphertext)>`。
- * 加密失败时回退到明文（不阻断保存流程）。
+ * 加密失败时抛错（不回退明文，避免敏感明文落盘）；由调用方决定走密钥链或提示用户。
  */
 export async function encrypt(plaintext: string): Promise<string> {
   try {
@@ -119,8 +119,7 @@ export async function encrypt(plaintext: string): Promise<string> {
     combined.set(new Uint8Array(encrypted), iv.length)
     return PREFIX + bytesToBase64(combined)
   } catch (e) {
-    log.warn('加密失败，回退到明文存储', e)
-    return plaintext
+    throw new Error('本地加密失败: ' + ((e as Error)?.message || String(e)))
   }
 }
 
@@ -169,7 +168,7 @@ export async function decryptLegacy(ciphertext: string): Promise<string> {
  *
  * - 新格式密文（kisaki:v1: 前缀）：解密成功返回明文；失败返回 null（数据损坏）。
  * - 明显明文（如 sk- / tvly- 前缀或短 Key）：原样返回，标记需要重新加密落盘。
- * - 旧格式密文（无前缀）：尝试旧指纹算法迁移；失败则按明文保守处理。
+ * - 旧格式密文（无前缀）：尝试旧指纹算法迁移；失败则按明文处理（并标记需重新加密）。
  *
  * @param looksPlaintext 判断某值看起来是明文（而非密文）的回调
  * @returns key=null 表示密文损坏无法恢复；needsResave=true 表示应以新格式重新加密写回
@@ -204,7 +203,10 @@ export async function resolveStoredSecret(
     }
   } catch { /* 不是旧格式密文 */ }
 
-  return { key: stored, needsResave: false }
+  // 既不是新格式密文、也不是可解密的旧格式密文 → 一律视为明文，标记需要重新加密。
+  // 修复：Gemini(AIza...)/xAI(xai-...)/Brave(BSA...) 等非 sk-/tvly- 前缀的明文 Key，
+  // 之前会被漏判为「已加密」而永远明文落盘。
+  return { key: stored, needsResave: true }
 }
 
 /** 检测字符串是否为新格式加密数据 */
