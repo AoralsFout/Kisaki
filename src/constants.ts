@@ -99,6 +99,9 @@ export const DEFAULT_TEXT_LANGUAGE = 'zh-CN'
 export const STORAGE_TYPING_SPEED = 'deskpet-typing-speed'
 export const DEFAULT_TYPING_SPEED = 50
 
+/** 首次运行引导是否已完成 */
+export const STORAGE_ONBOARDING_DONE = 'deskpet-onboarding-done'
+
 /** 会话列表存储键 */
 export const STORAGE_SESSIONS = 'deskpet-sessions'
 

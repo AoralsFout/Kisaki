@@ -13,6 +13,7 @@ import { QUERY_LOGS } from '../constants'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { initWindowState } from '../utils/windowState'
 
 const { t } = useI18n()
 
@@ -366,6 +367,8 @@ let historyRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   if (isStandalone) {
+    // 记住并恢复日志窗口位置/大小
+    void initWindowState('logs')
     // 独立窗口：从文件加载历史日志（跨窗口共享）
     await refreshLogFileList()
     if (selectedLogFile.value) {

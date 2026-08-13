@@ -12,12 +12,19 @@ use std::sync::OnceLock;
 static CHARACTERS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static BACKUPS_DIR: OnceLock<PathBuf> = OnceLock::new();
+static SESSIONS_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 初始化数据目录（在 tauri setup 阶段调用）
-pub(crate) fn init_dirs(chars: PathBuf, logs: PathBuf, backups: PathBuf) -> Result<(), &'static str> {
+pub(crate) fn init_dirs(
+    chars: PathBuf,
+    logs: PathBuf,
+    backups: PathBuf,
+    sessions: PathBuf,
+) -> Result<(), &'static str> {
     fs::create_dir_all(&chars).map_err(|_| "创建 characters 目录失败")?;
     fs::create_dir_all(&logs).map_err(|_| "创建 logs 目录失败")?;
     fs::create_dir_all(&backups).map_err(|_| "创建 backups 目录失败")?;
+    fs::create_dir_all(&sessions).map_err(|_| "创建 sessions 目录失败")?;
     CHARACTERS_DIR
         .set(chars)
         .map_err(|_| "CHARACTERS_DIR already set")?;
@@ -27,6 +34,9 @@ pub(crate) fn init_dirs(chars: PathBuf, logs: PathBuf, backups: PathBuf) -> Resu
     BACKUPS_DIR
         .set(backups)
         .map_err(|_| "BACKUPS_DIR already set")?;
+    SESSIONS_DIR
+        .set(sessions)
+        .map_err(|_| "SESSIONS_DIR already set")?;
     Ok(())
 }
 
@@ -54,6 +64,14 @@ pub(crate) fn backups_dir() -> PathBuf {
         .clone();
     let _ = fs::create_dir_all(&dir);
     dir
+}
+
+/// 会话数据文件（聊天历史持久化，见 sessions.rs）
+pub(crate) fn sessions_file() -> PathBuf {
+    SESSIONS_DIR
+        .get()
+        .expect("SESSIONS_DIR 未初始化")
+        .join("sessions.json")
 }
 
 /// 路径安全校验 — 防止 path traversal 攻击

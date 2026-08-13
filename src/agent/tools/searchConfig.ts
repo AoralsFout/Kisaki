@@ -6,7 +6,8 @@
  */
 import { createLogger } from '../../utils/logger'
 import { STORAGE_SEARCH_CONFIG } from '../../constants'
-import { encrypt, resolveStoredSecret } from '../../utils/crypto'
+import { encrypt } from '../../utils/crypto'
+import { persistSecret, resolveSecret, keychainDelete } from '../../utils/secretStore'
 
 const log = createLogger('SearchConfig')
 const STORAGE_KEY = STORAGE_SEARCH_CONFIG
@@ -24,6 +25,8 @@ export interface SearchConfig {
   baseURL: string
   /** 是否启用联网搜索（关闭时 web_search 工具直接返回未启用提示） */
   enabled: boolean
+  /** Key 存储方式标记：'keychain' 时明文在系统密钥链，apiKey 字段为空 */
+  keyStorage?: 'keychain'
 }
 
 /** 默认配置 */
@@ -77,10 +80,16 @@ export function isSearchConfigValid(config: SearchConfig): boolean {
 export async function saveSearchConfigSecure(config: SearchConfig) {
   if (config.apiKey) {
     setDecryptedApiKeyCache(config.apiKey)
-    const encrypted = await encrypt(config.apiKey)
-    saveSearchConfig({ ...config, apiKey: encrypted })
+    const { value, storage } = await persistSecret('search_api_key', config.apiKey)
+    saveSearchConfig({
+      ...config,
+      apiKey: value,
+      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
+    })
   } else {
-    saveSearchConfig(config)
+    await keychainDelete('search_api_key')
+    const { keyStorage: _marker, ...rest } = config
+    saveSearchConfig({ ...rest, apiKey: '' })
   }
 }
 
@@ -89,22 +98,28 @@ export async function loadSearchConfigSecure(): Promise<SearchConfig> {
   const config = loadSearchConfig()
   if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
 
-  if (!config.apiKey) return config
+  if (!config.apiKey && config.keyStorage !== 'keychain') return config
 
-  const resolved = await resolveStoredSecret(
+  const resolved = await resolveSecret(
+    'search_api_key',
     config.apiKey,
+    config.keyStorage,
     (k) => k.startsWith('tvly-') || k.length <= 20,
   )
   if (resolved.key === null) {
-    log.error('搜索 API Key 解密失败，已清除失效配置，请重新填写')
-    const cleaned = { ...config, apiKey: '' }
-    saveSearchConfig(cleaned)
-    return cleaned
+    log.error('搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    const { keyStorage: _marker, ...rest } = config
+    saveSearchConfig({ ...rest, apiKey: '' })
+    return { ...rest, apiKey: '' }
   }
   setDecryptedApiKeyCache(resolved.key)
   if (resolved.needsResave) {
-    const encryptedKey = await encrypt(resolved.key)
-    saveSearchConfig({ ...config, apiKey: encryptedKey })
+    if (resolved.storage === 'keychain') {
+      saveSearchConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
+    } else {
+      const encryptedKey = await encrypt(resolved.key)
+      saveSearchConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
+    }
   }
   return { ...config, apiKey: resolved.key }
 }

@@ -4,7 +4,8 @@
 import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'
 import { createLogger } from '../utils/logger'
 import { STORAGE_COSYVOICE_CONFIG, STORAGE_GPTSOVITS_CONFIG, STORAGE_TTS_PROVIDER } from '../constants'
-import { encrypt, resolveStoredSecret } from '../utils/crypto'
+import { encrypt } from '../utils/crypto'
+import { persistSecret, resolveSecret, keychainDelete } from '../utils/secretStore'
 
 const log = createLogger('TTSConfig')
 const STORAGE_KEY = STORAGE_COSYVOICE_CONFIG
@@ -78,10 +79,16 @@ export async function saveCosyVoiceConfigSecure(config: CosyVoiceConfig) {
   if (config.apiKey) {
     // 与 AI 配置保持一致：保存时同步刷新本窗口的解密缓存
     setDecryptedApiKeyCache(config.apiKey)
-    const encrypted = await encrypt(config.apiKey)
-    saveCosyVoiceConfig({ ...config, apiKey: encrypted })
+    const { value, storage } = await persistSecret('cosyvoice_api_key', config.apiKey)
+    saveCosyVoiceConfig({
+      ...config,
+      apiKey: value,
+      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
+    })
   } else {
-    saveCosyVoiceConfig(config)
+    await keychainDelete('cosyvoice_api_key')
+    const { keyStorage: _marker, ...rest } = config
+    saveCosyVoiceConfig({ ...rest, apiKey: '' })
   }
 }
 
@@ -91,22 +98,28 @@ export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
   // 已有解密缓存
   if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
 
-  if (!config.apiKey) return config
+  if (!config.apiKey && config.keyStorage !== 'keychain') return config
 
-  const resolved = await resolveStoredSecret(
+  const resolved = await resolveSecret(
+    'cosyvoice_api_key',
     config.apiKey,
+    config.keyStorage,
     (k) => k.startsWith('sk-') || k.length <= 20,
   )
   if (resolved.key === null) {
-    log.error('CosyVoice API Key 解密失败，已清除失效配置，请重新填写')
-    const cleaned = { ...config, apiKey: '' }
-    saveCosyVoiceConfig(cleaned)
-    return cleaned
+    log.error('CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    const { keyStorage: _marker, ...rest } = config
+    saveCosyVoiceConfig({ ...rest, apiKey: '' })
+    return { ...rest, apiKey: '' }
   }
   setDecryptedApiKeyCache(resolved.key)
   if (resolved.needsResave) {
-    const encryptedKey = await encrypt(resolved.key)
-    saveCosyVoiceConfig({ ...config, apiKey: encryptedKey })
+    if (resolved.storage === 'keychain') {
+      saveCosyVoiceConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
+    } else {
+      const encryptedKey = await encrypt(resolved.key)
+      saveCosyVoiceConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
+    }
   }
   return { ...config, apiKey: resolved.key }
 }

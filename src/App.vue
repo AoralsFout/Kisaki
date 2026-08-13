@@ -17,6 +17,7 @@ import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
 import DevPanel from './components/settings/DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
+import Onboarding from './components/Onboarding.vue'
 import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
 import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
@@ -36,11 +37,13 @@ import {
   CHANNEL_DESKPET_DEV,
   DEFAULT_VOICE_LANGUAGE,
   EVENT_CHARACTERS_CHANGED,
+  STORAGE_ONBOARDING_DONE,
 } from './constants'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled, isIgnoring } from './passthrough'
+import { initWindowState } from './utils/windowState'
 
 const log = createLogger('App')
 
@@ -108,6 +111,18 @@ async function onCharactersChanged() {
 // 角色切换后（UI / agent / 会话恢复任一路径）统一刷新人设（system prompt）
 watch(() => charStore.currentId, () => applyCharacterPersona())
 
+// ── 首次运行引导 ──
+const showOnboarding = ref(false)
+
+function isOnboardingDone(): boolean {
+  try { return localStorage.getItem(STORAGE_ONBOARDING_DONE) === '1' } catch { return true }
+}
+
+function finishOnboarding() {
+  try { localStorage.setItem(STORAGE_ONBOARDING_DONE, '1') } catch { /* ignore */ }
+  showOnboarding.value = false
+}
+
 let welcomeShown = false
 
 onMounted(async () => {
@@ -125,6 +140,10 @@ onMounted(async () => {
   chat.init()
   await charStore.init().catch((e) => log.error('角色初始化失败', e))
   charReady.value = true
+  // 首次运行：无完成标记时显示引导（仅主窗口）
+  if (!isSettings) {
+    showOnboarding.value = !isOnboardingDone()
+  }
   // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
   setAvailableCharacters(charStore.availableList)
   watch(() => charStore.availableList, (list) => {
@@ -140,7 +159,7 @@ onMounted(async () => {
   await sessionStore.init()
 
   setTimeout(() => {
-    if (!welcomeShown && chat.messages.length === 0) {
+    if (!showOnboarding.value && !welcomeShown && chat.messages.length === 0) {
       welcomeShown = true
       chat.showBubbleText(t('app.bubble.welcome'), true)
     }
@@ -187,6 +206,8 @@ onMounted(async () => {
   // 初始化鼠标穿透（仅主窗口；设置窗口跳过，logs/dev 已在前面 return）
   if (!isSettings) {
     await initPassthrough()
+    // 记住并恢复主窗口位置/大小（桌宠回到上次待的位置）
+    await initWindowState('main')
   }
 })
 
@@ -391,6 +412,9 @@ async function handleSelectCharacter(charId: string) {
     <SessionList :visible="showSession" @close="showSession = false" />
     <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false"
       @select="handleSelectCharacter" />
+
+    <!-- 首次运行引导（覆盖层） -->
+    <Onboarding :visible="showOnboarding" @open-settings="openSettingsWindow" @finish="finishOnboarding" />
   </main>
 </template>
 

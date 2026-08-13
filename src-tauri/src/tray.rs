@@ -19,7 +19,7 @@ const MENU_TOGGLE: &str = "toggle";
 const MENU_QUIT: &str = "quit";
 
 /// 切换主窗口显示 / 隐藏；显示时一并聚焦。
-fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();

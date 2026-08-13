@@ -10,6 +10,7 @@ import { useI18n } from 'vue-i18n'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { QUERY_SETTINGS } from '../constants'
+import { initWindowState } from '../utils/windowState'
 import DevPanel from './settings/DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import SettingsGeneral from './settings/SettingsGeneral.vue'
@@ -17,6 +18,7 @@ import SettingsApi from './settings/SettingsApi.vue'
 import SettingsSearch from './settings/SettingsSearch.vue'
 import SettingsTts from './settings/SettingsTts.vue'
 import SettingsAbout from './settings/SettingsAbout.vue'
+import SettingsPrivacy from './settings/SettingsPrivacy.vue'
 
 const { t } = useI18n()
 
@@ -24,16 +26,18 @@ const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_S
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 导航 ----
-type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about'
+type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about' | 'privacy'
 const activeTab = ref<Tab>('general')
 
 onMounted(() => {
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
+    // 记住并恢复设置窗口位置/大小
+    void initWindowState('settings')
   }
   // 支持通过 URL ?tab=character 定位标签页
   const tabParam = new URLSearchParams(window.location.search).get('tab')
-  const validTabs: Tab[] = ['general', 'api', 'search', 'character', 'tts', 'dev', 'about']
+  const validTabs: Tab[] = ['general', 'api', 'search', 'character', 'tts', 'dev', 'about', 'privacy']
   if (tabParam && (validTabs as string[]).includes(tabParam)) {
     activeTab.value = tabParam as Tab
   }
@@ -100,6 +104,10 @@ function closeWindow() {
           <i class="fas fa-circle-info nav-icon"></i>
           <span>{{ t('settings.nav.about') }}</span>
         </button>
+        <button :class="['nav-item', { active: activeTab === 'privacy' }]" @click="activeTab = 'privacy'">
+          <i class="fas fa-shield-halved nav-icon"></i>
+          <span>{{ t('settings.nav.privacy') }}</span>
+        </button>
       </nav>
 
       <!-- 右侧内容 -->
@@ -120,6 +128,7 @@ function closeWindow() {
         </div>
 
         <SettingsAbout v-if="activeTab === 'about'" />
+        <SettingsPrivacy v-if="activeTab === 'privacy'" />
       </main>
     </div>
   </div>

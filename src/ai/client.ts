@@ -28,7 +28,8 @@ interface ToolDef {
 }
 
 import { STORAGE_AI_CONFIG } from '../constants'
-import { encrypt, resolveStoredSecret } from '../utils/crypto'
+import { encrypt } from '../utils/crypto'
+import { persistSecret, resolveSecret, keychainDelete } from '../utils/secretStore'
 
 /** 保存的配置键名 */
 const STORAGE_KEY = STORAGE_AI_CONFIG
@@ -62,10 +63,17 @@ export function saveConfig(config: AIConfig) {
 export async function saveConfigSecure(config: AIConfig) {
   if (config.apiKey) {
     setDecryptedApiKeyCache(config.apiKey)
-    const encrypted = await encrypt(config.apiKey)
-    saveConfig({ ...config, apiKey: encrypted })
+    const { value, storage } = await persistSecret('ai_api_key', config.apiKey)
+    saveConfig({
+      ...config,
+      apiKey: value,
+      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
+    })
   } else {
-    saveConfig(config)
+    // 清除 Key：删除密钥链条目，并去掉 keyStorage 标记
+    await keychainDelete('ai_api_key')
+    const { keyStorage: _marker, ...rest } = config
+    saveConfig({ ...rest, apiKey: '' })
   }
 }
 
@@ -76,24 +84,30 @@ export async function loadConfigSecure(): Promise<AIConfig> {
   const config = loadConfig()
   if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
 
-  if (!config.apiKey) return config
+  if (!config.apiKey && config.keyStorage !== 'keychain') return config
 
-  const resolved = await resolveStoredSecret(
+  const resolved = await resolveSecret(
+    'ai_api_key',
     config.apiKey,
+    config.keyStorage,
     (k) => k.startsWith('sk-') || k.length <= 20,
   )
   if (resolved.key === null) {
-    // 密文损坏 / 主密钥丢失：清掉 Key，避免把乱码发给 API 造成 401；用户需重新填写
-    log.error('API Key 解密失败，已清除失效配置，请重新填写')
-    const cleaned = { ...config, apiKey: '' }
-    saveConfig(cleaned)
-    return cleaned
+    // 密钥链条目丢失 / 本地密文损坏：清掉 Key，避免把乱码发给 API 造成 401
+    log.error('API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    const { keyStorage: _marker, ...rest } = config
+    saveConfig({ ...rest, apiKey: '' })
+    return { ...rest, apiKey: '' }
   }
   setDecryptedApiKeyCache(resolved.key)
   if (resolved.needsResave) {
-    // 明文 / 旧格式密文 → 迁移为新格式（写回加密值，不写明文）
-    const encryptedKey = await encrypt(resolved.key)
-    saveConfig({ ...config, apiKey: encryptedKey })
+    if (resolved.storage === 'keychain') {
+      saveConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
+    } else {
+      // 明文 / 旧格式密文 → 迁移为本地加密新格式（不写明文）
+      const encryptedKey = await encrypt(resolved.key)
+      saveConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
+    }
   }
   return { ...config, apiKey: resolved.key }
 }

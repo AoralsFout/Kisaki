@@ -33,9 +33,9 @@ import { useSessionStore } from '../../../stores/session'
 
 const ROOT = 'C:\\work\\ws'
 
-function setupSessionWithWorkspace(root: string | null) {
+async function setupSessionWithWorkspace(root: string | null) {
   const store = useSessionStore()
-  store.init()
+  await store.init()
   if (root) store.setWorkspace(root)
   else store.clearWorkspace()
   return store
@@ -46,27 +46,30 @@ describe('文件工具 - 未授权工作目录', () => {
     setActivePinia(createPinia())
     localStorageMock.clear()
     invokeMock.mockReset()
+    // 默认模拟非 Tauri 环境：session store 走 localStorage 回退，不产生 invoke 噪音
+    invokeMock.mockRejectedValue(new Error('not in tauri'))
   })
 
   it('未设置工作目录时 read_file 抛出引导性错误', async () => {
-    setupSessionWithWorkspace(null)
+    await setupSessionWithWorkspace(null)
     await expect(readFileTool.handler({ path: 'a.txt' })).rejects.toThrow(/工作目录/)
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('agent_read_file', expect.anything())
   })
 
   it('未设置工作目录时 write_file 抛错且不调用后端', async () => {
-    setupSessionWithWorkspace(null)
+    await setupSessionWithWorkspace(null)
     await expect(writeFileTool.handler({ path: 'a.txt', content: 'x' })).rejects.toThrow()
-    expect(invokeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('agent_write_file', expect.anything())
   })
 })
 
 describe('文件工具 - 已授权工作目录', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     localStorageMock.clear()
     invokeMock.mockReset()
-    setupSessionWithWorkspace(ROOT)
+    invokeMock.mockRejectedValue(new Error('not in tauri'))
+    await setupSessionWithWorkspace(ROOT)
   })
 
   it('read_file 传入 root+relPath，返回内容', async () => {

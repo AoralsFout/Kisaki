@@ -26,6 +26,8 @@ dist-packs
 
 # ai agent test workspace
 workspace
+# Kisaki cmd output
+.kisaki_cmd_output
 # live2d example
 live2d-example
 # live2d 开发用模型（不入库；模型授权见 README）

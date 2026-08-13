@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 会话管理 Store 单元测试
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -27,10 +27,10 @@ describe('useSessionStore', () => {
     vi.clearAllMocks()
   })
 
-  it('首次启动时自动创建默认会话', () => {
+  it('首次启动时自动创建默认会话', async () => {
     const store = useSessionStore()
     expect(store.ready).toBe(false)
-    store.init()
+    await store.init()
     expect(store.ready).toBe(true)
     expect(store.sessionList).toHaveLength(1)
     expect(store.currentSession).not.toBeNull()
@@ -38,9 +38,9 @@ describe('useSessionStore', () => {
     expect(store.currentSession!.messages).toEqual([])
   })
 
-  it('本地存储写入失败时置 persistError 并记录日志', () => {
+  it('本地存储写入失败时置 persistError 并记录日志', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
     expect(store.persistError).toBe(false)
 
     // 模拟配额耗尽：setItem 抛 QuotaExceededError
@@ -54,9 +54,9 @@ describe('useSessionStore', () => {
     localStorageMock.setItem.mockImplementation(originalSetItem!)
   })
 
-  it('可以创建新会话', () => {
+  it('可以创建新会话', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const s = store.createSession()
     expect(store.sessionList).toHaveLength(2)
@@ -64,9 +64,9 @@ describe('useSessionStore', () => {
     expect(s.messages).toEqual([])
   })
 
-  it('可以创建指定名称的会话', () => {
+  it('可以创建指定名称的会话', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     store.createSession('工作记录')
     const named = store.getSessionById(
@@ -76,9 +76,9 @@ describe('useSessionStore', () => {
     expect(named!.name).toBe('工作记录')
   })
 
-  it('切换会话时保存当前消息并加载目标消息', () => {
+  it('切换会话时保存当前消息并加载目标消息', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const chat = useChatStore()
     chat.loadMessages([
@@ -106,9 +106,9 @@ describe('useSessionStore', () => {
     expect(chat.messages).toHaveLength(0)
   })
 
-  it('不能删除最后一个会话', () => {
+  it('不能删除最后一个会话', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
     expect(store.sessionList).toHaveLength(1)
 
     const ok = store.deleteSession(store.currentSessionId)
@@ -116,9 +116,9 @@ describe('useSessionStore', () => {
     expect(store.sessionList).toHaveLength(1)
   })
 
-  it('可以删除非当前会话', () => {
+  it('可以删除非当前会话', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
     store.createSession()
     expect(store.sessionList).toHaveLength(2)
 
@@ -129,27 +129,27 @@ describe('useSessionStore', () => {
     expect(store.sessionList).toHaveLength(1)
   })
 
-  it('可以重命名会话', () => {
+  it('可以重命名会话', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const ok = store.renameSession(store.currentSessionId, '重命名测试')
     expect(ok).toBe(true)
     expect(store.currentSession!.name).toBe('重命名测试')
   })
 
-  it('拒绝空名称重命名', () => {
+  it('拒绝空名称重命名', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const ok = store.renameSession(store.currentSessionId, '  ')
     expect(ok).toBe(false)
     expect(store.currentSession!.name).toBe('新对话')
   })
 
-  it('数据持久化到 localStorage', () => {
+  it('数据持久化到 localStorage', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
     store.createSession()
     store.createSession()
 
@@ -170,7 +170,7 @@ describe('useSessionStore', () => {
     expect(saved).toHaveLength(3)
   })
 
-  it('从 localStorage 恢复会话', () => {
+  it('从 localStorage 恢复会话', async () => {
     // 预先存储数据
     const now = Date.now()
     const sessions = [
@@ -183,7 +183,7 @@ describe('useSessionStore', () => {
     localStorageMock.setItem('deskpet-current-session', JSON.stringify('s2'))
 
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     expect(store.ready).toBe(true)
     expect(store.sessionList).toHaveLength(2)
@@ -195,7 +195,7 @@ describe('useSessionStore', () => {
     expect(chat.messages).toHaveLength(0) // 会话 B 没有消息
   })
 
-  it('从 localStorage 恢复时自动加载消息到 ChatStore', () => {
+  it('从 localStorage 恢复时自动加载消息到 ChatStore', async () => {
     const now = Date.now()
     const sessions = [
       { id: 's1', name: '有历史', messages: [
@@ -207,7 +207,7 @@ describe('useSessionStore', () => {
     localStorageMock.setItem('deskpet-current-session', JSON.stringify('s1'))
 
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const chat = useChatStore()
     expect(chat.messages).toHaveLength(2)
@@ -215,9 +215,9 @@ describe('useSessionStore', () => {
     expect(chat.messages[1].text).toBe('嘿')
   })
 
-  it('会话列表按创建时间正序排列', () => {
+  it('会话列表按创建时间正序排列', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     store.createSession('旧会话')
     // 模拟不同时间
@@ -233,9 +233,9 @@ describe('useSessionStore', () => {
     expect(list[list.length - 1].name).toBe('新会话')
   })
 
-  it('saveCurrentSession 保存 ChatStore 消息', () => {
+  it('saveCurrentSession 保存 ChatStore 消息', async () => {
     const store = useSessionStore()
-    store.init()
+    await store.init()
 
     const chat = useChatStore()
     chat.addMessage('user', '测试消息')

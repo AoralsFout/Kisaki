@@ -60,11 +60,22 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build (frontend typecheck + bundle Tauri app)
-        run: npm run tauri build
+      # push / PR：仅验证编译通过（不打包、不签名，避免 fork PR 无密钥时失败）
+      - name: Build (compile verify — no bundle, no signing)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npx tauri build --no-bundle
 
-      # 上传打包产物（对所有分支/tag 都保留 artifacts）
-      - name: Upload build artifacts (.msi / .exe / .dmg / .deb / .AppImage)
+      # tag：完整打包 + 用私钥签名生成 updater 产物（.sig）
+      - name: Build (bundle + sign updater artifacts)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build
+
+      # 上传打包产物（仅 tag 构建产出 bundle；含安装包 + .sig 签名文件）
+      - name: Upload build artifacts
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: kisaki-${{ runner.os }}
@@ -81,6 +92,12 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
 
@@ -110,10 +127,20 @@ jobs:
           echo "Uploading artifacts to Release: $TAG"
           for dir in kisaki-*/; do
             echo "  ── $dir ──"
-            # 只上传最终安装包（排除 AppDir 等中间目录）
-            find "$dir" -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -print | while read -r file; do
+            # 上传最终安装包 + 更新载荷（*.app.tar.gz / *.AppImage.tar.gz）
+            find "$dir" -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" -o -name "*.app.tar.gz" -o -name "*.AppImage.tar.gz" \) -print | while read -r file; do
               echo "    ↑ ${file#$dir}"
               gh release upload "$TAG" "$file" --clobber
             done
           done
           echo "✔ All artifacts uploaded to $TAG"
+
+      # 汇总各平台 .sig 生成 latest.json（自动更新清单，url 指向本 Release）
+      - name: Generate latest.json
+        run: node scripts/build-update-manifest.mjs "${{ github.ref_name }}" "${{ github.repository }}"
+
+      - name: Upload latest.json to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ github.ref_name }}" latest.json --clobber

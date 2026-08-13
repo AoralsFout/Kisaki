@@ -112,6 +112,27 @@ export default {
     },
   },
 
+  onboarding: {
+    title: 'Kisaki へようこそ',
+    subtitle: 'いくつかの設定で、あなたのマスコットを動かしましょう',
+    api: {
+      title: 'AI を設定',
+      desc: 'API Key とモデルを入力して、キャラが会話できるように',
+      action: '設定する',
+      ready: '設定済み',
+    },
+    character: {
+      title: 'キャラを追加',
+      desc: 'キャラパックをインポート、または新規作成',
+      action: '追加する',
+      ready: 'キャラあり',
+    },
+    voice: '音声読み上げは任意です。後で「設定 → 音声合成」から有効にできます',
+    start: 'はじめる',
+    later: 'あとで',
+    notReady: '上の 2 ステップを完了するとチャットを始められます',
+  },
+
   window: {
     settings: '設定',
     logs: 'ログ',
@@ -129,6 +150,7 @@ export default {
       tts: '音声合成',
       dev: 'Dev',
       about: 'について',
+      privacy: 'プライバシー',
     },
     api: {
       title: 'API 設定',
@@ -202,6 +224,10 @@ export default {
       uiLangHint: 'アプリ画面の表示言語（AI の返信翻訳言語とは独立しています）。',
       autoExecTitle: 'ファイル変更を自動実行',
       autoExecDesc: '有効にすると、AI のファイル変更を都度確認しません（バックアップは自動で取られ、履歴から復元できます）。',
+      autostartTitle: 'ログイン時に起動',
+      autostartDesc: 'ログイン時にマスコットを自動起動します',
+      shortcutTitle: 'グローバルショートカット',
+      shortcutDesc: 'Alt+K でマスコットを表示／非表示（透過モード時の呼び出し口）',
     },
     about: {
       title: 'について',
@@ -213,6 +239,36 @@ export default {
       openCharFolder: 'キャラクターデータフォルダを開く',
       openLogs: 'ログビューアを開く',
       exitApp: 'アプリを終了',
+      checkUpdate: '更新を確認',
+      updateChecking: '更新を確認中…',
+      updateUpToDate: '最新バージョンです',
+      updateFound: '新しいバージョン v{version} が見つかりました',
+      updateDownload: 'ダウンロードしてインストール',
+      updateDownloading: 'ダウンロード・インストール中…',
+      updateInstalled: '更新をインストールしました。再起動すると反映されます',
+      updateError: '自動更新を利用できません：{msg}',
+      updateHint: '自動更新には tauri.conf.json に署名用公開鍵と更新先を設定する必要があります（docs/productization-spec.md 参照）',
+    },
+    privacy: {
+      title: 'プライバシーポリシー',
+      desc: 'Kisaki はあなたのプライバシーを尊重します。以下、アプリがデータをどのように扱うかを説明します。',
+      local: {
+        title: 'データは端末内に保存',
+        body: 'API Key、検索キー、会話履歴、キャラクター、セッションはすべて端末内にのみ保存されます。機密情報は OS のキーチェーン（Windows 資格情報マネージャー / macOS キーチェーン / Linux Secret Service）に優先保存し、利用できない場合はローカルの暗号化ストレージにフォールバックします。',
+      },
+      network: {
+        title: 'ネットワーク通信',
+        body: 'アプリは、あなたが該当機能を実際に使ったときだけ外部サービスへ通信します：AI 会話 API（設定した OpenAI 互換 URL）、音声合成（CosyVoice / GPT-SoVITS）、ウェブ検索、天気取得。送信されるのは入力した会話テキストや検索語のみで、端末情報は含まれません。',
+      },
+      logs: {
+        title: 'ログ',
+        body: 'アプリはトラブルシューティングのためローカルに実行ログを記録します（ユーザーデータフォルダ内、ローテーションとサイズ上限あり）。ログが自動送信されることはなく、「ログ」ウィンドウで手動エクスポートした場合にのみ端末外に出ます。',
+      },
+      delete: {
+        title: 'データの削除',
+        body: '「設定 → について」からデータフォルダを開いて確認できます。アプリのデータフォルダを削除すればローカルデータをすべて消去できます。キーチェーンの資格情報はシステム設定で個別に削除してください。',
+      },
+      noTelemetry: '本アプリにはテレメトリ・解析・広告 SDK は含まれず、バックグラウンドで利用データを収集することもありません。',
     },
     dev: {
       title: 'Dev パネル',

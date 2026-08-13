@@ -4,7 +4,8 @@
  * 功能：
  * - 创建/删除/重命名会话
  * - 在不同会话间切换（自动保存当前会话）
- * - 自动持久化到 localStorage，下次启动自动恢复
+ * - 自动持久化：Tauri 环境写入 Rust 管理的 sessions.json（原子写入），
+ *   非 Tauri 环境回退 localStorage；旧数据首次启动自动迁移
  * - 与 ChatStore 协同：切换会话时加载/保存消息
  */
 import { defineStore } from 'pinia'
@@ -85,6 +86,37 @@ function saveJSON(key: string, value: unknown): boolean {
   }
 }
 
+// ─── 文件持久化（Tauri）与 localStorage 回退 ────────────────
+// 会话数据（聊天历史、角色状态、检查点）是用户资产且体积可能远超
+// localStorage 配额（WebView 约 10MB），故迁移到 Rust 管理的
+// sessions.json（原子写入）。浏览器环境（非 Tauri）自动回退 localStorage。
+
+/** true=文件模式；false=localStorage 回退；init 前为 null */
+let fileMode: boolean | null = null
+/** 文件写入串行队列：保证多次快速保存不会乱序覆盖 */
+let fileSaveQueue: Promise<boolean> = Promise.resolve(true)
+
+type FileLoadResult =
+  | { ok: true; data: { sessions: Session[]; currentId: string } | null }
+  | { ok: false }
+
+async function loadFromFile(): Promise<FileLoadResult> {
+  try {
+    const raw = await invoke<string | null>('sessions_load')
+    if (raw == null) return { ok: true, data: null }
+    const parsed = JSON.parse(raw) as { sessions?: Session[]; currentId?: string }
+    if (!Array.isArray(parsed.sessions) || typeof parsed.currentId !== 'string') {
+      log.warn('会话文件格式异常，按无数据处理（不会覆盖文件直到下次保存）')
+      return { ok: true, data: null }
+    }
+    return { ok: true, data: { sessions: parsed.sessions, currentId: parsed.currentId } }
+  } catch (e) {
+    log.warn('读取会话文件失败（非 Tauri 环境？），回退 localStorage: %s',
+      (e as Error)?.message || String(e))
+    return { ok: false }
+  }
+}
+
 // ─── Store ────────────────────────────────────────────────
 
 export const useSessionStore = defineStore('session', () => {
@@ -108,17 +140,36 @@ export const useSessionStore = defineStore('session', () => {
   // ── 初始化 ──
 
   /**
-   * 从 localStorage 加载数据并恢复上次会话
+   * 加载数据并恢复上次会话。
+   * 优先读 Rust 管理的会话文件（Tauri），不可用时回退 localStorage；
+   * 旧 localStorage 数据会在文件可用时自动迁移（成功后清除旧副本）。
    * 应在 ChatStore 初始化且 system prompt 设定后调用
    */
   async function init() {
-    const saved = loadJSON<Session[]>(STORAGE_SESSIONS, [])
+    const file = await loadFromFile()
+    fileMode = file.ok
+
+    let saved: Session[] = []
+    let source: 'file' | 'local' | 'none' = 'none'
+    if (file.ok && file.data) {
+      saved = file.data.sessions
+      source = 'file'
+    } else {
+      const local = loadJSON<Session[]>(STORAGE_SESSIONS, [])
+      if (local.length > 0) {
+        saved = local
+        source = 'local'
+      }
+    }
+
     let toRestore: Session | null = null
 
     if (saved.length > 0) {
       sessions.value = saved
       // 恢复上次使用的会话
-      const lastId = loadJSON<string>(STORAGE_CURRENT_SESSION, '')
+      const lastId = file.ok && file.data
+        ? file.data.currentId
+        : loadJSON<string>(STORAGE_CURRENT_SESSION, '')
       if (lastId && sessions.value.some(s => s.id === lastId)) {
         currentSessionId.value = lastId
       } else {
@@ -152,6 +203,18 @@ export const useSessionStore = defineStore('session', () => {
       persistSessions()
     }
 
+    // 迁移：localStorage 旧数据 → 会话文件（文件写入成功后才清除旧副本，避免丢数据）
+    if (source === 'local' && file.ok) {
+      const migrated = await persistToFile(sessions.value, currentSessionId.value)
+      if (migrated) {
+        try {
+          localStorage.removeItem(STORAGE_SESSIONS)
+          localStorage.removeItem(STORAGE_CURRENT_SESSION)
+        } catch { /* ignore */ }
+        log.info('会话数据已从 localStorage 迁移到会话文件')
+      }
+    }
+
     ready.value = true
     log.info(
       '初始化完成: %d 个会话, 当前="%s"',
@@ -165,7 +228,33 @@ export const useSessionStore = defineStore('session', () => {
 
   // ── 持久化 ──
 
+  /**
+   * 写会话文件（串行队列，保证保存顺序）。返回是否成功。
+   * 失败时置 persistError，供 UI 提示用户。
+   */
+  function persistToFile(sessions: Session[], currentId: string): Promise<boolean> {
+    const payload = JSON.stringify({ sessions, currentId })
+    const p = fileSaveQueue
+      .then(() => invoke('sessions_save', { data: payload }))
+      .then(
+        () => true,
+        (e) => {
+          log.error('会话写入磁盘失败，历史可能无法保存: %s', (e as Error)?.message || String(e))
+          persistError.value = true
+          return false
+        },
+      )
+    fileSaveQueue = p
+    return p
+  }
+
   function persistSessions() {
+    if (fileMode === true) {
+      void persistToFile(sessions.value, currentSessionId.value).then(ok => {
+        if (ok) persistError.value = false
+      })
+      return
+    }
     const sessionsOk = saveJSON(STORAGE_SESSIONS, sessions.value)
     const currentOk = saveJSON(STORAGE_CURRENT_SESSION, currentSessionId.value)
     const ok = sessionsOk && currentOk

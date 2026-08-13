@@ -6,6 +6,8 @@ mod fileio;
 mod log;
 mod pack;
 mod path;
+mod secure;
+mod sessions;
 mod tray;
 mod tts;
 mod websearch;
@@ -13,6 +15,7 @@ mod websearch;
 use std::path::PathBuf;
 
 use tauri::Manager;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,15 +23,38 @@ pub fn run() {
         .manage(tts::TtsConnectionPool::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // 单实例：二次启动只唤回已存在的主窗口，避免多进程争抢同一份数据
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
+        // 开机自启（前端设置开关控制；macOS 走 LaunchAgent）
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        // 全局快捷键（setup 内注册 Alt+K 唤出/隐藏）
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // 桌面通知
+        .plugin(tauri_plugin_notification::init())
+        // 自动更新（pubkey / endpoints 由 tauri.conf.json 的 plugins.updater 提供；
+        // 未配置时前端「检查更新」会优雅降级为提示，不会崩溃）
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // 进程控制（更新安装完成后自动重启）
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // 区分 dev / 生产模式：
             //   cfg!(debug_assertions) = true  → tauri dev（debug 编译）→ dev 路径，git 可追踪
             //   cfg!(debug_assertions) = false → tauri build（release） → 生产路径（app_data_dir，首次为空）
             // 注意：不能用 CARGO_MANIFEST_DIR 判断，因为生产 exe 仍包含开发机上的路径，只需在 debug 块内使用。
-            let (chars_dir, logs_dir) = if cfg!(debug_assertions) {
+            let (chars_dir, logs_dir, sessions_dir) = if cfg!(debug_assertions) {
                 // ── dev 模式 ──
                 // characters → <project>/characters/  （git 可追踪）
                 // logs       → <project>/logs/
+                // sessions   → <project>/logs/        （日志目录已 gitignore）
                 let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 let project_root = manifest_dir
                     .parent()
@@ -37,16 +63,23 @@ pub fn run() {
                 (
                     project_root.join("characters"),
                     project_root.join("logs"),
+                    project_root.join("logs"),
                 )
             } else {
                 // ── 生产模式 ──
                 // characters → <app_data_dir>/characters/（首次为空，由用户导入角色包填充）
                 // logs       → <app_data_dir>/logs/
+                // sessions   → <app_data_dir>/
                 // 不再随程序分发预置角色，也不做首次拷贝。
                 let d = app.path().app_data_dir()?;
-                (d.join("characters"), d.join("logs"))
+                (d.join("characters"), d.join("logs"), d.clone())
             };
-            path::init_dirs(chars_dir, logs_dir, app.path().app_cache_dir()?.join("backups"))?;
+            path::init_dirs(
+                chars_dir,
+                logs_dir,
+                app.path().app_cache_dir()?.join("backups"),
+                sessions_dir,
+            )?;
 
             // ─── 全局光标轮询（主窗口鼠标穿透命中测试） ───
             // 主窗口透明，透明区域需让鼠标穿透到下方窗口。穿透开启后 WebView
@@ -56,6 +89,23 @@ pub fn run() {
 
             // ─── 系统托盘（无边框窗口的跨平台唤回 / 退出入口） ───
             tray::setup_tray(app.handle())?;
+
+            // ─── 全局快捷键：Alt+K 唤出 / 隐藏主窗口 ───
+            // 无边框桌宠在「鼠标穿透态」下无法点击，快捷键作为稳定的唤回入口。
+            // 注册失败（被其它应用占用）仅告警，不阻断启动。
+            {
+                let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyK);
+                if let Err(e) = app
+                    .global_shortcut()
+                    .on_shortcut(shortcut, |app, _shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            tray::toggle_main_window(app);
+                        }
+                    })
+                {
+                    eprintln!("[kisaki] 注册全局快捷键 Alt+K 失败: {e}");
+                }
+            }
 
             Ok(())
         })
@@ -93,6 +143,12 @@ pub fn run() {
             backup::agent_checkpoint_rollback,
             backup::agent_checkpoint_clear_session,
             websearch::web_search_fetch,
+            secure::secure_store_set,
+            secure::secure_store_get,
+            secure::secure_store_delete,
+            sessions::sessions_load,
+            sessions::sessions_save,
+            sessions::sessions_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

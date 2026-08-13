@@ -10,6 +10,8 @@ export interface CosyVoiceConfig {
   model: CosyVoiceModel
   /** 地域 key（对应 REGIONS 的 key） */
   region: string
+  /** Key 存储方式标记：'keychain' 时明文在系统密钥链，apiKey 字段为空 */
+  keyStorage?: 'keychain'
 }
 
 /** 支持的 CosyVoice 模型 */

@@ -112,6 +112,27 @@ export default {
     },
   },
 
+  onboarding: {
+    title: '歡迎使用 Kisaki',
+    subtitle: '幾個步驟，讓你的桌寵動起來',
+    api: {
+      title: '設定 AI 介面',
+      desc: '填寫 API Key 與模型，讓角色能夠對話',
+      action: '去設定',
+      ready: '已設定',
+    },
+    character: {
+      title: '新增一個角色',
+      desc: '匯入角色包或新建角色',
+      action: '去新增',
+      ready: '已有角色',
+    },
+    voice: '語音播報可選，稍後可在「設定 → 語音合成」中開啟',
+    start: '開始使用',
+    later: '稍後再說',
+    notReady: '完成前兩個步驟即可開始聊天',
+  },
+
   window: {
     settings: '設定',
     logs: '日誌',
@@ -129,6 +150,7 @@ export default {
       tts: '語音合成',
       dev: 'Dev',
       about: '關於',
+      privacy: '隱私政策',
     },
     api: {
       title: 'API 設定',
@@ -202,6 +224,10 @@ export default {
       uiLangHint: '應用程式介面文字的顯示語言（與 AI 回覆的翻譯語言相互獨立）。',
       autoExecTitle: '自動執行檔案修改',
       autoExecDesc: '開啟後，AI 修改檔案無需逐次確認（仍會自動備份，可在歷史中回檔）。',
+      autostartTitle: '開機自啟',
+      autostartDesc: '登入系統後自動啟動桌寵',
+      shortcutTitle: '全域快捷鍵',
+      shortcutDesc: 'Alt+K 喚出 / 隱藏桌寵（穿透態下的喚回入口）',
     },
     about: {
       title: '關於',
@@ -213,6 +239,36 @@ export default {
       openCharFolder: '開啟角色資料資料夾',
       openLogs: '開啟日誌檢視器',
       exitApp: '結束應用程式',
+      checkUpdate: '檢查更新',
+      updateChecking: '正在檢查更新…',
+      updateUpToDate: '已是最新版本',
+      updateFound: '發現新版本 v{version}',
+      updateDownload: '下載並安裝',
+      updateDownloading: '正在下載並安裝…',
+      updateInstalled: '更新已安裝，重新啟動應用程式後生效',
+      updateError: '自動更新不可用：{msg}',
+      updateHint: '自動更新需先在 tauri.conf.json 設定簽名公鑰與更新來源（詳見 docs/productization-spec.md）',
+    },
+    privacy: {
+      title: '隱私政策',
+      desc: 'Kisaki 尊重你的隱私。以下說明應用程式如何處理資料。',
+      local: {
+        title: '資料保存在本機',
+        body: 'API Key、搜尋 Key、對話歷史、角色與對話資料均僅保存在你的裝置上。敏感憑證優先存入系統鑰匙圈（Windows 憑證管理員 / macOS 鑰匙圈 / Linux Secret Service），不可用時回退到本機加密儲存。',
+      },
+      network: {
+        title: '網路請求',
+        body: '應用程式僅在你主動使用相關功能時向外部服務發送請求：AI 對話介面（你設定的 OpenAI 相容位址）、語音合成服務（CosyVoice / GPT-SoVITS）、聯網搜尋與天氣查詢。發送內容僅為你輸入的對話文字或查詢詞，不包含裝置資訊。',
+      },
+      logs: {
+        title: '日誌',
+        body: '應用程式會記錄本機執行日誌（保存在使用者資料目錄，含輪轉與大小上限），用於排查問題。日誌不會自動上傳；僅在你於「日誌」視窗手動匯出時才會離開裝置。',
+      },
+      delete: {
+        title: '刪除資料',
+        body: '在「設定 → 關於」中可開啟資料資料夾查看。刪除應用程式資料目錄即可清除所有本機資料；系統鑰匙圈中的憑證需在系統設定中單獨刪除。',
+      },
+      noTelemetry: '本應用程式不含任何遙測、統計或廣告 SDK，也不會在背景收集使用資料。',
     },
     dev: {
       title: 'Dev 面板',

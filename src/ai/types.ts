@@ -6,6 +6,11 @@ export interface AIConfig {
   apiKey: string
   /** 模型名称 */
   model: string
+  /**
+   * Key 存储方式标记：'keychain' = 明文保存在系统密钥链，apiKey 字段为空；
+   * 缺省 = 本地加密存储（旧方案 / 密钥链不可用时的回退）。
+   */
+  keyStorage?: 'keychain'
 }
 
 /** 消息角色 */

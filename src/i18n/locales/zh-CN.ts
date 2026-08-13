@@ -115,6 +115,27 @@ export default {
     },
   },
 
+  onboarding: {
+    title: '欢迎使用 Kisaki',
+    subtitle: '几步设置，让你的桌宠动起来',
+    api: {
+      title: '配置 AI 接口',
+      desc: '填写 API Key 与模型，让角色能够对话',
+      action: '去配置',
+      ready: '已配置',
+    },
+    character: {
+      title: '添加一个角色',
+      desc: '导入角色包或新建角色',
+      action: '去添加',
+      ready: '已有角色',
+    },
+    voice: '语音播报可选，稍后可在「设置 → 语音合成」中开启',
+    start: '开始使用',
+    later: '稍后再说',
+    notReady: '完成前两步即可开始聊天',
+  },
+
   window: {
     settings: '设置',
     logs: '日志',
@@ -132,6 +153,7 @@ export default {
       tts: '语音合成',
       dev: 'Dev',
       about: '关于',
+      privacy: '隐私政策',
     },
     api: {
       title: 'API 配置',
@@ -205,6 +227,10 @@ export default {
       uiLangHint: '应用界面文案的显示语言（与 AI 回复的翻译语言相互独立）。',
       autoExecTitle: '自动执行文件修改',
       autoExecDesc: '开启后，AI 修改文件无需逐次确认（仍会自动备份，可在历史中回档）。',
+      autostartTitle: '开机自启',
+      autostartDesc: '登录系统后自动启动桌宠',
+      shortcutTitle: '全局快捷键',
+      shortcutDesc: 'Alt+K 唤出 / 隐藏桌宠（穿透态下的唤回入口）',
     },
     about: {
       title: '关于',
@@ -216,6 +242,36 @@ export default {
       openCharFolder: '打开角色数据文件夹',
       openLogs: '打开日志查看器',
       exitApp: '退出应用',
+      checkUpdate: '检查更新',
+      updateChecking: '正在检查更新…',
+      updateUpToDate: '已是最新版本',
+      updateFound: '发现新版本 v{version}',
+      updateDownload: '下载并安装',
+      updateDownloading: '正在下载并安装…',
+      updateInstalled: '更新已安装，重启应用后生效',
+      updateError: '自动更新不可用：{msg}',
+      updateHint: '自动更新需先在 tauri.conf.json 配置签名公钥与更新源（详见 docs/productization-spec.md）',
+    },
+    privacy: {
+      title: '隐私政策',
+      desc: 'Kisaki 尊重你的隐私。以下说明应用如何处理数据。',
+      local: {
+        title: '数据保存在本地',
+        body: 'API Key、搜索 Key、对话历史、角色与会话数据均仅保存在你的设备上。敏感凭据优先存入系统密钥链（Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service），不可用时回退到本地加密存储。',
+      },
+      network: {
+        title: '网络请求',
+        body: '应用仅在你主动使用相关功能时向外部服务发送请求：AI 对话接口（你配置的 OpenAI 兼容地址）、语音合成服务（CosyVoice / GPT-SoVITS）、联网搜索与天气查询。发送内容仅为你输入的对话文本或查询词，不包含设备信息。',
+      },
+      logs: {
+        title: '日志',
+        body: '应用会记录本地运行日志（保存在用户数据目录，含轮转与大小上限），用于排查问题。日志不会自动上传；仅在你在「日志」窗口手动导出时才会离开设备。',
+      },
+      delete: {
+        title: '删除数据',
+        body: '在「设置 → 关于」中可打开数据文件夹查看。删除应用数据目录即可清除所有本地数据；系统密钥链中的凭据需在系统设置中单独删除。',
+      },
+      noTelemetry: '本应用不含任何遥测、统计或广告 SDK，也不会在后台收集使用数据。',
     },
     dev: {
       title: 'Dev 面板',

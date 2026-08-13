@@ -112,6 +112,27 @@ export default {
     },
   },
 
+  onboarding: {
+    title: 'Welcome to Kisaki',
+    subtitle: 'A few quick steps to bring your pet to life',
+    api: {
+      title: 'Configure AI',
+      desc: 'Add an API Key and model so your character can chat',
+      action: 'Configure',
+      ready: 'Configured',
+    },
+    character: {
+      title: 'Add a character',
+      desc: 'Import a character pack or create a new one',
+      action: 'Add',
+      ready: 'Character ready',
+    },
+    voice: 'Voice is optional — enable it later under Settings → Voice',
+    start: 'Get started',
+    later: 'Later',
+    notReady: 'Complete the two steps above to start chatting',
+  },
+
   window: {
     settings: 'Settings',
     logs: 'Logs',
@@ -129,6 +150,7 @@ export default {
       tts: 'Voice',
       dev: 'Dev',
       about: 'About',
+      privacy: 'Privacy',
     },
     api: {
       title: 'API Configuration',
@@ -202,6 +224,10 @@ export default {
       uiLangHint: 'The display language of the app interface (independent of the AI reply translation language).',
       autoExecTitle: 'Auto-run file changes',
       autoExecDesc: 'When on, the AI edits files without per-action confirmation (backups are still made; you can roll back from history).',
+      autostartTitle: 'Launch at startup',
+      autostartDesc: 'Start the pet automatically when you log in',
+      shortcutTitle: 'Global shortcut',
+      shortcutDesc: 'Alt+K to show / hide the pet (the way back when in passthrough mode)',
     },
     about: {
       title: 'About',
@@ -213,6 +239,36 @@ export default {
       openCharFolder: 'Open character data folder',
       openLogs: 'Open log viewer',
       exitApp: 'Quit app',
+      checkUpdate: 'Check for updates',
+      updateChecking: 'Checking for updates…',
+      updateUpToDate: 'You are up to date',
+      updateFound: 'New version v{version} available',
+      updateDownload: 'Download & install',
+      updateDownloading: 'Downloading and installing…',
+      updateInstalled: 'Update installed — restart the app to take effect',
+      updateError: 'Update unavailable: {msg}',
+      updateHint: 'Auto-update requires a signing pubkey and an update endpoint in tauri.conf.json (see docs/productization-spec.md)',
+    },
+    privacy: {
+      title: 'Privacy Policy',
+      desc: 'Kisaki respects your privacy. Here is how the app handles your data.',
+      local: {
+        title: 'Data stays on your device',
+        body: 'Your API key, search key, chat history, characters and sessions are stored only on your device. Sensitive credentials are stored in the OS keychain (Windows Credential Manager / macOS Keychain / Linux Secret Service) first, falling back to encrypted local storage when unavailable.',
+      },
+      network: {
+        title: 'Network requests',
+        body: 'The app only sends requests when you actively use a feature: the AI chat endpoint (the OpenAI-compatible URL you configure), voice synthesis (CosyVoice / GPT-SoVITS), web search and weather. Only your chat text or query terms are sent; no device information is included.',
+      },
+      logs: {
+        title: 'Logs',
+        body: 'The app keeps local run logs (in the user data directory, with rotation and size caps) for troubleshooting. Logs are never uploaded automatically; they leave your device only if you export them manually from the Logs window.',
+      },
+      delete: {
+        title: 'Deleting your data',
+        body: 'Open the data folder from Settings → About to inspect it. Deleting the app data directory removes all local data; keychain credentials must be removed separately in your system settings.',
+      },
+      noTelemetry: 'This app contains no telemetry, analytics, or ad SDKs, and does not collect usage data in the background.',
     },
     dev: {
       title: 'Dev Panel',
