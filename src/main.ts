@@ -9,6 +9,10 @@ import "@fortawesome/fontawesome-free/css/all.min.css";
 import { createLogger } from "./utils/logger";
 import i18n from "./i18n";
 
+// 禁用 WebView 默认右键菜单（透明无边框桌宠不应弹出浏览器菜单）。
+// 用 JS 监听替代 index.html 里的内联 oncontextmenu，从而可去掉 CSP 的 'unsafe-inline'。
+document.addEventListener('contextmenu', (e) => e.preventDefault())
+
 const log = createLogger('Main')
 
 const app = createApp(App);

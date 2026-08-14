@@ -10,6 +10,19 @@ use std::time::Duration;
 /// 搜索响应体大小上限（10 MiB），防超大响应撑爆内存
 const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 
+/// SSRF 缓解：判断主机是否属于应禁止的保留地址段。
+/// 搜索服务（Tavily/Brave/SearXNG）永远不会落在云元数据 / link-local 地址上，
+/// 因此可安全拦截；localhost / 内网私有段（自建 SearXNG）保持放行。
+fn is_blocked_ssrf_host(host: &str) -> bool {
+    let h = host.to_ascii_lowercase();
+    // 云元数据端点（AWS / Azure / GCP 等）
+    h == "169.254.169.254"
+        // 整个 link-local 段 169.254.0.0/16
+        || h.starts_with("169.254.")
+        // GCP 元数据主机名
+        || h == "metadata.google.internal"
+}
+
 /// 把错误的 source 链拼成单行文本，便于前端/日志一眼定位根因
 /// （如 "error sending request <- tcp connect error <- 由于目标计算机积极拒绝…"）。
 fn err_chain(e: &dyn std::error::Error) -> String {
@@ -39,6 +52,10 @@ pub(crate) async fn web_search_fetch(
     let parsed = reqwest::Url::parse(&url).map_err(|_| "无效的 URL".to_string())?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err("仅允许 http/https 协议".to_string());
+    }
+    // SSRF 缓解：阻断云元数据 / link-local 等保留地址
+    if is_blocked_ssrf_host(parsed.host_str().unwrap_or("")) {
+        return Err("禁止访问该地址（保留地址 / 云元数据）".to_string());
     }
 
     let client = reqwest::Client::builder()

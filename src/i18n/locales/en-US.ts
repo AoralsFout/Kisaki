@@ -226,6 +226,8 @@ export default {
       uiLangHint: 'The display language of the app interface (independent of the AI reply translation language).',
       autoExecTitle: 'Auto-run file changes',
       autoExecDesc: 'When on, the AI edits files without per-action confirmation (backups are still made; you can roll back from history).',
+      commandTitle: 'Allow AI to run commands',
+      commandDesc: 'When on, the AI can run shell commands (with full user permissions — higher risk; each run still requires confirmation). Off by default.',
       autostartTitle: 'Launch at startup',
       autostartDesc: 'Start the pet automatically when you log in',
       shortcutTitle: 'Global shortcut',

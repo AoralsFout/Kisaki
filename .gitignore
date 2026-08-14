@@ -28,6 +28,8 @@ dist-packs
 workspace
 # Kisaki cmd output
 .kisaki_cmd_output
+# 自动更新清单（由 CI / scripts/build-update-manifest.mjs 生成）
+latest.json
 # live2d example
 live2d-example
 # live2d 开发用模型（不入库；模型授权见 README）

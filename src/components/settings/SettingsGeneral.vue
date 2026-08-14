@@ -6,7 +6,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../../i18n'
-import { getAutoExecFiles, setAutoExecFiles } from '../../agent/toolPolicy'
+import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('SettingsGeneral')
@@ -14,6 +14,7 @@ const { t } = useI18n()
 
 const uiLang = ref(getUiLanguage())
 const autoExec = ref(getAutoExecFiles())
+const commandEnabled = ref(getCommandEnabled())
 
 // ── 开机自启 ──
 const autoStart = ref(false)
@@ -26,6 +27,11 @@ function onUiLangChange() {
 function onAutoExecChange() {
   autoExec.value = !autoExec.value
   setAutoExecFiles(autoExec.value)
+}
+
+function onCommandEnabledChange() {
+  commandEnabled.value = !commandEnabled.value
+  setCommandEnabled(commandEnabled.value)
 }
 
 async function refreshAutoStart() {
@@ -73,6 +79,19 @@ onMounted(() => { void refreshAutoStart() })
         </label>
         <button :class="['toggle-switch', { active: autoExec }]"
           @click="onAutoExecChange" role="switch" :aria-checked="autoExec">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <div class="toggle-row">
+        <label class="toggle-label">
+          <span class="toggle-label-text">{{ t('settings.general.commandTitle') }}</span>
+          <span class="toggle-label-desc">{{ t('settings.general.commandDesc') }}</span>
+        </label>
+        <button :class="['toggle-switch', { active: commandEnabled }]"
+          @click="onCommandEnabledChange" role="switch" :aria-checked="commandEnabled">
           <span class="toggle-knob"></span>
         </button>
       </div>

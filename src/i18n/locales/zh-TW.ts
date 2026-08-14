@@ -226,6 +226,8 @@ export default {
       uiLangHint: '應用程式介面文字的顯示語言（與 AI 回覆的翻譯語言相互獨立）。',
       autoExecTitle: '自動執行檔案修改',
       autoExecDesc: '開啟後，AI 修改檔案無需逐次確認（仍會自動備份，可在歷史中回檔）。',
+      commandTitle: '允許 AI 執行命令',
+      commandDesc: '開啟後 AI 可執行 shell 命令（以目前使用者完整權限執行，風險較高，每次執行仍會確認）。預設關閉。',
       autostartTitle: '開機自啟',
       autostartDesc: '登入系統後自動啟動桌寵',
       shortcutTitle: '全域快捷鍵',

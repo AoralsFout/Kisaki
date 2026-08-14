@@ -34,6 +34,9 @@ export const STORAGE_PASSTHROUGH_ENABLED = 'deskpet-passthrough-enabled'
 /** 全局「自动执行文件修改」开关（开启后改文件工具跳过逐次确认） */
 export const STORAGE_AUTO_EXEC_FILES = 'deskpet-auto-exec-files'
 
+/** 全局「允许 AI 执行 shell 命令」开关（默认关闭，安全考量） */
+export const STORAGE_COMMAND_ENABLED = 'deskpet-command-enabled'
+
 /** 联网搜索配置（provider, apiKey, baseURL, enabled） */
 export const STORAGE_SEARCH_CONFIG = 'deskpet-search-config'
 

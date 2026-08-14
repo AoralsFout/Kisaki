@@ -226,6 +226,8 @@ export default {
       uiLangHint: 'アプリ画面の表示言語（AI の返信翻訳言語とは独立しています）。',
       autoExecTitle: 'ファイル変更を自動実行',
       autoExecDesc: '有効にすると、AI のファイル変更を都度確認しません（バックアップは自動で取られ、履歴から復元できます）。',
+      commandTitle: 'AI にコマンド実行を許可',
+      commandDesc: '有効にすると AI がシェルコマンドを実行できます（現在のユーザーの全権限で実行、リスクが高い。毎回確認が必要）。既定はオフ。',
       autostartTitle: 'ログイン時に起動',
       autostartDesc: 'ログイン時にマスコットを自動起動します',
       shortcutTitle: 'グローバルショートカット',

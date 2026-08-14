@@ -7,6 +7,7 @@
 import type { Tool, ToolDefinition } from './types'
 import type { CharacterData } from '../character/loader'
 import { getAgentCharData, getAgentLive2DManifest } from './context'
+import { getCommandEnabled } from './toolPolicy'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentRegistry')
@@ -44,6 +45,9 @@ export function getDefinitions(charData?: CharacterData | null): ToolDefinition[
     // ① 按渲染类型过滤：appliesTo 为 'both'（默认）或与当前 render 一致才纳入
     const appliesTo = t.appliesTo ?? 'both'
     if (appliesTo !== 'both' && appliesTo !== render) continue
+
+    // ② execute_command 默认关闭（无 OS 沙箱、风险最高），需用户在设置中显式开启
+    if (t.definition.function.name === 'execute_command' && !getCommandEnabled()) continue
 
     const def = JSON.parse(JSON.stringify(t.definition))
     const props = def.function?.parameters?.properties

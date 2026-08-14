@@ -6,7 +6,7 @@
  *     （现有 files.test.ts 直接断言 handler→invoke，不应被打断）。
  *   - 分类信息与图标（toolMeta.ts）一样是「关于工具的元信息」，集中声明便于维护。
  */
-import { STORAGE_AUTO_EXEC_FILES } from '../constants'
+import { STORAGE_AUTO_EXEC_FILES, STORAGE_COMMAND_ENABLED } from '../constants'
 
 /**
  * 会修改文件的工具 → 从其参数中取「受影响的相对路径」。
@@ -91,4 +91,26 @@ export function shouldConfirm(
 ): boolean {
   if (!isMutatingTool(name)) return false
   return !opts.globalAuto && !opts.sessionAuto
+}
+
+// ─── 「允许 AI 执行 shell 命令」开关（默认关闭） ──────────────
+// 命令以当前用户完整权限运行（无 OS 沙箱），风险最高，因此默认不把
+// execute_command 暴露给模型，需用户在设置中显式开启。
+
+/** 读取「允许 AI 执行命令」开关（默认关闭） */
+export function getCommandEnabled(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_COMMAND_ENABLED) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 设置「允许 AI 执行命令」开关 */
+export function setCommandEnabled(value: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_COMMAND_ENABLED, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
 }
