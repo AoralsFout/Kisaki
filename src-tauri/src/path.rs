@@ -124,6 +124,13 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
             Component::RootDir | Component::Prefix(_) => {
                 return Err("不允许绝对路径".to_string())
             }
+            Component::Normal(name) => {
+                // Windows 加固：拒绝组件名中的 ':'（NTFS Alternate Data Stream 分隔符），
+                // 避免把内容写进隐藏数据流 / 触发意外的 NTFS 语义。Unix 下 ':' 是合法字符，放行。
+                if cfg!(windows) && name.to_string_lossy().contains(':') {
+                    return Err("路径组件不能包含 ':'（Windows 数据流）".to_string());
+                }
+            }
             _ => {}
         }
     }
@@ -132,12 +139,15 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("无法解析工作目录 '{}': {}", base.display(), e))?;
 
-    // 逐层向下校验：resolved 跟踪已解析的真实位置。
+    // 逐层向下校验并解析符号链接，最终返回「已解析的已存在前缀 + 词法拼接的新建后缀」。
     //  - 组件是符号链接（含指向不存在目标的悬空链接）→ 必须能解析到基目录内；
     //  - 组件是普通已存在项 → 继续向下；
     //  - 组件不存在 → 之后的所有组件必然也是新建项，不可能再是符号链接，收尾。
+    // 返回已解析路径（而非含符号链接的词法路径）能缩小 TOCTOU 窗口：返回后到真正
+    // 读写前，即使中间某层链接被并发替换为指向外部的链接，也不会影响本次读写目标。
     let mut resolved = canonical_base.clone();
-    for comp in rel_path.components() {
+    let mut comps = rel_path.components();
+    while let Some(comp) = comps.next() {
         if let Component::Normal(name) = comp {
             let next = resolved.join(name);
             if next.is_symlink() {
@@ -151,18 +161,22 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
             } else if next.exists() {
                 resolved = next;
             } else {
+                // 首个不存在的组件：从这里开始全是新建项，直接词法拼接即可
+                resolved = next;
+                for rest in comps {
+                    if let Component::Normal(n) = rest {
+                        resolved = resolved.join(n);
+                    }
+                }
                 break;
             }
         }
     }
 
-    // 逐层校验已保证所有已存在符号链接都指向基目录内，
-    // 此处仍保留词法前缀兜底（防御未来逻辑改动）。
-    let target = canonical_base.join(rel_path);
-    if !target.starts_with(&canonical_base) {
+    if !resolved.starts_with(&canonical_base) {
         return Err("路径越权访问被拒绝".to_string());
     }
-    Ok(target)
+    Ok(resolved)
 }
 
 // ─── 工作目录授权白名单 ─────────────────────────────
@@ -304,6 +318,23 @@ mod tests {
             p.starts_with(base.canonicalize().unwrap()),
             "指向基目录内部的符号链接应放行"
         );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_symlink_to_real_path() {
+        use std::os::unix::fs::symlink;
+
+        let base = temp_dir("resolve");
+        fs::create_dir_all(base.join("real")).unwrap();
+        symlink(base.join("real"), base.join("link")).unwrap();
+
+        // 返回的应是解析后的真实路径（不经过 link 符号链接），消除 TOCTOU 窗口
+        let p = safe_join_rel(&base, "link/f.txt").unwrap();
+        let canonical = base.canonicalize().unwrap();
+        assert_eq!(p, canonical.join("real").join("f.txt"));
+        assert!(!p.to_string_lossy().contains("/link/"));
         let _ = fs::remove_dir_all(&base);
     }
 
