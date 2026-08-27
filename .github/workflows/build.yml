@@ -127,7 +127,7 @@ jobs:
       # 上传打包产物（仅 tag 构建产出 bundle；含安装包 + .sig 签名文件）
       - name: Upload build artifacts
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kisaki-${{ matrix.os }}-${{ matrix.arch }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/
