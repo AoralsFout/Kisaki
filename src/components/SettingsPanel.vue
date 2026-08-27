@@ -23,6 +23,7 @@ import SettingsPrivacy from './settings/SettingsPrivacy.vue'
 const { t } = useI18n()
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
+const isDevelopment = import.meta.env.DEV
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 导航 ----
@@ -96,7 +97,7 @@ function closeWindow() {
           <i class="fas fa-microphone nav-icon"></i>
           <span>{{ t('settings.nav.tts') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
+        <button v-if="isDevelopment" :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
           <span>{{ t('settings.nav.dev') }}</span>
         </button>
@@ -121,7 +122,7 @@ function closeWindow() {
           <CharacterManager />
         </div>
 
-        <div v-if="activeTab === 'dev'" class="content-section">
+        <div v-if="isDevelopment && activeTab === 'dev'" class="content-section">
           <h2 class="section-title"><i class="fas fa-screwdriver-wrench"></i> {{ t('settings.dev.title') }}</h2>
           <p class="section-desc">{{ t('settings.dev.desc') }}</p>
           <DevPanel />
@@ -464,6 +465,12 @@ function closeWindow() {
 .status-ok {
   font-size: 12px;
   color: #30b94e;
+  font-weight: 500;
+}
+
+.status-error {
+  font-size: 12px;
+  color: #ff7c8b;
   font-weight: 500;
 }
 

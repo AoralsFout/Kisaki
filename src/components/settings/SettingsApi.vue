@@ -4,13 +4,16 @@
  */
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid } from '../../ai'
+import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid, testAIConnection } from '../../ai'
 import type { AIConfig } from '../../ai'
 
 const { t } = useI18n()
 
 const config = ref<AIConfig>({ ...DEFAULT_CONFIG })
 const saved = ref(false)
+const testing = ref(false)
+const testResult = ref<'ok' | 'error' | ''>('')
+const testMessage = ref('')
 
 const PRESETS = [
   { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -32,6 +35,18 @@ async function handleSave() {
   await saveConfigSecure(config.value)
   saved.value = true
   setTimeout(() => { saved.value = false }, 1500)
+}
+
+async function handleTest() {
+  testing.value = true
+  testResult.value = ''
+  testMessage.value = ''
+  const result = await testAIConnection(config.value)
+  testing.value = false
+  testResult.value = result.ok ? 'ok' : 'error'
+  testMessage.value = result.ok
+    ? t('settings.api.testOk')
+    : t('settings.api.testFailed', { msg: result.error || t('settings.api.testUnknown') })
 }
 </script>
 
@@ -68,7 +83,11 @@ async function handleSave() {
       <button class="btn-save" @click="handleSave">
         {{ saved ? t('common.saved') : t('common.save') }}
       </button>
+      <button class="btn-secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">
+        {{ testing ? t('settings.api.testing') : t('settings.api.test') }}
+      </button>
       <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.configOk') }}</span>
     </div>
+    <p v-if="testMessage" :class="testResult === 'ok' ? 'status-ok' : 'status-error'">{{ testMessage }}</p>
   </div>
 </template>

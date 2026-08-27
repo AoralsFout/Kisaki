@@ -17,13 +17,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      # 仅 tag 发布检查版本、法律文档和角色再分发许可；普通 PR 不受素材门禁影响。
+      - name: Release preflight
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run release:preflight -- "${{ github.ref_name }}"
+      # 已记录且不可利用于打包运行时的间接 high/moderate 见 docs/dependency-risk-acceptance.md。
+      # 新增 critical 漏洞直接阻止合并与发布。
+      - name: Audit production npm dependencies
+        run: npm audit --omit=dev --audit-level=critical
+      - name: Audit Rust dependencies
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ github.token }}
+          working-directory: src-tauri
+
   build:
-    name: build (${{ matrix.platform }})
+    name: build (${{ matrix.os }}-${{ matrix.arch }})
+    needs: audit
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-22.04]
+        include:
+          - platform: windows-latest
+            os: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            os: macos
+            arch: aarch64
+            target: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +89,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -60,10 +100,21 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Frontend tests
+        run: npm test
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked --all-targets
+
+      - name: Rust static checks
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
       # push / PR：仅验证编译通过（不打包、不签名，避免 fork PR 无密钥时失败）
       - name: Build (compile verify — no bundle, no signing)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npx tauri build --no-bundle
+        run: npx tauri build --no-bundle --target ${{ matrix.target }}
 
       # tag：完整打包 + 用私钥签名生成 updater 产物（.sig）
       - name: Build (bundle + sign updater artifacts)
@@ -71,22 +122,22 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build
+        run: npx tauri build --target ${{ matrix.target }}
 
       # 上传打包产物（仅 tag 构建产出 bundle；含安装包 + .sig 签名文件）
       - name: Upload build artifacts
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
-          name: kisaki-${{ runner.os }}
-          path: src-tauri/target/release/bundle/
+          name: kisaki-${{ matrix.os }}-${{ matrix.arch }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/
           if-no-files-found: warn
 
   # ── Release 上传 ──────────────────────────────────────────────
   # 仅在推送 v* tag 时将构建产物上传到对应的 GitHub Release。
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
+    needs: [audit, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,6 +149,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # 正式角色包只允许打包 release-allowlist.json 中已确认再分发授权的角色。
+      # 清单为空或许可记录不完整会阻止 tag 发布。
+      - name: Build licensed starter character pack
+        run: npm run pack:characters
 
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
@@ -138,6 +197,8 @@ jobs:
 
       # 汇总各平台 .sig 生成 latest.json（自动更新清单，url 指向本 Release）
       - name: Generate latest.json
+        env:
+          KISAKI_EXPECTED_PLATFORMS: windows-x86_64,darwin-aarch64,linux-x86_64
         run: node scripts/build-update-manifest.mjs "${{ github.ref_name }}" "${{ github.repository }}"
 
       - name: Upload latest.json to Release
@@ -145,3 +206,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${{ github.ref_name }}" latest.json --clobber
+
+      - name: Upload licensed starter character pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ github.ref_name }}" dist-packs/characters.zip --clobber
+
+      - name: Generate and upload SHA-256 checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          find kisaki-* -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" -o -name "*.app.tar.gz" \) -print0 \
+            | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          sha256sum latest.json dist-packs/characters.zip >> SHA256SUMS.txt
+          gh release upload "${{ github.ref_name }}" SHA256SUMS.txt --clobber
+
+      - name: Verify published release assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npm run release:verify -- "${{ github.ref_name }}"

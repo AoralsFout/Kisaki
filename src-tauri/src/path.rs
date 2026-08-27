@@ -124,13 +124,12 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
             Component::RootDir | Component::Prefix(_) => {
                 return Err("不允许绝对路径".to_string())
             }
-            Component::Normal(name) => {
+            Component::Normal(name) if cfg!(windows) && name.to_string_lossy().contains(':') => {
                 // Windows 加固：拒绝组件名中的 ':'（NTFS Alternate Data Stream 分隔符），
                 // 避免把内容写进隐藏数据流 / 触发意外的 NTFS 语义。Unix 下 ':' 是合法字符，放行。
-                if cfg!(windows) && name.to_string_lossy().contains(':') {
-                    return Err("路径组件不能包含 ':'（Windows 数据流）".to_string());
-                }
+                return Err("路径组件不能包含 ':'（Windows 数据流）".to_string());
             }
+            Component::Normal(_) => {}
             _ => {}
         }
     }

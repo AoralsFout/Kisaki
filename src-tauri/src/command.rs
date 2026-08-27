@@ -116,6 +116,12 @@ pub(crate) fn agent_execute_command(
     command: String,
     timeout_secs: Option<u64>,
 ) -> Result<serde_json::Value, String> {
+    // 正式构建默认完全禁用命令执行。前端的开关只是产品层防线，这里的后端
+    // 检查确保即使 WebView 被篡改也不能直接 invoke 绕过设置。
+    // 仅 debug 构建，或显式启用 Cargo feature 时开放给内部测试。
+    if !cfg!(any(debug_assertions, feature = "experimental-command")) {
+        return Err("正式版未启用实验性命令执行功能".to_string());
+    }
     if command.trim().is_empty() {
         return Err("命令不能为空".to_string());
     }
@@ -242,9 +248,7 @@ pub(crate) fn agent_execute_command(
         ));
     }
     if stdout_truncated || stderr_truncated {
-        output.push_str(&format!(
-            "⚠ 输出超过 1 MiB 存储上限，超出部分已丢弃（不影响命令执行）\n\n"
-        ));
+        output.push_str("⚠ 输出超过 1 MiB 存储上限，超出部分已丢弃（不影响命令执行）\n\n");
     }
     if !stdout.is_empty() {
         output.push_str("--- stdout ---\n");

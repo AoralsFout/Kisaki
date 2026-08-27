@@ -8,6 +8,7 @@ import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../../i18n'
 import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
 import { createLogger } from '../../utils/logger'
+import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../../constants'
 
 const log = createLogger('SettingsGeneral')
 const { t } = useI18n()
@@ -84,7 +85,7 @@ onMounted(() => { void refreshAutoStart() })
       </div>
     </div>
 
-    <div class="form-group">
+    <div v-if="EXPERIMENTAL_COMMAND_AVAILABLE" class="form-group">
       <div class="toggle-row">
         <label class="toggle-label">
           <span class="toggle-label-text">{{ t('settings.general.commandTitle') }}</span>

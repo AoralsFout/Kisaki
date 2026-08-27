@@ -251,10 +251,21 @@ function formatMessage(template: string, args?: unknown[]): string {
 
 /** 获取结构的消息文本（含展开后的参数），用于文件持久化 */
 function formattedMessage(entry: LogEntry): string {
-  if (entry.args && entry.args.length > 0) {
-    return formatMessage(entry.message, entry.args)
-  }
-  return entry.message
+  const message = entry.args && entry.args.length > 0
+    ? formatMessage(entry.message, entry.args)
+    : entry.message
+  return redactSensitiveText(message)
+}
+
+/**
+ * 写入磁盘或跨窗口广播前移除常见密钥形态。
+ * 仅处理字符串表示层，不修改调用方持有的原始对象。
+ */
+export function redactSensitiveText(text: string): string {
+  return text
+    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
+    .replace(/(["']?(?:api[_-]?key|authorization|access[_-]?token)["']?\s*[:=]\s*["']?)([^"'\s,}]+)/gi, '$1[REDACTED]')
+    .replace(/\bsk-[A-Za-z0-9_-]{6,}\b/g, '[REDACTED]')
 }
 
 // ─── 文件持久化 ──────────────────────────────────────

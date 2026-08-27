@@ -49,7 +49,7 @@ const log = createLogger('App')
 
 const { t } = useI18n()
 
-const isDev = new URLSearchParams(window.location.search).has(QUERY_DEV)
+const isDev = import.meta.env.DEV && new URLSearchParams(window.location.search).has(QUERY_DEV)
 const isSettings = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
 const isLogs = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 

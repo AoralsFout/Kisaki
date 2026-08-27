@@ -300,3 +300,21 @@ describe('Logger - 持久化控制', () => {
     await expect(mod.enableFilePersistence()).resolves.not.toThrow()
   })
 })
+
+describe('Logger - 敏感信息脱敏', () => {
+  it('移除常见 API Key 和 Authorization 值', async () => {
+    const { redactSensitiveText } = await import('../logger')
+    const input = 'apiKey=sk-secret123 Authorization: Bearer abc.def-123 access_token=token-value'
+    const output = redactSensitiveText(input)
+
+    expect(output).not.toContain('sk-secret123')
+    expect(output).not.toContain('abc.def-123')
+    expect(output).not.toContain('token-value')
+    expect(output).toContain('[REDACTED]')
+  })
+
+  it('保留普通日志内容', async () => {
+    const { redactSensitiveText } = await import('../logger')
+    expect(redactSensitiveText('request completed in 42ms')).toBe('request completed in 42ms')
+  })
+})

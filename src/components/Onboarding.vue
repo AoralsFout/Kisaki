@@ -18,6 +18,7 @@ import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import { loadConfigSecure, isConfigValid } from '../ai'
 import { createLogger } from '../utils/logger'
+import { openUrl } from '@tauri-apps/plugin-opener'
 
 const log = createLogger('Onboarding')
 
@@ -47,6 +48,10 @@ async function refreshApi() {
 
 function onStorage() {
   void refreshApi()
+}
+
+async function downloadOfficialCharacters() {
+  await openUrl('https://github.com/AoralsFout/Kisaki/releases/latest/download/characters.zip')
 }
 
 watch(() => props.visible, (v) => {
@@ -104,6 +109,10 @@ onUnmounted(() => {
             <span v-else class="ob-ready">{{ t('onboarding.character.ready') }}</span>
           </li>
         </ul>
+
+        <button v-if="!charReady" class="ob-pack-link" @click="downloadOfficialCharacters">
+          <i class="fas fa-download"></i> {{ t('onboarding.character.downloadOfficial') }}
+        </button>
 
         <p class="ob-voice"><i class="fas fa-volume-high"></i> {{ t('onboarding.voice') }}</p>
 
@@ -248,6 +257,16 @@ onUnmounted(() => {
   font-size: 12px;
   color: #30b94e;
   white-space: nowrap;
+}
+
+.ob-pack-link {
+  display: block;
+  margin: 10px auto 0;
+  border: 0;
+  background: none;
+  color: #9bb4ff;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .ob-voice {

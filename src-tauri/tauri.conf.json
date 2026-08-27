@@ -25,9 +25,7 @@
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://asset.localhost; connect-src 'self' http: https:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": []
       }
     }
   },
@@ -35,6 +33,11 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "publisher": "AoralsFout",
+    "copyright": "Copyright © 2025-2026 AoralsFout",
+    "category": "Entertainment",
+    "shortDescription": "本地优先、可自定义角色的 AI 桌面桌宠",
+    "longDescription": "Kisaki 是基于 Tauri 和 Vue 构建的桌面桌宠，支持 OpenAI 兼容对话接口、角色包、Live2D、可选语音合成与本地会话管理。",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -52,7 +55,7 @@
       }
     },
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "11.0"
     }
   },
   "plugins": {

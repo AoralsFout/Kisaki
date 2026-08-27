@@ -130,6 +130,7 @@ export default {
       title: '添加一个角色',
       desc: '导入角色包或新建角色',
       action: '去添加',
+      downloadOfficial: '下载官方入门角色包',
       ready: '已有角色',
     },
     voice: '语音播报可选，稍后可在「设置 → 语音合成」中开启',
@@ -165,6 +166,8 @@ export default {
       apiKey: 'API Key',
       model: '模型',
       configOk: '配置可用',
+      test: '测试连接', testing: '正在测试…', testOk: '连接成功',
+      testFailed: '连接失败：{msg}', testUnknown: '未知错误',
     },
     search: {
       title: '联网搜索',
@@ -240,7 +243,7 @@ export default {
       title: '关于',
       desc1: '基于 Tauri + Vue 3 构建的桌面桌宠应用',
       desc2: '支持 AI 对话、角色切换、工具调用、TTS 语音播报',
-      privacy: '数据仅保存在本地，API Key 不会上传到任何第三方服务器。',
+      privacy: '数据优先保存在本地；联网功能会把凭据和必要内容直接发送到你配置的服务。',
       github: 'GitHub',
       website: '官网',
       openCharFolder: '打开角色数据文件夹',
@@ -254,7 +257,7 @@ export default {
       updateDownloading: '正在下载并安装…',
       updateInstalled: '更新已安装，重启应用后生效',
       updateError: '自动更新不可用：{msg}',
-      updateHint: '自动更新需先在 tauri.conf.json 配置签名公钥与更新源（详见 docs/productization-spec.md）',
+      updateHint: '应用只会安装通过 Kisaki 更新公钥验证的更新包。',
     },
     privacy: {
       title: '隐私政策',
@@ -265,7 +268,7 @@ export default {
       },
       network: {
         title: '网络请求',
-        body: '应用仅在你主动使用相关功能时向外部服务发送请求：AI 对话接口（你配置的 OpenAI 兼容地址）、语音合成服务（CosyVoice / GPT-SoVITS）、联网搜索与天气查询。发送内容仅为你输入的对话文本或查询词，不包含设备信息。',
+        body: '应用仅在你主动使用相关功能时向你选择的服务发送请求。AI 服务会收到凭据、模型、角色提示词、必要的会话历史、用户输入和工具结果；TTS 会收到凭据与待合成文本；搜索和天气服务会收到凭据及查询参数。维护者不会代理这些请求或接收你的凭据。',
       },
       logs: {
         title: '日志',
@@ -273,9 +276,17 @@ export default {
       },
       delete: {
         title: '删除数据',
-        body: '在「设置 → 关于」中可打开数据文件夹查看。删除应用数据目录即可清除所有本地数据；系统密钥链中的凭据需在系统设置中单独删除。',
+        body: '下方可导出不含 API Key 的数据备份、恢复备份或一键清除角色、会话、设置、日志、缓存和 Kisaki 创建的系统密钥链条目。',
       },
       noTelemetry: '本应用不含任何遥测、统计或广告 SDK，也不会在后台收集使用数据。',
+      actions: {
+        export: '导出数据备份', import: '恢复数据备份', clear: '清除所有本地数据',
+        backupFilter: 'Kisaki 数据备份', exportDone: '备份已导出',
+        importConfirm: '恢复备份将替换现有角色和会话，是否继续？',
+        clearConfirm: '这会永久删除角色、会话、设置、日志、缓存和密钥链凭据，且无法撤销。是否继续？',
+        hint: '备份包含角色、会话和非敏感设置，不包含 API Key、日志或工作区文件。恢复前会在缓存目录保留一份当前角色与会话。',
+        failed: '操作失败：{msg}',
+      },
     },
     dev: {
       title: 'Dev 面板',

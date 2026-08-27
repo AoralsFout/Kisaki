@@ -37,6 +37,9 @@ export const STORAGE_AUTO_EXEC_FILES = 'deskpet-auto-exec-files'
 /** 全局「允许 AI 执行 shell 命令」开关（默认关闭，安全考量） */
 export const STORAGE_COMMAND_ENABLED = 'deskpet-command-enabled'
 
+/** 命令执行只在开发构建提供；正式构建由前后端双重禁用。 */
+export const EXPERIMENTAL_COMMAND_AVAILABLE = import.meta.env.DEV
+
 /** 联网搜索配置（provider, apiKey, baseURL, enabled） */
 export const STORAGE_SEARCH_CONFIG = 'deskpet-search-config'
 

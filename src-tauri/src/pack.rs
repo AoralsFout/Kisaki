@@ -236,7 +236,7 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
             if let Ok(rel) = enclosed.strip_prefix(prefix) {
                 let better = mapped
                     .as_ref()
-                    .map_or(true, |(_, cur)| rel.components().count() < cur.components().count());
+                    .is_none_or(|(_, cur)| rel.components().count() < cur.components().count());
                 if better {
                     mapped = Some((id.clone(), rel.to_path_buf()));
                 }
@@ -330,8 +330,10 @@ mod tests {
     #[test]
     fn entries_cap_constants_are_sane() {
         // 常量自检：确保上限为正且总量大于单条目
-        assert!(MAX_ENTRY_BYTES > 0);
-        assert!(MAX_TOTAL_BYTES > MAX_ENTRY_BYTES);
-        assert!(MAX_ENTRIES > 1000);
+        const {
+            assert!(MAX_ENTRY_BYTES > 0);
+            assert!(MAX_TOTAL_BYTES > MAX_ENTRY_BYTES);
+            assert!(MAX_ENTRIES > 1000);
+        }
     }
 }

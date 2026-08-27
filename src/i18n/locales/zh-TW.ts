@@ -127,6 +127,7 @@ export default {
       title: '新增一個角色',
       desc: '匯入角色包或新建角色',
       action: '去新增',
+      downloadOfficial: '下載官方入門角色包',
       ready: '已有角色',
     },
     voice: '語音播報可選，稍後可在「設定 → 語音合成」中開啟',
@@ -162,6 +163,8 @@ export default {
       apiKey: 'API Key',
       model: '模型',
       configOk: '設定可用',
+      test: '測試連線', testing: '正在測試…', testOk: '連線成功',
+      testFailed: '連線失敗：{msg}', testUnknown: '未知錯誤',
     },
     search: {
       title: '聯網搜尋',
@@ -237,7 +240,7 @@ export default {
       title: '關於',
       desc1: '基於 Tauri + Vue 3 建構的桌面桌寵應用程式',
       desc2: '支援 AI 對話、角色切換、工具呼叫、TTS 語音播報',
-      privacy: '資料僅儲存在本機，API Key 不會上傳到任何第三方伺服器。',
+      privacy: '資料優先儲存在本機；連網功能會將憑證與必要內容直接傳送至你設定的服務。',
       github: 'GitHub',
       website: '官方網站',
       openCharFolder: '開啟角色資料資料夾',
@@ -251,7 +254,7 @@ export default {
       updateDownloading: '正在下載並安裝…',
       updateInstalled: '更新已安裝，重新啟動應用程式後生效',
       updateError: '自動更新不可用：{msg}',
-      updateHint: '自動更新需先在 tauri.conf.json 設定簽名公鑰與更新來源（詳見 docs/productization-spec.md）',
+      updateHint: '應用程式只會安裝通過 Kisaki 更新公鑰驗證的更新套件。',
     },
     privacy: {
       title: '隱私政策',
@@ -262,7 +265,7 @@ export default {
       },
       network: {
         title: '網路請求',
-        body: '應用程式僅在你主動使用相關功能時向外部服務發送請求：AI 對話介面（你設定的 OpenAI 相容位址）、語音合成服務（CosyVoice / GPT-SoVITS）、聯網搜尋與天氣查詢。發送內容僅為你輸入的對話文字或查詢詞，不包含裝置資訊。',
+        body: '應用程式僅在你主動使用功能時向你選擇的服務傳送請求。AI 服務會收到憑證、模型、角色提示詞、必要的對話歷史、使用者輸入和工具結果；TTS 會收到憑證與待合成文字；搜尋和天氣服務會收到憑證及查詢參數。維護者不會代理請求或收到你的憑證。',
       },
       logs: {
         title: '日誌',
@@ -270,9 +273,17 @@ export default {
       },
       delete: {
         title: '刪除資料',
-        body: '在「設定 → 關於」中可開啟資料資料夾查看。刪除應用程式資料目錄即可清除所有本機資料；系統鑰匙圈中的憑證需在系統設定中單獨刪除。',
+        body: '你可以在下方匯出不含 API Key 的資料備份、還原備份，或一鍵清除角色、對話、設定、日誌、快取及 Kisaki 建立的系統鑰匙圈項目。',
       },
       noTelemetry: '本應用程式不含任何遙測、統計或廣告 SDK，也不會在背景收集使用資料。',
+      actions: {
+        export: '匯出資料備份', import: '還原資料備份', clear: '清除所有本機資料',
+        backupFilter: 'Kisaki 資料備份', exportDone: '備份已匯出',
+        importConfirm: '還原備份將取代現有角色與對話，是否繼續？',
+        clearConfirm: '這會永久刪除角色、對話、設定、日誌、快取與鑰匙圈憑證，且無法復原。是否繼續？',
+        hint: '備份包含角色、對話及非敏感設定，不包含 API Key、日誌或工作區檔案。還原前會在快取目錄保留目前角色與對話。',
+        failed: '操作失敗：{msg}',
+      },
     },
     dev: {
       title: 'Dev 面板',

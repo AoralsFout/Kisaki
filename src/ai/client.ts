@@ -131,6 +131,39 @@ export function isConfigValid(config: AIConfig): boolean {
   return Boolean(config.baseURL && config.apiKey && config.model)
 }
 
+/**
+ * 用 OpenAI 兼容的 /models 端点验证地址与凭据，不产生对话费用。
+ * 仅返回面向设置页的简短结果，不记录响应体或 API Key。
+ */
+export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean; error?: string }> {
+  if (!isConfigValid(config)) return { ok: false, error: '配置不完整' }
+  let base: URL
+  try {
+    base = new URL(config.baseURL.replace(/\/+$/, '') + '/models')
+  } catch {
+    return { ok: false, error: 'API 地址格式无效' }
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
+  try {
+    const response = await fetch(base, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal: controller.signal,
+    })
+    if (response.ok) return { ok: true }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, error: 'API Key 无效或无权访问' }
+    }
+    return { ok: false, error: `服务返回 HTTP ${response.status}` }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') return { ok: false, error: '连接超时' }
+    return { ok: false, error: (e as Error).message || '网络连接失败' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ─── 模型检测——委托给模型能力注册表 ────────────────────
 // 说明见 modelCapabilities.ts
 

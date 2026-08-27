@@ -3,8 +3,9 @@
 > **状态更新**：以下 1~5 项已落地到代码（单实例 / 开机自启 / 全局快捷键 / 通知 /
 > 自动更新的插件接线 + 「检查更新」按钮；见 `Cargo.toml`、`src-tauri/src/lib.rs`、
 > `capabilities/default.json`、`SettingsGeneral.vue`、`SettingsAbout.vue`、`src/utils/notify.ts`）。
-> 自动更新要真正生效，仍需完成第 5 节的「密钥生成 + 端点配置 + 发布」三步；
-> 第 6 项（代码签名）为发布硬门槛，仍依赖自备证书。
+> 自动更新的密钥、端点和 tag 发布已经接通。2026-08-27 的发布加固进一步修复了
+> macOS 清单缺失，并增加平台完整性测试；正式发布仍必须执行旧版到候选版的升级验收。
+> 第 6 项（系统代码签名与公证）按发布计划留在最后阶段，仍依赖自备证书与账号。
 >
 > 每项都给出：依赖安装 → Rust 接线 → capabilities 权限 → 前端调用 → 设置 UI 集成点。
 > 已完成的纯前端产品化能力（窗口位置记忆、首次运行引导、隐私政策页）不在此列。
@@ -182,8 +183,9 @@ export async function notify(title: string, body: string) {
 > 「检查更新」按钮（含优雅降级）、`tauri.conf.json`（pubkey + endpoints +
 > createUpdaterArtifacts）、以及 CI 自动化（`.github/workflows/build.yml` 注入签名私钥、
 > 汇总各平台 `.sig` 生成 `latest.json` 并上传，脚本见 `scripts/build-update-manifest.mjs`）。
-> ⚠️ 唯一剩下的人工步骤：把私钥内容存成 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`
-> （见下方「一次性」小节），然后推 `v*` tag 即可全自动发版 + 更新。
+> 发布流水线已使用 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY` 生成签名更新包。
+> 正式版还需完成旧版升级验收，并保证离线保存密钥恢复副本；更新私钥一旦丢失，
+> 已安装客户端将无法继续接收后续更新。
 
 ```bash
 npm add @tauri-apps/plugin-updater

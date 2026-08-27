@@ -61,7 +61,7 @@ npm run tauri build
 | 生产 · macOS | `~/Library/Application Support/com.kisaki.app/characters` |
 | 生产 · Linux | `$XDG_DATA_HOME/com.kisaki.app/characters`（默认 `~/.local/share/com.kisaki.app/characters`） |
 
-> 生产环境首次启动时角色目录为空，桌宠会提示「还没有角色」。点击「添加角色」进入 **设置 → 角色**，导入一个角色包或新建角色即可开始聊天。应用内的所有改动都保存在用户数据目录，升级或重装不会丢失。
+> 生产环境首次启动时角色目录为空，桌宠会提示「还没有角色」。正式 Release 会附带一个 `characters.zip`（名单见 `characters/release-allowlist.json`，仅需填写角色 id），可从首次引导下载后在 **设置 → 角色** 导入；也可以新建自己的角色。应用内改动保存在用户数据目录，升级不会丢失。
 
 **角色包**是 `.zip` 文件，可在 **设置 → 角色** 一键导入 / 导出，用于分发和备份。推荐结构：
 
@@ -115,7 +115,7 @@ Live2D 角色目录结构：
 
 > **Cubism Core**：Live2D 渲染依赖 `public/Live2dCore/live2dcubismcore.js`（Live2D 专有运行时，已随仓库提供，受 Live2D 专有许可约束）。
 >
-> **模型授权**：Live2D 官方免费示例模型多数**禁止再分发**，不要打进对外发布的角色包；正式分发需使用带商用 + 再分发授权的模型。开发用模型已在 `.gitignore` 中忽略。
+> **模型授权**：Live2D 官方免费示例模型多数**禁止再分发**，不要打进对外发布的角色包；正式分发不再强制校验授权材料，版权与许可责任由角色作者/提供方自行承担。开发用模型已在 `.gitignore` 中忽略。
 
 ## 🔧 配置
 
@@ -143,6 +143,14 @@ Live2D 角色目录结构：
 ## 📄 许可
 
 [MIT](./LICENSE) © AoralsFout
+
+- [隐私说明](./PRIVACY.md)
+- [安全政策](./SECURITY.md)
+- [第三方许可](./THIRD_PARTY_NOTICES.md)
+- [更新记录](./CHANGELOG.md)
+- [发布基线](./docs/release-readiness.md)
+- [RC 验收矩阵](./docs/rc-test-matrix.md)
+- [发布与回滚手册](./docs/release-runbook.md)
 
 ## 🔗 链接
 

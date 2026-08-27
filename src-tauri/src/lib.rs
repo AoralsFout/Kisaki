@@ -2,6 +2,7 @@ mod backup;
 mod character;
 mod command;
 mod cursor;
+mod data;
 mod fileio;
 mod log;
 mod pack;
@@ -75,11 +76,15 @@ pub fn run() {
                 (d.join("characters"), d.join("logs"), d.clone())
             };
             path::init_dirs(
-                chars_dir,
+                chars_dir.clone(),
                 logs_dir,
                 app.path().app_cache_dir()?.join("backups"),
                 sessions_dir,
             )?;
+            // asset:// 仅允许读取角色目录。静态配置保持空 scope，运行时加入实际目录，
+            // 兼容 dev 的仓库 characters/ 与生产 app_data_dir，同时避免暴露全盘文件。
+            app.asset_protocol_scope()
+                .allow_directory(&chars_dir, true)?;
 
             // ─── 全局光标轮询（主窗口鼠标穿透命中测试） ───
             // 主窗口透明，透明区域需让鼠标穿透到下方窗口。穿透开启后 WebView
@@ -150,6 +155,9 @@ pub fn run() {
             sessions::sessions_load,
             sessions::sessions_save,
             sessions::sessions_clear,
+            data::export_data_backup,
+            data::import_data_backup,
+            data::reset_all_local_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

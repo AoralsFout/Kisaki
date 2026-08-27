@@ -127,6 +127,7 @@ export default {
       title: 'Add a character',
       desc: 'Import a character pack or create a new one',
       action: 'Add',
+      downloadOfficial: 'Download official starter pack',
       ready: 'Character ready',
     },
     voice: 'Voice is optional — enable it later under Settings → Voice',
@@ -162,6 +163,8 @@ export default {
       apiKey: 'API Key',
       model: 'Model',
       configOk: 'Configuration valid',
+      test: 'Test connection', testing: 'Testing…', testOk: 'Connection successful',
+      testFailed: 'Connection failed: {msg}', testUnknown: 'Unknown error',
     },
     search: {
       title: 'Web Search',
@@ -237,7 +240,7 @@ export default {
       title: 'About',
       desc1: 'A desktop mascot app built with Tauri + Vue 3',
       desc2: 'Supports AI chat, character switching, tool calls, and TTS voice playback',
-      privacy: 'Data is stored locally only; your API Key is never uploaded to any third-party server.',
+      privacy: 'Data is local-first; online features send credentials and required content directly to services you configure.',
       github: 'GitHub',
       website: 'Website',
       openCharFolder: 'Open character data folder',
@@ -251,7 +254,7 @@ export default {
       updateDownloading: 'Downloading and installing…',
       updateInstalled: 'Update installed — restart the app to take effect',
       updateError: 'Update unavailable: {msg}',
-      updateHint: 'Auto-update requires a signing pubkey and an update endpoint in tauri.conf.json (see docs/productization-spec.md)',
+      updateHint: 'Only update packages verified by the Kisaki updater public key will be installed.',
     },
     privacy: {
       title: 'Privacy Policy',
@@ -262,7 +265,7 @@ export default {
       },
       network: {
         title: 'Network requests',
-        body: 'The app only sends requests when you actively use a feature: the AI chat endpoint (the OpenAI-compatible URL you configure), voice synthesis (CosyVoice / GPT-SoVITS), web search and weather. Only your chat text or query terms are sent; no device information is included.',
+        body: 'Requests are sent only when you use an online feature. AI providers receive credentials, model, character prompt, required conversation history, user input and tool results; TTS receives credentials and synthesis text; search and weather receive credentials and query parameters. The maintainer does not proxy these requests or receive your credentials.',
       },
       logs: {
         title: 'Logs',
@@ -270,9 +273,17 @@ export default {
       },
       delete: {
         title: 'Deleting your data',
-        body: 'Open the data folder from Settings → About to inspect it. Deleting the app data directory removes all local data; keychain credentials must be removed separately in your system settings.',
+        body: 'Use the actions below to export a backup without API keys, restore a backup, or erase characters, sessions, settings, logs, cache and the OS keychain entries created by Kisaki.',
       },
       noTelemetry: 'This app contains no telemetry, analytics, or ad SDKs, and does not collect usage data in the background.',
+      actions: {
+        export: 'Export data backup', import: 'Restore data backup', clear: 'Erase all local data',
+        backupFilter: 'Kisaki data backup', exportDone: 'Backup exported',
+        importConfirm: 'Restoring will replace current characters and sessions. Continue?',
+        clearConfirm: 'This permanently erases characters, sessions, settings, logs, cache and keychain credentials. This cannot be undone. Continue?',
+        hint: 'Backups contain characters, sessions and non-sensitive settings. API keys, logs and workspace files are excluded. Current characters and sessions are retained in cache before restore.',
+        failed: 'Operation failed: {msg}',
+      },
     },
     dev: {
       title: 'Dev Panel',

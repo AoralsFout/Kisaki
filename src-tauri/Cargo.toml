@@ -1,9 +1,13 @@
 [package]
 name = "kisaki"
 version = "0.2.3"
-description = "Kisaki"
+description = "Local-first AI desktop companion with customizable characters"
 authors = ["AoralsFout"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/AoralsFout/Kisaki"
+homepage = "https://kisaki.aoralsfout.top"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,6 +17,11 @@ edition = "2021"
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "kisaki_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# 仅供内部测试构建。正式发布不得启用；release 默认在后端拒绝执行命令。
+experimental-command = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

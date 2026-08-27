@@ -276,7 +276,7 @@ pub(crate) fn agent_edit_lines(
             let (new_lines, _, _) = split_lines(&body);
             let at = (line - 1) as usize;
             let cnt = new_lines.len();
-            lines.splice(at..at, new_lines.into_iter());
+            lines.splice(at..at, new_lines);
             format!("已在第 {} 行前插入 {} 行", line, cnt)
         }
         "delete" => {

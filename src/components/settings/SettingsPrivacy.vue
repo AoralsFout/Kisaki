@@ -5,9 +5,112 @@
  * 向用户说明数据如何被存储与使用。文案经 i18n 分发，见各 locales 的
  * settings.privacy 命名空间。
  */
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { invoke } from '@tauri-apps/api/core'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { relaunch } from '@tauri-apps/plugin-process'
+import {
+  STORAGE_AI_CONFIG,
+  STORAGE_COSYVOICE_CONFIG,
+  STORAGE_CURRENT_SESSION,
+  STORAGE_SEARCH_CONFIG,
+  STORAGE_SESSIONS,
+} from '../../constants'
+import { keychainDelete } from '../../utils/secretStore'
+import { disableFilePersistence } from '../../utils/logger'
 
 const { t } = useI18n()
+const busy = ref(false)
+const status = ref('')
+const error = ref('')
+
+const EXCLUDED_BACKUP_KEYS = new Set([
+  STORAGE_AI_CONFIG,
+  STORAGE_COSYVOICE_CONFIG,
+  STORAGE_SEARCH_CONFIG,
+  STORAGE_SESSIONS,
+  STORAGE_CURRENT_SESSION,
+])
+
+function safeSettingsSnapshot(): string {
+  const values: Record<string, string> = {}
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || EXCLUDED_BACKUP_KEYS.has(key)) continue
+    const value = localStorage.getItem(key)
+    if (value !== null) values[key] = value
+  }
+  return JSON.stringify(values)
+}
+
+function applySafeSettings(raw: string) {
+  const values = JSON.parse(raw) as Record<string, unknown>
+  for (const [key, value] of Object.entries(values)) {
+    if (EXCLUDED_BACKUP_KEYS.has(key) || typeof value !== 'string') continue
+    localStorage.setItem(key, value)
+  }
+}
+
+async function exportBackup() {
+  const dest = await save({
+    defaultPath: 'kisaki-backup.zip',
+    filters: [{ name: t('settings.privacy.actions.backupFilter'), extensions: ['zip'] }],
+  })
+  if (!dest) return
+  busy.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    await invoke('export_data_backup', { destPath: dest, settingsJson: safeSettingsSnapshot() })
+    status.value = t('settings.privacy.actions.exportDone')
+  } catch (e) {
+    error.value = t('settings.privacy.actions.failed', { msg: String(e) })
+  } finally {
+    busy.value = false
+  }
+}
+
+async function importBackup() {
+  if (!window.confirm(t('settings.privacy.actions.importConfirm'))) return
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: t('settings.privacy.actions.backupFilter'), extensions: ['zip'] }],
+  })
+  if (!selected || Array.isArray(selected)) return
+  busy.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    const settingsJson = await invoke<string>('import_data_backup', { srcPath: selected })
+    applySafeSettings(settingsJson)
+    await relaunch()
+  } catch (e) {
+    error.value = t('settings.privacy.actions.failed', { msg: String(e) })
+    busy.value = false
+  }
+}
+
+async function clearAllData() {
+  if (!window.confirm(t('settings.privacy.actions.clearConfirm'))) return
+  busy.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    disableFilePersistence()
+    await invoke('reset_all_local_data')
+    await Promise.all([
+      keychainDelete('ai_api_key'),
+      keychainDelete('cosyvoice_api_key'),
+      keychainDelete('search_api_key'),
+    ])
+    localStorage.clear()
+    await relaunch()
+  } catch (e) {
+    error.value = t('settings.privacy.actions.failed', { msg: String(e) })
+    busy.value = false
+  }
+}
 
 const SECTIONS = [
   { key: 'local', icon: 'fa-database' },
@@ -32,6 +135,21 @@ const SECTIONS = [
     <div class="privacy-note">
       <i class="fas fa-circle-check"></i> {{ t('settings.privacy.noTelemetry') }}
     </div>
+
+    <div class="privacy-actions">
+      <button class="privacy-btn" :disabled="busy" @click="exportBackup">
+        <i class="fas fa-box-archive"></i> {{ t('settings.privacy.actions.export') }}
+      </button>
+      <button class="privacy-btn" :disabled="busy" @click="importBackup">
+        <i class="fas fa-rotate-left"></i> {{ t('settings.privacy.actions.import') }}
+      </button>
+      <button class="privacy-btn danger" :disabled="busy" @click="clearAllData">
+        <i class="fas fa-trash-can"></i> {{ t('settings.privacy.actions.clear') }}
+      </button>
+    </div>
+    <p class="privacy-action-hint">{{ t('settings.privacy.actions.hint') }}</p>
+    <p v-if="status" class="privacy-status">{{ status }}</p>
+    <p v-if="error" class="privacy-error">{{ error }}</p>
   </div>
 </template>
 
@@ -79,4 +197,26 @@ const SECTIONS = [
   border: 1px solid rgba(48, 185, 78, 0.2);
   border-radius: 10px;
 }
+
+.privacy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.privacy-btn {
+  padding: 9px 14px;
+  border: 1px solid #3a3a58;
+  border-radius: 9px;
+  background: #202038;
+  color: #ddd;
+  cursor: pointer;
+}
+
+.privacy-btn:disabled { opacity: 0.55; cursor: wait; }
+.privacy-btn.danger { border-color: #7a3540; color: #ff9ba8; }
+.privacy-action-hint { color: #888; font-size: 12px; line-height: 1.6; }
+.privacy-status { color: #30b94e; font-size: 13px; }
+.privacy-error { color: #ff7c8b; font-size: 13px; word-break: break-word; }
 </style>
