@@ -2,6 +2,13 @@
 
 All notable changes to Kisaki are documented in this file.
 
+## 0.2.5 - 2026-08-27
+
+### Release engineering
+
+- Replaced the Rust dependency audit action that could not create GitHub Checks with a maintained audit action that reports failures directly.
+- Updated `plist` and `quick-xml` to resolve `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`.
+
 ## 0.2.4 - 2026-08-27
 
 ### Security
