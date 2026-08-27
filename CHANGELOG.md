@@ -2,7 +2,7 @@
 
 All notable changes to Kisaki are documented in this file.
 
-## Unreleased
+## 0.2.4 - 2026-08-27
 
 ### Security
 
