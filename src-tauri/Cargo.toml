@@ -36,14 +36,14 @@ tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-base64 = "0.22"
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+base64 = "0.23"
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 http = "1"
 tokio = { version = "1", features = ["rt", "net", "time"] }
-reqwest = { version = "0.12", default-features = false, features = ["stream", "default-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["stream", "default-tls"] }
 tauri-plugin-dialog = "2.7.1"
-zip = "2"
-keyring = "2"
+zip = "4"
+keyring = "4"
 tauri-plugin-updater = "2.10.1"
