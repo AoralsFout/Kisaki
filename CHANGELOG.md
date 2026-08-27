@@ -2,6 +2,12 @@
 
 All notable changes to Kisaki are documented in this file.
 
+## 0.2.6 - 2026-08-27
+
+### Release engineering
+
+- Preserve `.mjs` files with LF line endings so Vitest runs reliably on Windows checkouts.
+
 ## 0.2.5 - 2026-08-27
 
 ### Release engineering
