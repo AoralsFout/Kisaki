@@ -1,7 +1,9 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, OnceLock};
+
+use serde::{Deserialize, Serialize};
 
 // ─── 数据目录 ─────────────────────────────────────────
 // 双路径策略：
@@ -14,6 +16,7 @@ static CHARACTERS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static BACKUPS_DIR: OnceLock<PathBuf> = OnceLock::new();
 static SESSIONS_DIR: OnceLock<PathBuf> = OnceLock::new();
+static WORKSPACE_GRANTS_FILE: OnceLock<PathBuf> = OnceLock::new();
 
 /// 初始化数据目录（在 tauri setup 阶段调用）
 pub(crate) fn init_dirs(
@@ -21,6 +24,7 @@ pub(crate) fn init_dirs(
     logs: PathBuf,
     backups: PathBuf,
     sessions: PathBuf,
+    workspace_grants_file: PathBuf,
 ) -> Result<(), &'static str> {
     fs::create_dir_all(&chars).map_err(|_| "创建 characters 目录失败")?;
     fs::create_dir_all(&logs).map_err(|_| "创建 logs 目录失败")?;
@@ -29,15 +33,17 @@ pub(crate) fn init_dirs(
     CHARACTERS_DIR
         .set(chars)
         .map_err(|_| "CHARACTERS_DIR already set")?;
-    LOGS_DIR
-        .set(logs)
-        .map_err(|_| "LOGS_DIR already set")?;
+    LOGS_DIR.set(logs).map_err(|_| "LOGS_DIR already set")?;
     BACKUPS_DIR
         .set(backups)
         .map_err(|_| "BACKUPS_DIR already set")?;
     SESSIONS_DIR
         .set(sessions)
         .map_err(|_| "SESSIONS_DIR already set")?;
+    WORKSPACE_GRANTS_FILE
+        .set(workspace_grants_file)
+        .map_err(|_| "WORKSPACE_GRANTS_FILE already set")?;
+    load_workspace_grants();
     Ok(())
 }
 
@@ -49,20 +55,14 @@ pub(crate) fn characters_dir() -> PathBuf {
 }
 
 pub(crate) fn log_dir() -> PathBuf {
-    let dir = LOGS_DIR
-        .get()
-        .expect("LOGS_DIR 未初始化")
-        .clone();
+    let dir = LOGS_DIR.get().expect("LOGS_DIR 未初始化").clone();
     let _ = fs::create_dir_all(&dir);
     dir
 }
 
 /// AI 文件改动备份根目录（app_cache_dir/backups）。
 pub(crate) fn backups_dir() -> PathBuf {
-    let dir = BACKUPS_DIR
-        .get()
-        .expect("BACKUPS_DIR 未初始化")
-        .clone();
+    let dir = BACKUPS_DIR.get().expect("BACKUPS_DIR 未初始化").clone();
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -121,9 +121,7 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
     for comp in rel_path.components() {
         match comp {
             Component::ParentDir => return Err("路径不能包含 '..'".to_string()),
-            Component::RootDir | Component::Prefix(_) => {
-                return Err("不允许绝对路径".to_string())
-            }
+            Component::RootDir | Component::Prefix(_) => return Err("不允许绝对路径".to_string()),
             Component::Normal(name) if cfg!(windows) && name.to_string_lossy().contains(':') => {
                 // Windows 加固：拒绝组件名中的 ':'（NTFS Alternate Data Stream 分隔符），
                 // 避免把内容写进隐藏数据流 / 触发意外的 NTFS 语义。Unix 下 ':' 是合法字符，放行。
@@ -178,32 +176,103 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-// ─── 工作目录授权白名单 ─────────────────────────────
-// 防御纵深：后端只允许在前端通过目录选择框「授权」过的目录内读写/执行，
-// 即使 WebView 被攻破，也无法把任意 root 传给 fileio/command 命令。
-// 用 LazyLock 惰性初始化，避免与 init_dirs 的 OnceLock 初始化顺序耦合。
+// ─── 工作目录能力授权 ───────────────────────────────
+//
+// 前端不再把任意绝对路径登记为白名单项。只有 Rust 原生目录选择器确认过的目录
+// 才会获得随机、不可猜测的 capability id；文件与命令 API 只接受这个 id。
+// 授权表持久化到 app data，允许会话重启后继续使用用户此前明确选择的目录。
 
-static AUTHORIZED_ROOTS: LazyLock<Mutex<HashSet<PathBuf>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkspaceGrant {
+    pub id: String,
+    pub path: String,
+}
 
-/// 登记一个用户授权的工作目录（规范化后加入白名单）。
-pub(crate) fn authorize_workspace(root: &Path) -> Result<(), String> {
+static WORKSPACE_GRANTS: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn load_workspace_grants() {
+    let Some(file) = WORKSPACE_GRANTS_FILE.get() else {
+        return;
+    };
+    let Ok(text) = fs::read_to_string(file) else {
+        return;
+    };
+    let Ok(saved) = serde_json::from_str::<HashMap<String, PathBuf>>(&text) else {
+        return;
+    };
+    if let Ok(mut grants) = WORKSPACE_GRANTS.lock() {
+        grants.extend(saved.into_iter().filter(|(_, path)| path.is_dir()));
+    }
+}
+
+fn persist_workspace_grants(grants: &HashMap<String, PathBuf>) -> Result<(), String> {
+    let Some(file) = WORKSPACE_GRANTS_FILE.get() else {
+        #[cfg(test)]
+        return Ok(());
+        #[cfg(not(test))]
+        return Err("工作目录授权存储尚未初始化".to_string());
+    };
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建授权目录失败: {}", e))?;
+    }
+    let text =
+        serde_json::to_string(grants).map_err(|e| format!("序列化工作目录授权失败: {}", e))?;
+    let tmp = file.with_extension("tmp");
+    fs::write(&tmp, text).map_err(|e| format!("写入工作目录授权失败: {}", e))?;
+    if file.exists() {
+        fs::remove_file(file).map_err(|e| format!("更新工作目录授权失败: {}", e))?;
+    }
+    fs::rename(&tmp, file).map_err(|e| format!("提交工作目录授权失败: {}", e))
+}
+
+/// 为原生目录选择器返回的路径签发一个独立能力。
+pub(crate) fn grant_workspace(root: &Path) -> Result<WorkspaceGrant, String> {
     let canon = root
         .canonicalize()
         .map_err(|e| format!("无法解析工作目录: {}", e))?;
-    AUTHORIZED_ROOTS
+    if !canon.is_dir() {
+        return Err("工作目录无效或已不存在".to_string());
+    }
+    let id = format!("ws_{}", uuid::Uuid::new_v4().simple());
+    let mut grants = WORKSPACE_GRANTS
         .lock()
-        .map_err(|_| "工作目录授权锁失败".to_string())?
-        .insert(canon);
-    Ok(())
+        .map_err(|_| "工作目录授权锁失败".to_string())?;
+    grants.insert(id.clone(), canon.clone());
+    persist_workspace_grants(&grants)?;
+    Ok(WorkspaceGrant {
+        id,
+        path: canon.to_string_lossy().into_owned(),
+    })
 }
 
-/// 判断某（已规范化的）路径是否在授权白名单内。
-pub(crate) fn is_workspace_authorized(root: &Path) -> bool {
-    AUTHORIZED_ROOTS
+/// 解析并重新校验一个工作目录能力。
+pub(crate) fn resolve_workspace(id: &str) -> Result<PathBuf, String> {
+    if id.trim().is_empty() {
+        return Err("工作目录能力不能为空".to_string());
+    }
+    let path = WORKSPACE_GRANTS
         .lock()
-        .map(|s| s.contains(root))
-        .unwrap_or(false)
+        .map_err(|_| "工作目录授权锁失败".to_string())?
+        .get(id)
+        .cloned()
+        .ok_or_else(|| "工作目录授权不存在或已撤销，请重新选择工作区".to_string())?;
+    let canon = path
+        .canonicalize()
+        .map_err(|e| format!("无法解析工作目录: {}", e))?;
+    if !canon.is_dir() {
+        return Err("工作目录无效或已不存在".to_string());
+    }
+    Ok(canon)
+}
+
+/// 撤销一个能力。能力按会话独立签发，不会影响其它会话选择的同一路径。
+pub(crate) fn revoke_workspace(id: &str) -> Result<(), String> {
+    let mut grants = WORKSPACE_GRANTS
+        .lock()
+        .map_err(|_| "工作目录授权锁失败".to_string())?;
+    grants.remove(id);
+    persist_workspace_grants(&grants)
 }
 
 #[cfg(test)]
@@ -213,11 +282,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kisaki-path-test-{}-{}",
-            name,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("kisaki-path-test-{}-{}", name, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -243,6 +309,16 @@ mod tests {
             "应拒绝绝对路径，实际: {}",
             err
         );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn workspace_capability_resolves_and_revokes() {
+        let base = temp_dir("workspace-grant");
+        let grant = grant_workspace(&base).unwrap();
+        assert_eq!(resolve_workspace(&grant.id).unwrap(), base.canonicalize().unwrap());
+        revoke_workspace(&grant.id).unwrap();
+        assert!(resolve_workspace(&grant.id).is_err());
         let _ = fs::remove_dir_all(&base);
     }
 

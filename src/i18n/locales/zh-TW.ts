@@ -75,7 +75,8 @@ export default {
       delete_lines: '刪除行',
       find_files: '查找檔案',
       search_in_files: '搜尋內容',
-      execute_command: '執行命令',
+      run_process: '執行程式',
+      run_shell: '執行 Shell',
     },
     bubble: {
       welcome: '嘿嘿',
@@ -110,7 +111,12 @@ export default {
         noRollback: '此操作不受回檔保護：透過命令修改或刪除的檔案無法自動備份和還原，請確認命令無誤後再執行。',
         untrustedDesc: '說明由 AI 生成，僅供參考，請以命令本身為準',
         fullAccess: '此命令以目前使用者完整權限執行，可讀寫任意檔案（不受工作目錄限制），請確認命令安全',
+        envKeys: '明確環境變數：{keys}',
       },
+    },
+    execution: {
+      stop: '停止任務', stopping: '正在停止…', waitingOutput: '等待輸出…',
+      status: { idle: '等待執行', running: '任務執行中', completed: '任務已完成', failed: '任務失敗', timed_out: '任務逾時', cancelled: '任務已取消' },
     },
   },
 
@@ -229,8 +235,8 @@ export default {
       uiLangHint: '應用程式介面文字的顯示語言（與 AI 回覆的翻譯語言相互獨立）。',
       autoExecTitle: '自動執行檔案修改',
       autoExecDesc: '開啟後，AI 修改檔案無需逐次確認（仍會自動備份，可在歷史中回檔）。',
-      commandTitle: '允許 AI 執行命令',
-      commandDesc: '開啟後 AI 可執行 shell 命令（以目前使用者完整權限執行，風險較高，每次執行仍會確認）。預設關閉。',
+      commandTitle: '允許 AI 執行本機任務',
+      commandDesc: '開啟後 AI 可執行程式或 Shell（以目前使用者完整權限執行，每次都會確認後端產生的計畫）。預設關閉。',
       autostartTitle: '開機自啟',
       autostartDesc: '登入系統後自動啟動桌寵',
       shortcutTitle: '全域快捷鍵',

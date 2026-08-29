@@ -75,7 +75,8 @@ export default {
       delete_lines: '行を削除',
       find_files: 'ファイル検索',
       search_in_files: '内容検索',
-      execute_command: 'コマンド実行',
+      run_process: 'プロセス実行',
+      run_shell: 'Shell 実行',
     },
     bubble: {
       welcome: 'えへへ',
@@ -110,7 +111,12 @@ export default {
         noRollback: 'この操作はロールバックの対象外です：コマンドで変更・削除したファイルは自動的に復元できません。コマンドが正しいことを確認してから実行してください。',
         untrustedDesc: '説明は AI が生成したものです。コマンド自体を確認してください',
         fullAccess: 'このコマンドは現在のユーザーの全権限で実行され、任意のファイルを読み書きできます（作業フォルダに限定されません）。安全か確認してください',
+        envKeys: '明示的な環境変数：{keys}',
       },
+    },
+    execution: {
+      stop: 'タスクを停止', stopping: '停止中…', waitingOutput: '出力を待っています…',
+      status: { idle: '待機中', running: '実行中', completed: '完了', failed: '失敗', timed_out: 'タイムアウト', cancelled: 'キャンセル済み' },
     },
   },
 
@@ -229,8 +235,8 @@ export default {
       uiLangHint: 'アプリ画面の表示言語（AI の返信翻訳言語とは独立しています）。',
       autoExecTitle: 'ファイル変更を自動実行',
       autoExecDesc: '有効にすると、AI のファイル変更を都度確認しません（バックアップは自動で取られ、履歴から復元できます）。',
-      commandTitle: 'AI にコマンド実行を許可',
-      commandDesc: '有効にすると AI がシェルコマンドを実行できます（現在のユーザーの全権限で実行、リスクが高い。毎回確認が必要）。既定はオフ。',
+      commandTitle: 'AI にローカルタスクの実行を許可',
+      commandDesc: '有効にすると、ユーザー権限でプログラムや Shell を実行できます。バックエンドが生成した計画を毎回確認します。既定はオフ。',
       autostartTitle: 'ログイン時に起動',
       autostartDesc: 'ログイン時にマスコットを自動起動します',
       shortcutTitle: 'グローバルショートカット',

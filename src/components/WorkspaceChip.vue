@@ -8,7 +8,7 @@
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { open } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
 import { useSessionStore } from '../stores/session'
 import { createLogger } from '../utils/logger'
 
@@ -28,9 +28,11 @@ const displayName = computed(() => {
 
 async function pickDirectory() {
   try {
-    const picked = await open({ directory: true, title: t('app.workspace.pickTitle') })
-    if (typeof picked === 'string') {
-      sessionStore.setWorkspace(picked)
+    const grant = await invoke<{ id: string; path: string } | null>('agent_pick_workspace', {
+      title: t('app.workspace.pickTitle'),
+    })
+    if (grant) {
+      sessionStore.setWorkspace(grant)
     }
   } catch (err) {
     log.warn('选择工作目录失败: %s', (err as Error).message)

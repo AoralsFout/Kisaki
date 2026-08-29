@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 命令执行确认卡 —— AI 调用 execute_command 时弹出
+ * 任务执行确认卡 —— AI 调用 run_process / run_shell 时弹出
  *
  * 独立于 ToolConfirm（不共享 auto-allow 逻辑），每次执行都必须确认。
  * 展示：警告图标 + 描述 + 完整命令 + 工作目录 + 超时。
@@ -10,15 +10,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
-import { useSessionStore } from '../stores/session'
 import { toolIcon } from '../agent/toolMeta'
 
 const { t, te } = useI18n()
 const chat = useChatStore()
-const sessionStore = useSessionStore()
 
 const pc = computed(() => chat.pendingCommandConfirm)
-const workspaceRoot = computed(() => sessionStore.currentSession?.workspaceRoot ?? '')
+const plan = computed(() => pc.value?.executionPlan)
+const workspaceRoot = computed(() => plan.value?.cwd ?? '')
 
 /** 工具可读名：有 i18n 文案用文案，否则兜底原始工具名 */
 function toolLabel(name: string): string {
@@ -28,15 +27,14 @@ function toolLabel(name: string): string {
 
 /** 超时秒数（从参数取，默认 30） */
 const timeoutSecs = computed(() => {
-  const a = pc.value?.args
-  return a?.timeout_secs != null ? Number(a.timeout_secs) : 30
+  return plan.value?.timeout_secs ?? 30
 })
 
 /** 命令文本 */
-const commandText = computed(() => String(pc.value?.args?.command ?? ''))
+const commandText = computed(() => plan.value?.display_command ?? pc.value?.path ?? '')
 
 /** 描述文本 */
-const descriptionText = computed(() => String(pc.value?.args?.description ?? ''))
+const descriptionText = computed(() => plan.value?.intent ?? '')
 </script>
 
 <template>
@@ -75,7 +73,19 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
           <i class="fas fa-hourglass-half"></i>
           <span>{{ t('app.confirm.command.timeout', { sec: timeoutSecs }) }}</span>
         </div>
+        <div v-if="plan?.shell" class="cc-meta-item">
+          <i class="fas fa-code"></i>
+          <span>{{ plan.shell }}</span>
+        </div>
       </div>
+
+      <div v-if="plan?.env_keys.length" class="cc-facts">
+        {{ t('app.confirm.command.envKeys', { keys: plan.env_keys.join(', ') }) }}
+      </div>
+
+      <ul v-if="plan?.warnings.length" class="cc-plan-warnings">
+        <li v-for="warning in plan.warnings" :key="warning">{{ warning }}</li>
+      </ul>
 
       <!-- 完整权限风险提示 -->
       <div class="cc-warning cc-warning-danger">
@@ -216,6 +226,20 @@ const descriptionText = computed(() => String(pc.value?.args?.description ?? '')
   font-size: 11px;
   width: 12px;
   text-align: center;
+}
+
+.cc-facts {
+  margin: 6px 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.cc-plan-warnings {
+  margin: 6px 0 10px;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #f0b85c;
 }
 
 /* 回档风险提示 */

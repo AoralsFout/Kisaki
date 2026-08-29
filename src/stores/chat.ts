@@ -21,6 +21,8 @@ import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolResult } from '../agent'
 import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm, isDangerousTool, dangerousToolSummary } from '../agent/toolPolicy'
+import { prepareCommandExecution, approveCommandExecution } from '../agent/tools/command'
+import type { ExecutionPlan } from '../agent/tools/command'
 import { speakTextStreaming, cancelSpeak, getTtsProvider } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
@@ -93,6 +95,8 @@ export interface PendingConfirm {
   path: string
   /** 原始参数（确认卡据此计算 diff 与摘要） */
   args: Record<string, any>
+  /** 高风险任务由 Rust 规范化后的不可变计划；普通文件确认无此字段。 */
+  executionPlan?: ExecutionPlan
 }
 
 /** 文件操作确认决定 */
@@ -295,7 +299,11 @@ export const useChatStore = defineStore('chat', () => {
   let commandConfirmResolver: ((d: 'allow' | 'reject') => void) | null = null
 
   /** 设待确认项并等待用户决定 */
-  function waitCommandConfirm(tc: ToolCall, signal: AbortSignal): Promise<'allow' | 'reject'> {
+  function waitCommandConfirm(
+    tc: ToolCall,
+    signal: AbortSignal,
+    executionPlan: ExecutionPlan,
+  ): Promise<'allow' | 'reject'> {
     return new Promise((resolve) => {
       if (signal.aborted) { resolve('reject'); return }
 
@@ -322,6 +330,7 @@ export const useChatStore = defineStore('chat', () => {
         toolName: tc.name,
         path: dangerousToolSummary(tc.name, tc.arguments) || '',
         args: tc.arguments,
+        executionPlan,
       }
       commandConfirmResolver = (d) => finish(d)
       signal.addEventListener('abort', onAbort, { once: true })
@@ -564,13 +573,40 @@ export const useChatStore = defineStore('chat', () => {
     const executeWithPolicy = async (tc: ToolCall): Promise<ToolResult> => {
       // 高风险工具（如命令执行）→ 每次都必须确认，无自动允许
       if (isDangerousTool(tc.name)) {
-        const decision = await waitCommandConfirm(tc, myAbort.signal)
+        let executionPlan: ExecutionPlan
+        try {
+          executionPlan = await prepareCommandExecution(tc.name, tc.arguments)
+        } catch (error) {
+          return {
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: `任务准备失败: ${(error as Error)?.message || String(error)}`,
+          }
+        }
+        const decision = await waitCommandConfirm(tc, myAbort.signal, executionPlan)
         if (decision === 'reject') {
           log.info('[%s] ✗ 用户拒绝高风险操作: %s %o', _fn, tc.name, tc.arguments)
           return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该操作。' }
         }
         log.info('[%s] ✓ 用户允许高风险操作: %s', _fn, tc.name)
-        return agentService.execute(tc)
+        try {
+          const approvalToken = await approveCommandExecution(executionPlan)
+          return agentService.execute({
+            ...tc,
+            arguments: {
+              ...tc.arguments,
+              __plan_id: executionPlan.id,
+              __approval_token: approvalToken,
+              __display_command: executionPlan.display_command,
+            },
+          })
+        } catch (error) {
+          return {
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: `任务批准失败: ${(error as Error)?.message || String(error)}`,
+          }
+        }
       }
       if (shouldConfirm(tc.name, { globalAuto: getAutoExecFiles(), sessionAuto: autoExecSession.value })) {
         const decision = await waitUserConfirm(tc, myAbort.signal)

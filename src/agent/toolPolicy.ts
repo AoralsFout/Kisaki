@@ -41,7 +41,8 @@ export function mutatingToolNames(): string[] {
 
 /** 高风险工具名称 → (args) => 摘要文本（展示在确认对话框中） */
 const DANGEROUS_TOOLS: Record<string, (args: Record<string, any>) => string> = {
-  execute_command: a => `$ ${a.command ?? ''}`,
+  run_process: a => [a.program, ...(Array.isArray(a.args) ? a.args : [])].filter(Boolean).join(' '),
+  run_shell: a => String(a.script ?? ''),
 }
 
 /** 该工具是否属于高风险类别（每次执行都需确认） */
@@ -95,7 +96,7 @@ export function shouldConfirm(
 
 // ─── 「允许 AI 执行 shell 命令」开关（默认关闭） ──────────────
 // 命令以当前用户完整权限运行（无 OS 沙箱），风险最高，因此默认不把
-// execute_command 暴露给模型，需用户在设置中显式开启。
+// run_process / run_shell 暴露给模型，需用户在设置中显式开启。
 
 /** 读取「允许 AI 执行命令」开关（默认关闭） */
 export function getCommandEnabled(): boolean {

@@ -15,6 +15,7 @@ import WorkspaceChip from './components/WorkspaceChip.vue'
 import ToolActivityList from './components/ToolActivityList.vue'
 import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
+import CommandExecution from './components/CommandExecution.vue'
 import DevPanel from './components/settings/DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import Onboarding from './components/Onboarding.vue'
@@ -341,6 +342,7 @@ async function handleSelectCharacter(charId: string) {
       <ToolConfirm v-if="!noCharacter" />
       <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
       <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
+      <CommandExecution v-if="!noCharacter" />
 
       <!-- 对话气泡 -->
       <DialogueBubble ref="bubbleRef" :text="chat.currentBubbleText" :thinking="chat.currentThinking"

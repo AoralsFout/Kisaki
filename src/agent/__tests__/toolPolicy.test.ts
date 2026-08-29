@@ -11,6 +11,8 @@ import {
   getAutoExecFiles,
   setAutoExecFiles,
   shouldConfirm,
+  isDangerousTool,
+  dangerousToolNames,
 } from '../toolPolicy'
 
 describe('toolPolicy - 改文件工具分类', () => {
@@ -65,5 +67,14 @@ describe('toolPolicy - shouldConfirm 决策', () => {
 
   it('非改文件工具 → 永不确认', () => {
     expect(shouldConfirm('read_file', { globalAuto: false, sessionAuto: false })).toBe(false)
+  })
+})
+
+describe('toolPolicy - 任务执行风险分类', () => {
+  it('结构化进程和 Shell 都必须走高风险确认', () => {
+    expect(isDangerousTool('run_process')).toBe(true)
+    expect(isDangerousTool('run_shell')).toBe(true)
+    expect(isDangerousTool('read_file')).toBe(false)
+    expect(dangerousToolNames().sort()).toEqual(['run_process', 'run_shell'])
   })
 })

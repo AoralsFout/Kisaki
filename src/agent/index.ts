@@ -17,7 +17,7 @@ import { webSearchTool } from './tools/webSearch'
 import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool } from './tools/character'
 import { setExpressionTool, playMotionTool } from './tools/live2d'
 import { readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
-import { executeCommandTool } from './tools/command'
+import { runProcessTool, runShellTool } from './tools/command'
 
 const log = createLogger('Agent')
 
@@ -29,7 +29,7 @@ export function initTools() {
     setExpressionTool, playMotionTool,
     readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
     replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
-    executeCommandTool,
+    runProcessTool, runShellTool,
   )
   log.info('内置工具已注册 (%d 个)', listTools().length)
 }

@@ -75,12 +75,16 @@ pub fn run() {
                 let d = app.path().app_data_dir()?;
                 (d.join("characters"), d.join("logs"), d.clone())
             };
+            let app_data = app.path().app_data_dir()?;
+            let app_cache = app.path().app_cache_dir()?;
             path::init_dirs(
                 chars_dir.clone(),
                 logs_dir,
-                app.path().app_cache_dir()?.join("backups"),
+                app_cache.join("backups"),
                 sessions_dir,
+                app_data.join("workspace-grants.json"),
             )?;
+            command::init_output_dir(app_cache.join("execution-output"))?;
             // asset:// 仅允许读取角色目录。静态配置保持空 scope，运行时加入实际目录，
             // 兼容 dev 的仓库 characters/ 与生产 app_data_dir，同时避免暴露全盘文件。
             app.asset_protocol_scope()
@@ -134,7 +138,9 @@ pub fn run() {
             log::read_log_file,
             log::export_log_file,
             log::list_log_files,
-            fileio::agent_authorize_workspace,
+            fileio::agent_pick_workspace,
+            fileio::agent_resolve_workspace,
+            fileio::agent_revoke_workspace,
             fileio::agent_read_file,
             fileio::agent_write_file,
             fileio::agent_append_file,
@@ -144,7 +150,10 @@ pub fn run() {
             fileio::agent_edit_lines,
             fileio::agent_find_files,
             fileio::agent_search_in_files,
-            command::agent_execute_command,
+            command::agent_prepare_execution,
+            command::agent_approve_execution,
+            command::agent_execute_plan,
+            command::agent_cancel_execution,
             backup::agent_checkpoint_backup,
             backup::agent_checkpoint_rollback,
             backup::agent_checkpoint_clear_session,

@@ -73,6 +73,7 @@ mod tests {
             root.join("logs"),
             root.join("backups"),
             root.clone(),
+            root.join("workspace-grants.json"),
         );
         root
     }

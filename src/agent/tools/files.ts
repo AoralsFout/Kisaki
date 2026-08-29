@@ -1,10 +1,8 @@
 /**
  * 文件读写工具 —— 让 AI 在「用户授权的工作目录」内读写文件
  *
- * 沙箱模型见 src-tauri/src/fileio.rs：工作目录按会话存储（session.workspaceRoot），
- * 由用户在主窗口的「工作区」按钮手动授权。本模块每个工具：
- *   1. 取当前会话的 workspaceRoot；未授权则抛错，提示 AI 引导用户去设置。
- *   2. 把 root 与相对路径传给对应的 Rust 命令（LLM 只能提供相对路径）。
+ * 能力模型见 src-tauri/src/fileio.rs：原生目录选择器签发 workspaceId，
+ * Rust 只接受该不透明能力与相对路径，前端路径仅用于展示。
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { Tool } from '../types'
@@ -19,15 +17,15 @@ const log = createLogger('ToolFiles')
  * files.ts → stores/session → stores/chat → agent(index/service, 加载即 initTools)
  * → tools/files 的循环依赖。运行时模块已加载完毕，动态 import 无开销且安全。
  */
-async function requireRoot(): Promise<string> {
+async function requireWorkspaceId(): Promise<string> {
   const { useSessionStore } = await import('../../stores/session')
-  const root = useSessionStore().currentSession?.workspaceRoot
-  if (!root) {
+  const workspaceId = useSessionStore().currentSession?.workspaceId
+  if (!workspaceId) {
     throw new Error(
       '当前会话尚未设置工作目录。请提示用户点击界面下方的「工作区」按钮选择一个目录后再重试。',
     )
   }
-  return root
+  return workspaceId
 }
 
 /** 列目录条目结构（与 Rust agent_list_dir 返回一致） */
@@ -74,18 +72,18 @@ export const readFileTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const hasRange = args.start_line != null || args.end_line != null
     if (hasRange) {
       const startLine = args.start_line != null ? Number(args.start_line) : null
       const endLine = args.end_line != null ? Number(args.end_line) : null
       log.debug('read_file(lines): %s [%s,%s]', relPath, startLine, endLine)
-      const text = await invoke<string>('agent_read_lines', { root, relPath, startLine, endLine })
+      const text = await invoke<string>('agent_read_lines', { workspaceId, relPath, startLine, endLine })
       return text || '(空文件)'
     }
     log.debug('read_file: %s', relPath)
-    const content = await invoke<string>('agent_read_file', { root, relPath })
+    const content = await invoke<string>('agent_read_file', { workspaceId, relPath })
     return content === '' ? '(空文件)' : content
   },
 }
@@ -111,11 +109,11 @@ export const writeFileTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
     log.debug('write_file: %s (%d 字符)', relPath, content.length)
-    await invoke('agent_write_file', { root, relPath, content })
+    await invoke('agent_write_file', { workspaceId, relPath, content })
     return `已写入 ${relPath}（${content.length} 字符）`
   },
 }
@@ -140,11 +138,11 @@ export const appendFileTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
     log.debug('append_file: %s (%d 字符)', relPath, content.length)
-    await invoke('agent_append_file', { root, relPath, content })
+    await invoke('agent_append_file', { workspaceId, relPath, content })
     return `已追加到 ${relPath}（${content.length} 字符）`
   },
 }
@@ -167,10 +165,10 @@ export const listDirTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     log.debug('list_dir: %s', relPath || '(root)')
-    const items = await invoke<DirEntry[]>('agent_list_dir', { root, relPath })
+    const items = await invoke<DirEntry[]>('agent_list_dir', { workspaceId, relPath })
     if (!items.length) return '(空目录)'
     const lines = items
       .slice()
@@ -199,10 +197,10 @@ export const deleteFileTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     log.debug('delete_file: %s', relPath)
-    await invoke('agent_delete_file', { root, relPath })
+    await invoke('agent_delete_file', { workspaceId, relPath })
     return `已删除 ${relPath}`
   },
 }
@@ -230,14 +228,14 @@ export const replaceLinesTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
     const content = String(args.content ?? '')
     log.debug('replace_lines: %s [%d,%d]', relPath, startLine, endLine)
     return await invoke<string>('agent_edit_lines', {
-      root, relPath, operation: 'replace', startLine, endLine, content,
+      workspaceId, relPath, operation: 'replace', startLine, endLine, content,
     })
   },
 }
@@ -262,13 +260,13 @@ export const insertLinesTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const startLine = Number(args.line)
     const content = String(args.content ?? '')
     log.debug('insert_lines: %s @%d', relPath, startLine)
     return await invoke<string>('agent_edit_lines', {
-      root, relPath, operation: 'insert', startLine, endLine: null, content,
+      workspaceId, relPath, operation: 'insert', startLine, endLine: null, content,
     })
   },
 }
@@ -291,13 +289,13 @@ export const deleteLinesTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
     log.debug('delete_lines: %s [%d,%d]', relPath, startLine, endLine)
     return await invoke<string>('agent_edit_lines', {
-      root, relPath, operation: 'delete', startLine, endLine, content: null,
+      workspaceId, relPath, operation: 'delete', startLine, endLine, content: null,
     })
   },
 }
@@ -322,11 +320,11 @@ export const findFilesTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const pattern = String(args.pattern ?? '')
     const relPath = args.path != null ? String(args.path) : null
     log.debug('find_files: %s (in %s)', pattern, relPath || '(root)')
-    const list = await invoke<string[]>('agent_find_files', { root, pattern, relPath })
+    const list = await invoke<string[]>('agent_find_files', { workspaceId, pattern, relPath })
     if (!list.length) return '(无匹配)'
     let out = list.join('\n')
     if (list.length >= 200) out += '\n…（结果较多，已截断，请缩小范围）'
@@ -352,11 +350,11 @@ export const searchInFilesTool: Tool = {
     },
   },
   handler: async (args) => {
-    const root = await requireRoot()
+    const workspaceId = await requireWorkspaceId()
     const query = String(args.query ?? '')
     const relPath = args.path != null ? String(args.path) : null
     log.debug('search_in_files: %s (in %s)', query, relPath || '(root)')
-    const hits = await invoke<SearchHit[]>('agent_search_in_files', { root, query, relPath })
+    const hits = await invoke<SearchHit[]>('agent_search_in_files', { workspaceId, query, relPath })
     if (!hits.length) return '(无匹配)'
     let out = hits.map(h => `${h.path}:${h.line}: ${h.text}`).join('\n')
     if (hits.length >= 100) out += '\n…（命中较多，已截断，请缩小范围或换更具体的关键词）'

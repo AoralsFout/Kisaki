@@ -1,10 +1,9 @@
 //! AI 工作目录文件读写命令
 //!
 //! 供前端 agent 工具调用，让 AI 在「用户授权的工作目录」内读写文件。
-//! 沙箱模型：
-//!   - 工作目录（root）由用户在前端通过目录选择框手动授权，按会话存储在前端。
-//!   - 本模块的命令均无全局状态：每次调用把 root 作参数传入，LLM 只能提供
-//!     相对路径（rel_path），永远碰不到 root 之外的文件。
+//! 能力模型：
+//!   - Rust 原生目录选择器为用户选中的目录签发随机 workspace_id。
+//!   - 本模块只接受 workspace_id 与相对路径，WebView 不能登记任意绝对路径。
 //!   - 所有相对路径经 `safe_join_rel` 校验，防 path traversal / 符号链接逃逸。
 
 use std::fs;
@@ -12,6 +11,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use crate::path::safe_join_rel;
+use tauri_plugin_dialog::DialogExt;
 
 /// 单次读取上限：2 MiB。防止把超大文件灌进 LLM 上下文。
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -25,34 +25,47 @@ const MAX_ENTRIES_SCANNED: usize = 20000;
 /// 搜索命中行文本的最大保留长度。
 const SEARCH_LINE_MAX: usize = 200;
 
-/// 校验 root 是有效目录、已授权，并规范化返回。
-pub(crate) fn check_root(root: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(root);
-    if !p.is_dir() {
-        return Err("工作目录无效或已不存在".to_string());
-    }
-    let canon = p.canonicalize().map_err(|e| format!("无法解析工作目录: {}", e))?;
-    if !crate::path::is_workspace_authorized(&canon) {
-        return Err("工作目录未经授权，请先在界面中通过「设置工作区」选择授权目录".to_string());
-    }
-    Ok(canon)
+/// 解析一个已由原生目录选择器签发的工作目录能力。
+pub(crate) fn check_workspace(workspace_id: &str) -> Result<std::path::PathBuf, String> {
+    crate::path::resolve_workspace(workspace_id)
 }
 
-/// 登记用户通过目录选择框授权的工作目录（加入后端白名单）。
-/// 前端在用户选择目录时调用；fileio / command 只接受白名单内的 root。
+/// 由后端直接打开原生目录选择器并签发能力。路径从不作为授权输入来自 WebView。
 #[tauri::command]
-pub(crate) fn agent_authorize_workspace(root: String) -> Result<(), String> {
-    let p = PathBuf::from(&root);
-    if !p.is_dir() {
-        return Err("工作目录无效或已不存在".to_string());
+pub(crate) async fn agent_pick_workspace(
+    app: tauri::AppHandle,
+    title: Option<String>,
+) -> Result<Option<crate::path::WorkspaceGrant>, String> {
+    let mut dialog = app.dialog().file();
+    if let Some(title) = title {
+        dialog = dialog.set_title(title);
     }
-    crate::path::authorize_workspace(&p)
+    let Some(selected) = dialog.blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|e| format!("无法解析所选工作目录: {}", e))?;
+    crate::path::grant_workspace(&path).map(Some)
+}
+
+/// 验证持久化能力仍有效，并返回其当前规范化路径。
+#[tauri::command]
+pub(crate) fn agent_resolve_workspace(workspace_id: String) -> Result<String, String> {
+    crate::path::resolve_workspace(&workspace_id).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// 用户取消工作区时同步撤销后端能力。
+#[tauri::command]
+pub(crate) fn agent_revoke_workspace(workspace_id: String) -> Result<(), String> {
+    crate::command::revoke_workspace_tasks(&workspace_id);
+    crate::path::revoke_workspace(&workspace_id)
 }
 
 /// 读取工作目录内某文本文件的内容（UTF-8）。
 #[tauri::command]
-pub(crate) fn agent_read_file(root: String, rel_path: String) -> Result<String, String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+pub(crate) fn agent_read_file(workspace_id: String, rel_path: String) -> Result<String, String> {
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     let meta = fs::metadata(&path).map_err(|e| format!("读取失败: {}", e))?;
     if !meta.is_file() {
         return Err("目标不是文件".to_string());
@@ -70,11 +83,11 @@ pub(crate) fn agent_read_file(root: String, rel_path: String) -> Result<String, 
 /// 写入/覆盖工作目录内的文件，自动创建所需的父目录。
 #[tauri::command]
 pub(crate) fn agent_write_file(
-    root: String,
+    workspace_id: String,
     rel_path: String,
     content: String,
 ) -> Result<(), String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
@@ -84,11 +97,11 @@ pub(crate) fn agent_write_file(
 /// 在文件末尾追加内容（文件不存在则创建）。
 #[tauri::command]
 pub(crate) fn agent_append_file(
-    root: String,
+    workspace_id: String,
     rel_path: String,
     content: String,
 ) -> Result<(), String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
@@ -104,11 +117,11 @@ pub(crate) fn agent_append_file(
 /// 列出工作目录（或其子目录）下的条目。rel_path 为空表示根。
 #[tauri::command]
 pub(crate) fn agent_list_dir(
-    root: String,
+    workspace_id: String,
     rel_path: String,
 ) -> Result<serde_json::Value, String> {
     let rel = if rel_path.is_empty() { "." } else { &rel_path };
-    let dir = safe_join_rel(&check_root(&root)?, rel)?;
+    let dir = safe_join_rel(&check_workspace(&workspace_id)?, rel)?;
     if !dir.is_dir() {
         return Err("目标不是目录".to_string());
     }
@@ -132,8 +145,8 @@ pub(crate) fn agent_list_dir(
 
 /// 删除工作目录内的文件。仅允许删除文件，拒绝删除目录（防误删整目录）。
 #[tauri::command]
-pub(crate) fn agent_delete_file(root: String, rel_path: String) -> Result<(), String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+pub(crate) fn agent_delete_file(workspace_id: String, rel_path: String) -> Result<(), String> {
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     if !path.exists() {
         return Err("文件不存在".to_string());
     }
@@ -150,12 +163,12 @@ pub(crate) fn agent_delete_file(root: String, rel_path: String) -> Result<(), St
 /// 受 MAX_RANGE_LINES / MAX_RANGE_BYTES 限制，超出则截断并附提示。
 #[tauri::command]
 pub(crate) fn agent_read_lines(
-    root: String,
+    workspace_id: String,
     rel_path: String,
     start_line: Option<u64>,
     end_line: Option<u64>,
 ) -> Result<String, String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     if !path.is_file() {
         return Err("目标不是文件".to_string());
     }
@@ -213,7 +226,11 @@ pub(crate) fn agent_read_lines(
 
 /// 检测文本的换行风格与是否以换行结尾，并切分为不含换行符的行序列。
 fn split_lines(content: &str) -> (Vec<String>, &'static str, bool) {
-    let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
+    let newline = if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let ends_with_nl = content.ends_with('\n');
     // 按 \n 切，去掉可能的 \r；若以换行结尾，去掉末尾产生的空串
     let mut lines: Vec<String> = content
@@ -238,14 +255,14 @@ fn join_lines(lines: &[String], newline: &str, ends_with_nl: bool) -> String {
 /// 按行编辑：replace / insert / delete。行号 1-based。
 #[tauri::command]
 pub(crate) fn agent_edit_lines(
-    root: String,
+    workspace_id: String,
     rel_path: String,
     operation: String,
     start_line: Option<u64>,
     end_line: Option<u64>,
     content: Option<String>,
 ) -> Result<String, String> {
-    let path = safe_join_rel(&check_root(&root)?, &rel_path)?;
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
     if !path.is_file() {
         return Err("文件不存在或不是文件（新建文件请用 write_file）".to_string());
     }
@@ -259,7 +276,10 @@ pub(crate) fn agent_edit_lines(
             let e = end_line.ok_or("replace 需要 end_line")?;
             let body = content.ok_or("replace 需要 content")?;
             if s < 1 || e < s || e > n {
-                return Err(format!("行区间越界：start={}, end={}, 文件共 {} 行", s, e, n));
+                return Err(format!(
+                    "行区间越界：start={}, end={}, 文件共 {} 行",
+                    s, e, n
+                ));
             }
             let (new_lines, _, _) = split_lines(&body);
             let si = (s - 1) as usize;
@@ -271,7 +291,12 @@ pub(crate) fn agent_edit_lines(
             let line = start_line.ok_or("insert 需要 line（用 start_line 传入）")?;
             let body = content.ok_or("insert 需要 content")?;
             if line < 1 || line > n + 1 {
-                return Err(format!("插入位置越界：line={}, 文件共 {} 行（可取 1..={}）", line, n, n + 1));
+                return Err(format!(
+                    "插入位置越界：line={}, 文件共 {} 行（可取 1..={}）",
+                    line,
+                    n,
+                    n + 1
+                ));
             }
             let (new_lines, _, _) = split_lines(&body);
             let at = (line - 1) as usize;
@@ -283,7 +308,10 @@ pub(crate) fn agent_edit_lines(
             let s = start_line.ok_or("delete 需要 start_line")?;
             let e = end_line.ok_or("delete 需要 end_line")?;
             if s < 1 || e < s || e > n {
-                return Err(format!("行区间越界：start={}, end={}, 文件共 {} 行", s, e, n));
+                return Err(format!(
+                    "行区间越界：start={}, end={}, 文件共 {} 行",
+                    s, e, n
+                ));
             }
             let si = (s - 1) as usize;
             let ei = e as usize;
@@ -368,14 +396,14 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 /// 按文件名通配符递归查找文件，返回相对工作根的路径列表。
 #[tauri::command]
 pub(crate) fn agent_find_files(
-    root: String,
+    workspace_id: String,
     pattern: String,
     rel_path: Option<String>,
 ) -> Result<Vec<String>, String> {
     if pattern.trim().is_empty() {
         return Err("查找模式不能为空".to_string());
     }
-    let base_root = check_root(&root)?;
+    let base_root = check_workspace(&workspace_id)?;
     let rel = rel_path.unwrap_or_default();
     let base = safe_join_rel(&base_root, if rel.is_empty() { "." } else { &rel })?;
     if !base.is_dir() {
@@ -404,14 +432,14 @@ pub(crate) fn agent_find_files(
 /// 递归按内容搜索（大小写不敏感子串），返回命中 [{path,line,text}]。
 #[tauri::command]
 pub(crate) fn agent_search_in_files(
-    root: String,
+    workspace_id: String,
     query: String,
     rel_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if query.is_empty() {
         return Err("搜索内容不能为空".to_string());
     }
-    let base_root = check_root(&root)?;
+    let base_root = check_workspace(&workspace_id)?;
     let rel = rel_path.unwrap_or_default();
     let base = safe_join_rel(&base_root, if rel.is_empty() { "." } else { &rel })?;
     if !base.is_dir() {

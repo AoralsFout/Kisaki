@@ -83,18 +83,18 @@ fn save_manifest(cp: &Path, mani: &Manifest) -> Result<(), String> {
 pub(crate) fn agent_checkpoint_backup(
     session_id: String,
     checkpoint_id: String,
-    root: String,
+    workspace_id: String,
     rel_path: String,
 ) -> Result<(), String> {
-    // 校验 root 已授权（与 fileio 一致），防止绕过授权直接读取任意文件到缓存
-    crate::fileio::check_root(&root)?;
+    // 能力解析在后端完成，WebView 不能传任意绝对路径读取到缓存。
+    let root = crate::fileio::check_workspace(&workspace_id)?;
 
     let cp = checkpoint_dir(&session_id, &checkpoint_id)?;
     fs::create_dir_all(cp.join("blobs")).map_err(|e| format!("创建备份目录失败: {}", e))?;
 
     let mut mani = load_manifest(&cp);
     if mani.root.is_empty() {
-        mani.root = root;
+        mani.root = root.to_string_lossy().into_owned();
     }
     // 写时复制：已记录过则跳过，保留最早版本。
     if mani.entries.iter().any(|e| e.rel == rel_path) {

@@ -75,7 +75,8 @@ export default {
       delete_lines: 'Delete lines',
       find_files: 'Find files',
       search_in_files: 'Search content',
-      execute_command: 'Execute Command',
+      run_process: 'Run process',
+      run_shell: 'Run shell',
     },
     bubble: {
       welcome: 'Hehe',
@@ -110,7 +111,12 @@ export default {
         noRollback: 'Not protected by rollback: files modified or deleted by this command cannot be auto-restored. Please verify the command before executing.',
         untrustedDesc: 'Description is AI-generated — trust the command itself, not this summary',
         fullAccess: 'This command runs with your full user permissions and can read/write any file (not limited to the workspace). Verify it is safe.',
+        envKeys: 'Explicit environment variables: {keys}',
       },
+    },
+    execution: {
+      stop: 'Stop task', stopping: 'Stopping…', waitingOutput: 'Waiting for output…',
+      status: { idle: 'Waiting', running: 'Task running', completed: 'Task completed', failed: 'Task failed', timed_out: 'Task timed out', cancelled: 'Task cancelled' },
     },
   },
 
@@ -229,8 +235,8 @@ export default {
       uiLangHint: 'The display language of the app interface (independent of the AI reply translation language).',
       autoExecTitle: 'Auto-run file changes',
       autoExecDesc: 'When on, the AI edits files without per-action confirmation (backups are still made; you can roll back from history).',
-      commandTitle: 'Allow AI to run commands',
-      commandDesc: 'When on, the AI can run shell commands (with full user permissions — higher risk; each run still requires confirmation). Off by default.',
+      commandTitle: 'Allow AI to run local tasks',
+      commandDesc: 'Allows programs or shell scripts to run with your user permissions. Every backend-generated plan still requires confirmation. Off by default.',
       autostartTitle: 'Launch at startup',
       autostartDesc: 'Start the pet automatically when you log in',
       shortcutTitle: 'Global shortcut',

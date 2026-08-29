@@ -78,7 +78,8 @@ export default {
       delete_lines: '删除行',
       find_files: '查找文件',
       search_in_files: '搜索内容',
-      execute_command: '执行命令',
+      run_process: '运行程序',
+      run_shell: '运行 Shell',
     },
     bubble: {
       welcome: '嘿嘿',
@@ -113,7 +114,12 @@ export default {
         noRollback: '此操作不受回档保护：通过命令修改或删除的文件无法自动备份和恢复，请确认命令无误后再执行。',
         untrustedDesc: '说明由 AI 生成，仅供参考，请以命令本身为准',
         fullAccess: '此命令以当前用户完整权限运行，可读写任意文件（不受工作目录限制），请确认命令安全',
+        envKeys: '显式环境变量：{keys}',
       },
+    },
+    execution: {
+      stop: '停止任务', stopping: '正在停止…', waitingOutput: '等待输出…',
+      status: { idle: '等待执行', running: '任务运行中', completed: '任务已完成', failed: '任务失败', timed_out: '任务超时', cancelled: '任务已取消' },
     },
   },
 
@@ -232,8 +238,8 @@ export default {
       uiLangHint: '应用界面文案的显示语言（与 AI 回复的翻译语言相互独立）。',
       autoExecTitle: '自动执行文件修改',
       autoExecDesc: '开启后，AI 修改文件无需逐次确认（仍会自动备份，可在历史中回档）。',
-      commandTitle: '允许 AI 执行命令',
-      commandDesc: '开启后 AI 可执行 shell 命令（以当前用户完整权限运行，风险较高，每次执行仍会确认）。默认关闭。',
+      commandTitle: '允许 AI 执行本地任务',
+      commandDesc: '开启后 AI 可运行程序或 Shell（以当前用户完整权限运行，每次都会确认后端生成的计划）。默认关闭。',
       autostartTitle: '开机自启',
       autostartDesc: '登录系统后自动启动桌宠',
       shortcutTitle: '全局快捷键',

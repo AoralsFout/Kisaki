@@ -36,6 +36,8 @@ export interface Session {
   characterState?: CharacterVisualState
   /** 本会话授权给 AI 读写的工作目录绝对路径；null/undefined = 未授权 */
   workspaceRoot?: string | null
+  /** Rust 原生目录选择器签发的不透明工作目录能力。绝对路径不再作为授权凭据。 */
+  workspaceId?: string | null
   /** 回档检查点：每条用户消息一个，记录回合前的视觉状态；hasFiles 标记是否有文件备份 */
   checkpoints?: Checkpoint[]
   createdAt: number
@@ -166,6 +168,13 @@ export const useSessionStore = defineStore('session', () => {
 
     if (saved.length > 0) {
       sessions.value = saved
+      // v2 授权迁移：旧会话只有前端路径、没有后端能力，不能静默恢复。
+      // 清除旧路径并要求用户通过原生选择器重新授权一次。
+      for (const session of sessions.value) {
+        if (session.workspaceRoot && !session.workspaceId) {
+          session.workspaceRoot = null
+        }
+      }
       // 恢复上次使用的会话
       const lastId = file.ok && file.data
         ? file.data.currentId
@@ -390,27 +399,35 @@ export const useSessionStore = defineStore('session', () => {
 
   // ── AI 工作目录 ──
 
-  /** 为当前会话设置 AI 工作目录（绝对路径） */
-  function setWorkspace(path: string) {
+  /** 保存由 Rust 原生目录选择器签发的工作目录能力。 */
+  function setWorkspace(grant: { id: string; path: string }) {
     const session = currentSession.value
     if (!session) return
-    session.workspaceRoot = path
+    const previousId = session.workspaceId
+    session.workspaceId = grant.id
+    session.workspaceRoot = grant.path
     session.updatedAt = Date.now()
     persistSessions()
-    // 登记到后端授权白名单（fileio/command 只接受已授权目录）
-    invoke('agent_authorize_workspace', { root: path }).catch((e) => {
-      log.warn('登记工作目录授权失败: %s', (e as Error)?.message || String(e))
-    })
-    log.info('已设置会话工作目录: %s', path)
+    if (previousId && previousId !== grant.id) {
+      void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => { /* ignore */ })
+    }
+    log.info('已设置会话工作目录: %s', grant.path)
   }
 
   /** 取消当前会话的工作目录授权 */
   function clearWorkspace() {
     const session = currentSession.value
     if (!session) return
+    const workspaceId = session.workspaceId
+    session.workspaceId = null
     session.workspaceRoot = null
     session.updatedAt = Date.now()
     persistSessions()
+    if (workspaceId) {
+      void invoke('agent_revoke_workspace', { workspaceId }).catch((e) => {
+        log.warn('撤销工作目录授权失败: %s', (e as Error)?.message || String(e))
+      })
+    }
     log.info('已取消会话工作目录授权')
   }
 
@@ -427,11 +444,18 @@ export const useSessionStore = defineStore('session', () => {
   async function restoreSessionState(session: Session) {
     const charStore = useCharacterStore()
 
-    // 0. 重新登记会话已授权的工作目录（后端白名单按进程驻留，重启后需重新登记）
-    if (session.workspaceRoot) {
-      invoke('agent_authorize_workspace', { root: session.workspaceRoot }).catch((e) => {
-        log.warn('恢复工作目录授权失败: %s', (e as Error)?.message || String(e))
-      })
+    // 0. 验证持久化能力仍有效；能力不存在、目录被移走或已撤销时安全清除。
+    if (session.workspaceId) {
+      try {
+        session.workspaceRoot = await invoke<string>('agent_resolve_workspace', {
+          workspaceId: session.workspaceId,
+        })
+      } catch (e) {
+        log.warn('恢复工作目录授权失败，需重新选择: %s', (e as Error)?.message || String(e))
+        session.workspaceId = null
+        session.workspaceRoot = null
+        persistSessions()
+      }
     }
 
     // 1. 切换到会话绑定的角色（若不同且存在）
@@ -503,12 +527,12 @@ export const useSessionStore = defineStore('session', () => {
    */
   async function backupFile(checkpointId: string, relPath: string): Promise<void> {
     const session = currentSession.value
-    const root = session?.workspaceRoot
-    if (!session || !root || !relPath) return
+    const workspaceId = session?.workspaceId
+    if (!session || !workspaceId || !relPath) return
     await invoke('agent_checkpoint_backup', {
       sessionId: session.id,
       checkpointId,
-      root,
+      workspaceId,
       relPath,
     })
   }

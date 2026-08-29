@@ -47,9 +47,9 @@ export function getDefinitions(charData?: CharacterData | null): ToolDefinition[
     const appliesTo = t.appliesTo ?? 'both'
     if (appliesTo !== 'both' && appliesTo !== render) continue
 
-    // ② execute_command 默认关闭（无 OS 沙箱、风险最高），需用户在设置中显式开启
+    // ② 任务执行默认关闭（无 OS 沙箱、风险最高），需用户在设置中显式开启
     if (
-      t.definition.function.name === 'execute_command'
+      ['run_process', 'run_shell'].includes(t.definition.function.name)
       && (!EXPERIMENTAL_COMMAND_AVAILABLE || !getCommandEnabled())
     ) continue
 

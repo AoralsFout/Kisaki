@@ -62,12 +62,12 @@ async function loadPreview(p: PendingConfirm) {
     return
   }
 
-  const root = sessionStore.currentSession?.workspaceRoot
-  if (!root) return // 无工作目录则不预览（工具执行时会报错引导）
+  const workspaceId = sessionStore.currentSession?.workspaceId
+  if (!workspaceId) return // 无工作目录能力则不预览（工具执行时会报错引导）
 
   let oldFull = ''
   try {
-    oldFull = await invoke<string>('agent_read_file', { root, relPath: p.path })
+    oldFull = await invoke<string>('agent_read_file', { workspaceId, relPath: p.path })
   } catch {
     // 文件不存在 / 读失败：write_file 视为新建，其它标记不可读
     if (name !== 'write_file') unreadable.value = true
