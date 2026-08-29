@@ -57,6 +57,44 @@ describe('会话文件持久化', () => {
     expect(store.sessionList[0].name).toBe('文件会话')
   })
 
+  it('从文件恢复脱敏协议上下文，而不是只重放显示文本', async () => {
+    const saved = JSON.stringify({
+      sessions: [{
+        id: 'ctx-session',
+        name: '工具任务',
+        messages: [
+          { id: 'u1', role: 'user', text: '检查文件', timestamp: 1 },
+          { id: 'a1', role: 'assistant', text: '检查完成', timestamp: 2 },
+        ],
+        context: {
+          version: 1,
+          rollingSummary: '',
+          summarizedRounds: 0,
+          messages: [
+            { role: 'user', content: '检查文件' },
+            { role: 'assistant', content: '', tool_calls: [{
+              id: 'read-1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' },
+            }] },
+            { role: 'tool', content: '读取成功', tool_call_id: 'read-1' },
+          ],
+        },
+        createdAt: 1,
+        updatedAt: 2,
+      }],
+      currentId: 'ctx-session',
+    })
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === 'sessions_load' ? Promise.resolve(saved) : Promise.resolve())
+
+    const useSessionStore = await loadSessionStore()
+    await useSessionStore().init()
+    const { useChatStore } = await import('../chat')
+    const protocol = useChatStore().exportContext().messages
+
+    expect(protocol.some(m => m.tool_calls?.[0]?.function.name === 'read_file')).toBe(true)
+    expect(protocol.some(m => m.role === 'tool' && m.tool_call_id === 'read-1')).toBe(true)
+  })
+
   it('localStorage 旧数据迁移到文件并清除旧副本', async () => {
     // 预置旧 localStorage 数据
     localStorage.setItem('deskpet-sessions', JSON.stringify([

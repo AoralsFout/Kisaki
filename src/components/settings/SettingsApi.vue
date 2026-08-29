@@ -6,6 +6,8 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid, testAIConnection } from '../../ai'
 import type { AIConfig } from '../../ai'
+import { emit } from '@tauri-apps/api/event'
+import { EVENT_AI_CONFIG_CHANGED } from '../../constants'
 
 const { t } = useI18n()
 
@@ -33,6 +35,7 @@ function applyPreset(p: typeof PRESETS[0]) {
 
 async function handleSave() {
   await saveConfigSecure(config.value)
+  await emit(EVENT_AI_CONFIG_CHANGED).catch(() => { /* 浏览器预览环境无 Tauri 事件 */ })
   saved.value = true
   setTimeout(() => { saved.value = false }, 1500)
 }

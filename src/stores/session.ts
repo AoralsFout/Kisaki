@@ -13,6 +13,7 @@ import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useChatStore } from './chat'
 import type { ChatMessage } from './chat'
+import type { ChatContextSnapshot } from '../ai'
 import { useCharacterStore } from './character'
 import type { CharacterVisualState } from './character'
 import { DEFAULT_POSE } from '../character/poses'
@@ -30,6 +31,8 @@ export interface Session {
   id: string
   name: string
   messages: ChatMessage[]
+  /** 脱敏后的协议级模型上下文；旧会话缺失时由界面消息兼容重建。 */
+  context?: ChatContextSnapshot
   /** 会话关联的角色 ID（切回会话时自动切到该角色） */
   characterId?: string
   /** 会话关联的角色视觉状态（情绪/姿势/服装/屏幕位置） */
@@ -95,8 +98,11 @@ function saveJSON(key: string, value: unknown): boolean {
 
 /** true=文件模式；false=localStorage 回退；init 前为 null */
 let fileMode: boolean | null = null
-/** 文件写入串行队列：保证多次快速保存不会乱序覆盖 */
-let fileSaveQueue: Promise<boolean> = Promise.resolve(true)
+/** 合并同一事件循环中的重复全量保存，并保证磁盘写入严格串行。 */
+let pendingFilePayload: string | null = null
+let pendingFileWaiters: Array<(ok: boolean) => void> = []
+let fileWriteRunning = false
+let fileFlushScheduled = false
 
 type FileLoadResult =
   | { ok: true; data: { sessions: Session[]; currentId: string } | null }
@@ -192,8 +198,8 @@ export const useSessionStore = defineStore('session', () => {
       const curr = currentSession.value
       if (curr) {
         const chatStore = useChatStore()
-        if (curr.messages.length > 0) {
-          chatStore.loadMessages(curr.messages)
+        if (curr.messages.length > 0 || curr.context) {
+          chatStore.loadMessages(curr.messages, curr.context)
         }
         toRestore = curr
       }
@@ -243,18 +249,39 @@ export const useSessionStore = defineStore('session', () => {
    */
   function persistToFile(sessions: Session[], currentId: string): Promise<boolean> {
     const payload = JSON.stringify({ sessions, currentId })
-    const p = fileSaveQueue
-      .then(() => invoke('sessions_save', { data: payload }))
-      .then(
-        () => true,
-        (e) => {
-          log.error('会话写入磁盘失败，历史可能无法保存: %s', (e as Error)?.message || String(e))
-          persistError.value = true
-          return false
-        },
-      )
-    fileSaveQueue = p
-    return p
+    pendingFilePayload = payload
+    const result = new Promise<boolean>(resolve => pendingFileWaiters.push(resolve))
+    scheduleFileFlush()
+    return result
+  }
+
+  function scheduleFileFlush() {
+    if (fileWriteRunning || fileFlushScheduled) return
+    fileFlushScheduled = true
+    queueMicrotask(() => { void flushFilePersist() })
+  }
+
+  async function flushFilePersist() {
+    if (fileWriteRunning) return
+    fileFlushScheduled = false
+    const payload = pendingFilePayload
+    if (payload == null) return
+    pendingFilePayload = null
+    const waiters = pendingFileWaiters
+    pendingFileWaiters = []
+    fileWriteRunning = true
+    let ok = true
+    try {
+      await invoke('sessions_save', { data: payload })
+    } catch (e) {
+      ok = false
+      log.error('会话写入磁盘失败，历史可能无法保存: %s', (e as Error)?.message || String(e))
+      persistError.value = true
+    } finally {
+      fileWriteRunning = false
+      for (const resolve of waiters) resolve(ok)
+      if (pendingFilePayload != null) scheduleFileFlush()
+    }
   }
 
   function persistSessions() {
@@ -319,7 +346,7 @@ export const useSessionStore = defineStore('session', () => {
 
     // 加载目标会话消息（同步）
     const chatStore = useChatStore()
-    chatStore.loadMessages(target.messages)
+    chatStore.loadMessages(target.messages, target.context)
     // 恢复目标会话的角色与视觉状态（可能异步切角色）
     await restoreSessionState(target)
 
@@ -334,7 +361,9 @@ export const useSessionStore = defineStore('session', () => {
     if (!session) return
 
     const chatStore = useChatStore()
-    session.messages = [...chatStore.messages]
+    // 思考过程只保留在当前运行时 UI，不写入长期会话文件。
+    session.messages = chatStore.messages.map(({ thinking: _thinking, ...message }) => message)
+    session.context = chatStore.exportContext()
     // 保存角色身份与当前视觉状态
     const charStore = useCharacterStore()
     session.characterId = charStore.currentId
@@ -368,7 +397,7 @@ export const useSessionStore = defineStore('session', () => {
       )
       currentSessionId.value = next.id
       const chatStore = useChatStore()
-      chatStore.loadMessages(next.messages)
+      chatStore.loadMessages(next.messages, next.context)
       // 恢复角色/视觉状态（可能异步切角色，fire-and-forget）
       void restoreSessionState(next)
     }
@@ -619,10 +648,10 @@ export const useSessionStore = defineStore('session', () => {
     session.characterId = useCharacterStore().currentId
     session.characterState = useCharacterStore().getVisualStateSnapshot()
     session.updatedAt = Date.now()
-    persistSessions()
-
     // 4. 重建 chat 上下文（loadMessages 会按 say 范式重放消息）
     chatStore.loadMessages(kept)
+    session.context = chatStore.exportContext()
+    persistSessions()
 
     log.info('已回档到消息 %s（保留 %d 条，还原 %d 个文件检查点）',
       messageId, kept.length, fileCpIdsNewestFirst.length)

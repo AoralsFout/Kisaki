@@ -16,7 +16,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText } from '../ai'
-import type { ToolCallData } from '../ai'
+import type { ChatContextSnapshot, ContextStats, ToolCallData } from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolResult } from '../agent'
@@ -108,7 +108,16 @@ type ChatResult =
   | { type: 'tools'; calls: ToolCallData[]; text?: string }
 
 /** 翻译函数签名（便于注入测试桩） */
-type TranslateFn = (text: string, targetLang: string) => Promise<string>
+type TranslateFn = (
+  text: string,
+  targetLang: string,
+  opts?: { ttsSafe?: boolean },
+) => Promise<string>
+
+/** voice 只允许 Unicode 文字、组合附加符、普通空格和半角逗号。 */
+function isTtsSafeVoice(text: string): boolean {
+  return /^[\p{L}\p{M} ,]*$/u.test(text)
+}
 
 /**
  * 从一组工具调用中分出 say（说话）与动作调用。
@@ -152,8 +161,8 @@ export function parseSayArgs(argStr: string): { voice?: string; display?: string
 
 /**
  * say 内容字段级兜底：缺失的语言版本由系统翻译补出。
- * - 语言相同：voice/display 互为兜底，不调翻译
- * - 语言不同：缺谁补谁
+ * - voice 缺失或包含 TTS 不支持的字符时，按母语执行语音安全改写
+ * - display 缺失且语言不同时，翻译 voice 补出
  *
  * @internal 导出以支持单元测试（translate 可注入桩）
  */
@@ -167,30 +176,31 @@ export async function resolveSayContent(
   let display = raw.display ?? ''
   if (voiceLang === displayLang) {
     if (!display) display = voice
-    if (!voice) voice = display
+    if (!voice && display) voice = await translate(display, voiceLang, { ttsSafe: true })
+    else if (voice && !isTtsSafeVoice(voice)) voice = await translate(voice, voiceLang, { ttsSafe: true })
     return { voice, display }
   }
   if (!display && voice) display = await translate(voice, displayLang)
-  if (!voice && display) voice = await translate(display, voiceLang)
+  if (!voice && display) voice = await translate(display, voiceLang, { ttsSafe: true })
+  else if (voice && !isTtsSafeVoice(voice)) voice = await translate(voice, voiceLang, { ttsSafe: true })
   return { voice, display }
 }
 
 /**
  * 模型未调用 say、直接输出正文时的兜底：
- * 正文当显示文本；语言不同时翻译出母语供 TTS（假设正文为显示语言，见设计文档）。
+ * 正文当显示文本；无论语言是否相同，都生成一份 TTS 安全的母语台词。
  *
  * @internal 导出以支持单元测试（translate 可注入桩）
  */
 export async function resolveContentFallback(
   content: string,
   voiceLang: string,
-  displayLang: string,
+  _displayLang: string,
   translate: TranslateFn,
 ): Promise<{ voice: string; display: string }> {
   const display = (content ?? '').trim()
   if (!display) return { voice: '', display: '' }
-  if (voiceLang === displayLang) return { voice: display, display }
-  const voice = await translate(display, voiceLang)
+  const voice = await translate(display, voiceLang, { ttsSafe: true })
   return { voice, display }
 }
 
@@ -232,6 +242,15 @@ export const useChatStore = defineStore('chat', () => {
   const showBubble = ref(false)
   const showInput = ref(false)
   const configReady = ref(false)
+  const contextStats = ref<ContextStats>({
+    estimatedTokens: 0,
+    maxContextTokens: 0,
+    toolDefinitionTokens: 0,
+    messageCount: 0,
+    summarizedRounds: 0,
+    prunedMessages: 0,
+    utilization: 0,
+  })
   /** 当前是否正在执行工具（子状态） */
   const isUsingTools = ref(false)
 
@@ -405,6 +424,18 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   let chatContext = createChatContext()
+  let currentPersona: {
+    prompt: string
+    voiceLang?: string
+    displayLang?: string
+    render?: 'illustration' | 'live2d'
+  } | null = null
+
+  function syncContextStats() {
+    contextStats.value = chatContext.getStats()
+  }
+
+  syncContextStats()
   let abortController: AbortController | null = null
   /** 工具活动列表淡出延时器（处理结束后保留一会儿再隐藏） */
   let toolHideTimer: ReturnType<typeof setTimeout> | null = null
@@ -477,8 +508,9 @@ export const useChatStore = defineStore('chat', () => {
     log.debug('[%s] 消息长度: %d 字符', _fn, userText.length)
 
     // ── 添加用户消息 ────────────────────────────────────
-    const userMsgId = addMessage('user', userText)
     chatContext.addUserMessage(userText)
+    syncContextStats()
+    const userMsgId = addMessage('user', userText)
     log.trace('[%s] 用户消息已加入 ChatContext', _fn)
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
@@ -562,6 +594,7 @@ export const useChatStore = defineStore('chat', () => {
         function: { name: SAY_TOOL_NAME, arguments: JSON.stringify({ voice, display }) },
       }])
       chatContext.addToolResult(sayId, '已说出')
+      syncContextStats()
     }
 
     /**
@@ -674,8 +707,10 @@ export const useChatStore = defineStore('chat', () => {
           },
         }
 
+        const requestMessages = chatContext.getMessages(tools)
+        syncContextStats()
         const result = await chatOnce(
-          chatContext.getMessages(),
+          requestMessages,
           tools,
           myAbort.signal,
           streamCallbacks,
@@ -704,6 +739,7 @@ export const useChatStore = defineStore('chat', () => {
               function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
             }))
             chatContext.addAssistantToolCall(textToolCallsData, cleanText || undefined)
+            syncContextStats()
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
               beginActivity(tc.id, tc.name || '?')
@@ -711,17 +747,18 @@ export const useChatStore = defineStore('chat', () => {
               const toolResult = await executeWithPolicy(tc)
               endActivity(tc.id, resultStatus(toolResult?.content || ''))
               chatContext.addToolResult(tc.id, toolResult.content)
+              syncContextStats()
             }
             isUsingTools.value = false
             turnTimer.stop('text-tools — continue')
             continue
           }
 
-          // 纯正文兜底：正文当显示文本，必要时翻译出母语供 TTS
+          // 纯正文兜底：正文当显示文本，生成 TTS 安全的母语台词
           if (finalText && finalText.trim()) {
             const { voiceLang, displayLang, persona } = getLangs()
-            const translate: TranslateFn = (txt, target) =>
-              translateText(txt, target, { persona, signal: myAbort.signal })
+            const translate: TranslateFn = (txt, target, opts) =>
+              translateText(txt, target, { persona, signal: myAbort.signal, ttsSafe: opts?.ttsSafe })
             const { voice, display } = await resolveContentFallback(finalText, voiceLang, displayLang, translate)
             commitSyntheticSay(voice, display)
             deliver(voice, display)
@@ -748,6 +785,7 @@ export const useChatStore = defineStore('chat', () => {
           for (const c of actionCalls) if (c.id) keptIds.add(c.id)
           if (sayCall?.id) keptIds.add(sayCall.id)
           chatContext.addAssistantToolCall(result.calls.filter(c => c.id && keptIds.has(c.id)))
+          syncContextStats()
 
           // 先执行动作工具（让立绘先变）
           for (let ti = 0; ti < actionCalls.length; ti++) {
@@ -769,6 +807,7 @@ export const useChatStore = defineStore('chat', () => {
               log.error('[%s] 第%d轮 ★ 工具参数 JSON 解析失败: %s', _fn, turn, (parseErr as Error).message)
               endActivity(tc.id, 'error')
               chatContext.addToolResult(tc.id, '参数解析失败')
+              syncContextStats()
               continue
             }
             const toolResult = await executeWithPolicy(toolCall)
@@ -777,19 +816,21 @@ export const useChatStore = defineStore('chat', () => {
             log.debug('[%s] 第%d轮 ★ 工具结果(%s): %s', _fn, turn, tcName,
               (toolResult?.content || '').slice(0, 200))
             chatContext.addToolResult(tc.id, toolResult.content)
+            syncContextStats()
           }
           isUsingTools.value = false
 
           // ── say 出现 → 字段兜底 + 渲染 + TTS + 终止 ──────
           if (sayCall) {
             const { voiceLang, displayLang, persona } = getLangs()
-            const translate: TranslateFn = (txt, target) =>
-              translateText(txt, target, { persona, signal: myAbort.signal })
+            const translate: TranslateFn = (txt, target, opts) =>
+              translateText(txt, target, { persona, signal: myAbort.signal, ttsSafe: opts?.ttsSafe })
             const raw = parseSayArgs(sayCall.function?.arguments || '{}')
             log.info('[%s] 第%d轮 ✦ say 原始: voice=%d字 display=%d字',
               _fn, turn, raw.voice?.length || 0, raw.display?.length || 0)
             const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
             chatContext.addToolResult(sayCall.id, '已说出')  // 保持上下文合法
+            syncContextStats()
             finalTextFromLoop = display
             if (voice || display) {
               deliver(voice, display)
@@ -805,8 +846,8 @@ export const useChatStore = defineStore('chat', () => {
           // 模型把话写在正文里却忘了调 say → 用正文兜底；否则继续下一轮让它说
           if (result.text && result.text.trim()) {
             const { voiceLang, displayLang, persona } = getLangs()
-            const translate: TranslateFn = (txt, target) =>
-              translateText(txt, target, { persona, signal: myAbort.signal })
+            const translate: TranslateFn = (txt, target, opts) =>
+              translateText(txt, target, { persona, signal: myAbort.signal, ttsSafe: opts?.ttsSafe })
             log.warn('[%s] 第%d轮 ⚠ 有动作但未调 say，用正文兜底', _fn, turn)
             const { voice, display } = await resolveContentFallback(result.text, voiceLang, displayLang, translate)
             commitSyntheticSay(voice, display)
@@ -866,6 +907,10 @@ export const useChatStore = defineStore('chat', () => {
     } else {
       showToolActivity.value = false
     }
+
+    // 即使本轮没有最终 say（错误、上限或仅工具），也保存脱敏后的工具上下文，
+    // 避免重启后完全丢失已经完成的操作事实。
+    useSessionStore().saveCurrentSession()
 
     _timer.stop()
     log.trace('[%s] ◀ (正常结束)', _fn)
@@ -1001,6 +1046,8 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] messages → []', _fn)
 
     chatContext = createChatContext()
+    currentPersona = null
+    syncContextStats()
     log.trace('[%s] chatContext → createChatContext()', _fn)
 
     // 保存清空状态到当前会话
@@ -1016,6 +1063,8 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ▶', _fn)
     const oldContext = chatContext
     chatContext = createChatContext()
+    currentPersona = null
+    syncContextStats()
     log.debug('[%s] ✓ 对话上下文已重置 (old context=%s)', _fn, oldContext.constructor.name)
     log.trace('[%s] ◀', _fn)
   }
@@ -1024,7 +1073,7 @@ export const useChatStore = defineStore('chat', () => {
    * 加载历史消息（会话切换时使用）
    * 保留 system prompt，清除当前消息并用历史消息重建 AI 上下文
    */
-  function loadMessages(msgs: ChatMessage[]) {
+  function loadMessages(msgs: ChatMessage[], snapshot?: ChatContextSnapshot | null) {
     const _fn = 'loadMessages'
     log.trace('[%s] ▶ msgs.length=%d', _fn, msgs.length)
 
@@ -1059,9 +1108,15 @@ export const useChatStore = defineStore('chat', () => {
       abortController = null
     }
     chatContext.reset()
+    syncContextStats()
     log.trace('[%s] ChatContext 已重置', _fn)
 
-    // 重放消息到 AI 上下文。
+    if (snapshot && chatContext.importSnapshot(snapshot)) {
+      syncContextStats()
+      log.info('[%s] ✓ 已恢复持久化协议上下文（%d 条）', _fn, snapshot.messages.length)
+    } else {
+
+    // 旧会话兼容：重放界面消息到 AI 上下文。
     // 关键：助手回合必须重建为 say 工具调用（而非纯文本）。否则恢复出的历史会呈现
     // “助手只用纯文本回复、从不调用工具”的范式，模型会模仿它而忘记调用 say/动作工具
     // （会话切走再切回后表现为“忘记使用工具”）。
@@ -1086,7 +1141,9 @@ export const useChatStore = defineStore('chat', () => {
         log.trace('[%s]   [%d/%d] assistant → say 调用重建: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
       }
     }
-    log.debug('[%s] ✓ 消息重放完成（助手回合已重建为 say 调用）', _fn)
+      syncContextStats()
+      log.debug('[%s] ✓ 旧会话消息重放完成（助手回合已重建为 say 调用）', _fn)
+    }
 
     // 会话切换后，气泡显示目标会话的最后一条 AI 消息（含思考过程）
     const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
@@ -1110,9 +1167,34 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ▶ prompt=%d字 voiceLang=%s displayLang=%s',
       _fn, prompt?.length || 0, voiceLang || '?', displayLang || '?')
     log.debug('[%s] prompt前50字: "%s"', _fn, (prompt || '').slice(0, 50))
+    currentPersona = { prompt, voiceLang, displayLang, render }
     chatContext.setSystemPrompt(prompt, voiceLang, displayLang, render)
+    syncContextStats()
     log.debug('[%s] ✓ system prompt 已更新', _fn)
     log.trace('[%s] ◀', _fn)
+  }
+
+  /** API 模型变更后重建预算，但保留当前脱敏协议上下文与角色人格。 */
+  function refreshModelContext() {
+    const snapshot = chatContext.exportSnapshot()
+    chatContext = createChatContext()
+    if (currentPersona) {
+      chatContext.setSystemPrompt(
+        currentPersona.prompt,
+        currentPersona.voiceLang,
+        currentPersona.displayLang,
+        currentPersona.render,
+      )
+    }
+    chatContext.importSnapshot(snapshot)
+    configReady.value = isConfigValid(loadConfig())
+    syncContextStats()
+    useSessionStore().saveCurrentSession()
+    log.info('模型配置已刷新，上下文预算=%d', contextStats.value.maxContextTokens)
+  }
+
+  function exportContext(): ChatContextSnapshot {
+    return chatContext.exportSnapshot()
   }
 
   function showBubbleText(text: string, typing: boolean = true) {
@@ -1150,6 +1232,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     messages,
+    contextStats,
     isProcessing,
     currentBubbleText,
     currentThinking,
@@ -1173,6 +1256,8 @@ export const useChatStore = defineStore('chat', () => {
     resetContext,
     loadMessages,
     setSystemPrompt,
+    refreshModelContext,
+    exportContext,
     showBubbleText,
     hideBubble,
     toggleInput,

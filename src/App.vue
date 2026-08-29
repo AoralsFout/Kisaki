@@ -38,6 +38,7 @@ import {
   CHANNEL_DESKPET_DEV,
   DEFAULT_VOICE_LANGUAGE,
   EVENT_CHARACTERS_CHANGED,
+  EVENT_AI_CONFIG_CHANGED,
   STORAGE_ONBOARDING_DONE,
 } from './constants'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -203,12 +204,18 @@ onMounted(async () => {
 
   // 监听其它窗口（设置窗口）的角色变更通知，刷新主窗口角色状态
   await listen(EVENT_CHARACTERS_CHANGED, () => { onCharactersChanged() })
+    .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
+  // 只让主窗口重建并保存会话；设置窗口持有的会话副本可能已过期，不能回写覆盖。
+  if (!isSettings) {
+    await listen(EVENT_AI_CONFIG_CHANGED, () => { chat.refreshModelContext() })
+      .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
+  }
 
   // 初始化鼠标穿透（仅主窗口；设置窗口跳过，logs/dev 已在前面 return）
   if (!isSettings) {
-    await initPassthrough()
+    await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
     // 记住并恢复主窗口位置/大小（桌宠回到上次待的位置）
-    await initWindowState('main')
+    await initWindowState('main').catch(() => { /* 浏览器预览环境无原生窗口 */ })
   }
 })
 

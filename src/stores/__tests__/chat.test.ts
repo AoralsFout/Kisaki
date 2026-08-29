@@ -95,6 +95,23 @@ describe('resolveSayContent', () => {
     expect(r).toEqual({ voice: '[ja-JP]嗨', display: '嗨' })
   })
 
+  it('voice 含数字或其他标点时触发 TTS 安全改写', async () => {
+    const { resolveSayContent } = await import('../chat')
+    let ttsSafe: boolean | undefined
+    const rewrite = async (_text: string, _target: string, opts?: { ttsSafe?: boolean }) => {
+      ttsSafe = opts?.ttsSafe
+      return '版本二点六,已经完成'
+    }
+    const r = await resolveSayContent(
+      { voice: '版本2.6，已经完成！', display: '版本 2.6，已经完成！' },
+      'zh-CN',
+      'zh-CN',
+      rewrite,
+    )
+    expect(ttsSafe).toBe(true)
+    expect(r).toEqual({ voice: '版本二点六,已经完成', display: '版本 2.6，已经完成！' })
+  })
+
   it('语言相同：互为兜底，不调翻译', async () => {
     const { resolveSayContent } = await import('../chat')
     const r = await resolveSayContent({ voice: '你好' }, 'zh-CN', 'zh-CN', fakeTranslate)
@@ -109,10 +126,10 @@ describe('resolveContentFallback', () => {
     expect(r).toEqual({ voice: '[ja-JP]你好呀', display: '你好呀' })
   })
 
-  it('语言相同：voice=display=正文', async () => {
+  it('语言相同：仍通过 TTS 安全改写生成 voice', async () => {
     const { resolveContentFallback } = await import('../chat')
     const r = await resolveContentFallback('你好', 'zh-CN', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '你好', display: '你好' })
+    expect(r).toEqual({ voice: '[zh-CN]你好', display: '你好' })
   })
 
   it('空正文返回空', async () => {

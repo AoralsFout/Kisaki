@@ -6,13 +6,20 @@
  * 替代原有的硬编码常量。
  *
  * ── 数据来源 ──
- * 所有数据基于 2026 年 6 月查询的官方文档及可信第三方汇总：
- * - OpenAI:     developers.openai.com, help.openai.com, llm-stats.com
- * - DeepSeek:   api-docs.deepseek.com (V4 发布于 2026-04-24)
- * - Anthropic:  docs.anthropic.com, support.claude.com, morphllm.com
- * - Google:     ai.google.dev, sim.ai, futureagi.com (Gemini 2.5)
- * - xAI:        docs.x.ai (Grok 4.3 发布于 2026-04-30)
- * - Meta:       llm.meta.com (Llama 4 发布于 2025-04)
+ * 2026-08-30 依据各厂商官方模型文档复核：
+ * - OpenAI:    developers.openai.com/api/docs/models
+ * - Anthropic: platform.claude.com/docs/en/models/overview
+ * - Google:    ai.google.dev/gemini-api/docs/models
+ * - DeepSeek:  api-docs.deepseek.com/quick_start/pricing
+ * - Z.AI:      docs.z.ai/guides/overview/overview
+ * - Kimi:      platform.kimi.ai/docs/models
+ * - xAI:       docs.x.ai/developers/models
+ * - Meta:      ai.meta.com/blog/llama-4-multimodal-intelligence
+ * - Mistral:   docs.mistral.ai/models
+ * - Qwen:      help.aliyun.com/zh/model-studio/text-generation-model
+ *
+ * recommendedMaxTokens 是本应用面向交互对话的保守默认值，不等于厂商公布的
+ * 理论最大输出；上下文窗口和能力开关则以官方文档为准。退役模型仍保留兼容映射。
  */
 import { createLogger } from '../utils/logger'
 
@@ -61,91 +68,144 @@ interface ModelEntry {
 const MODEL_REGISTRY: ModelEntry[] = [
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-5.5 系列 (2026-04-23)
-  // API: 1M 上下文, 128K max output; reasoning_effort 控制思考深度
-  // 来源: llm-stats.com, sim.ai, help.openai.com
+  // OpenAI GPT-5.6 系列：1.05M 上下文，128K 最大输出
   // ════════════════════════════════════════════════════════
+  {
+    pattern: /^gpt-5\.6-sol-/i,
+    profile: {
+      family: 'gpt-5.6-sol', maxContextWindow: 1_050_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5\.6-terra-/i,
+    profile: {
+      family: 'gpt-5.6-terra', maxContextWindow: 1_050_000, recommendedMaxTokens: 16_384,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5\.6-luna-/i,
+    profile: {
+      family: 'gpt-5.6-luna', maxContextWindow: 1_050_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  // gpt-5.6 是官方指向 Sol 的别名。
+  {
+    pattern: /^gpt-5\.6-/i,
+    profile: {
+      family: 'gpt-5.6-sol', maxContextWindow: 1_050_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+
+  // ════════════════════════════════════════════════════════
+  // OpenAI GPT-5.5 系列：1.05M 上下文，128K 最大输出
+  // ════════════════════════════════════════════════════════
+  {
+    pattern: /^gpt-5\.5-pro-/i,
+    profile: {
+      family: 'gpt-5.5-pro', maxContextWindow: 1_050_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
   {
     pattern: /^gpt-5\.5-/i,
     profile: {
-      family: 'gpt-5.5', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      family: 'gpt-5.5', maxContextWindow: 1_050_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-5.4 系列 (2026-03-05)
-  // API: 1M 上下文, 128K max output, 原生 Computer Use
-  // 来源: llm-stats.com, datacamp.com, replicate.com
+  // OpenAI GPT-5.4 系列：主模型 1.05M，Mini/Nano 400K；均支持 128K 输出
   // ════════════════════════════════════════════════════════
-  {
-    pattern: /^gpt-5\.4-/i,
-    profile: {
-      family: 'gpt-5.4', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
-    },
-  },
-
-  // GPT-5.4 mini / nano
   {
     pattern: /^gpt-5\.4-mini-/i,
     profile: {
-      family: 'gpt-5.4-mini', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      family: 'gpt-5.4-mini', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-5\.4-nano-/i,
     profile: {
-      family: 'gpt-5.4-nano', maxContextWindow: 1_000_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: false,
+      family: 'gpt-5.4-nano', maxContextWindow: 400_000, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5\.4-/i,
+    profile: {
+      family: 'gpt-5.4', maxContextWindow: 1_050_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // OpenAI GPT-5.3 系列 (2026-02)
   // 5.3 Chat: 128K 上下文, 5.3 Codex: 400K 上下文
-  // 来源: llm-stats.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-5\.3-codex-/i,
     profile: {
       family: 'gpt-5.3-codex', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-5\.3-/i,  // 包括 gpt-5.3-chat-* 和 gpt-5.3-*
     profile: {
       family: 'gpt-5.3-chat', maxContextWindow: 128_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // OpenAI GPT-5 系列 (2025-08 ~ 2026-01), 400K 上下文
   // GPT-5, 5.1, 5.2 均为 400K
-  // 来源: llm-stats.com, chatgptaihub.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-5\.2-/i,
     profile: {
       family: 'gpt-5.2', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-5\.1-/i,
     profile: {
       family: 'gpt-5.1', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5-codex-/i,
+    profile: {
+      family: 'gpt-5-codex', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5-mini-/i,
+    profile: {
+      family: 'gpt-5-mini', maxContextWindow: 400_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gpt-5-nano-/i,
+    profile: {
+      family: 'gpt-5-nano', maxContextWindow: 400_000, recommendedMaxTokens: 4_096,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-5-/i,
     profile: {
       family: 'gpt-5', maxContextWindow: 400_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
@@ -153,87 +213,83 @@ const MODEL_REGISTRY: ModelEntry[] = [
   // OpenAI o-series 推理模型
   // o1/o3/o4-mini: 200K 上下文, 100K max_completion_tokens
   // 注意：需用 max_completion_tokens 而非 max_tokens
-  // 来源: help.openai.com, taskade.com, docs.apiyi.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^o1-/i,
     profile: {
       family: 'o1', maxContextWindow: 200_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^o3-/i,
     profile: {
       family: 'o3', maxContextWindow: 200_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^o4-mini-/i,
     profile: {
       family: 'o4-mini', maxContextWindow: 200_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // OpenAI GPT-4.1 系列 (2025-04)
   // 1M 上下文, 32K max output
-  // 来源: developers.openai.com, llm-stats.com, community.openai.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-4\.1-nano-/i,
     profile: {
       family: 'gpt-4.1-nano', maxContextWindow: 1_047_576, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-4\.1-mini-/i,
     profile: {
       family: 'gpt-4.1-mini', maxContextWindow: 1_047_576, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-4\.1-/i,
     profile: {
       family: 'gpt-4.1', maxContextWindow: 1_047_576, recommendedMaxTokens: 16_384,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // OpenAI GPT-4.5
   // 128K 上下文
-  // 来源: OpenAI 官方文档
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-4\.5-/i,
     profile: {
       family: 'gpt-4.5', maxContextWindow: 128_000, recommendedMaxTokens: 16_384,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // OpenAI GPT-4o / 4o-mini
   // 均为 128K 上下文
-  // 来源: help.openai.com, taskade.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-4o-mini-/i,
     profile: {
       family: 'gpt-4o-mini', maxContextWindow: 128_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gpt-4o-/i,
     profile: {
       family: 'gpt-4o', maxContextWindow: 128_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
@@ -245,7 +301,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
     pattern: /^gpt-4-turbo-/i,
     profile: {
       family: 'gpt-4-turbo', maxContextWindow: 128_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: false,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
@@ -268,9 +324,166 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // DeepSeek V4 系列 (2026-04-24)
-  // V4 Flash & Pro: 1M 上下文, max_tokens 上限 131K
-  // 来源: api-docs.deepseek.com, cloudzero.com
+  // Z.AI GLM 系列
+  // GLM-5.2/5.3：1M 上下文；GLM-5/4.6/4.7：200K；GLM-4.5：128K。
+  // 5.x/4.6/4.7 最大输出 128K，4.5 系列最大输出 96K。
+  // ════════════════════════════════════════════════════════
+  {
+    pattern: /^glm-5\.3-flash-/i,
+    profile: {
+      family: 'glm-5.3-flash', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-5\.3-/i,
+    profile: {
+      family: 'glm-5.3', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-5\.2-/i,
+    profile: {
+      family: 'glm-5.2', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-5\.1-/i,
+    profile: {
+      family: 'glm-5.1', maxContextWindow: 200_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-5-/i,
+    profile: {
+      family: 'glm-5', maxContextWindow: 200_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-4\.7-(flashx|flash)-/i,
+    profile: {
+      family: 'glm-4.7-flash', maxContextWindow: 200_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-4\.7-/i,
+    profile: {
+      family: 'glm-4.7', maxContextWindow: 200_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-4\.6-/i,
+    profile: {
+      family: 'glm-4.6', maxContextWindow: 200_000, recommendedMaxTokens: 32_768,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-4\.5-flash-/i,
+    profile: {
+      family: 'glm-4.5-flash', maxContextWindow: 200_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-4\.5-/i,
+    profile: {
+      family: 'glm-4.5', maxContextWindow: 128_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^glm-/i,
+    profile: {
+      family: 'glm', maxContextWindow: 128_000, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: false, supportsJsonMode: true,
+    },
+  },
+
+  // ════════════════════════════════════════════════════════
+  // Moonshot AI Kimi 系列
+  // Kimi K3：1M；K2.7 Code/K2.6/K2.5：256K；Moonshot V1 按型号区分。
+  // K2 预览系列已退役，但保留能力映射以兼容旧配置。
+  // ════════════════════════════════════════════════════════
+  {
+    pattern: /^kimi-k3(?:\[1m\])?-/i,
+    profile: {
+      family: 'kimi-k3', maxContextWindow: 1_048_576, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-k2\.7-code-highspeed-/i,
+    profile: {
+      family: 'kimi-k2.7-code-highspeed', maxContextWindow: 262_144, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-k2\.7-code-/i,
+    profile: {
+      family: 'kimi-k2.7-code', maxContextWindow: 262_144, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-k2\.(6|5)-/i,
+    profile: {
+      family: 'kimi-k2.x', maxContextWindow: 262_144, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-k2-0711-preview-/i,
+    profile: {
+      family: 'kimi-k2-0711', maxContextWindow: 131_072, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-k2-/i,
+    profile: {
+      family: 'kimi-k2', maxContextWindow: 262_144, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^kimi-latest-/i,
+    profile: {
+      family: 'kimi-legacy', maxContextWindow: 131_072, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^moonshot-v1-128k-/i,
+    profile: {
+      family: 'moonshot-v1-128k', maxContextWindow: 131_072, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^moonshot-v1-32k-/i,
+    profile: {
+      family: 'moonshot-v1-32k', maxContextWindow: 32_768, recommendedMaxTokens: 4_096,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^moonshot-v1-8k-/i,
+    profile: {
+      family: 'moonshot-v1-8k', maxContextWindow: 8_192, recommendedMaxTokens: 2_048,
+      tier: 'low', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+
+  // ════════════════════════════════════════════════════════
+  // DeepSeek V4 系列：1M 上下文，384K 最大输出，支持 JSON Output
   //
   // 注意: deepseek-chat 与 deepseek-reasoner 为旧别名，
   // 将于 2026-07-24 退役，当前路由到 V4 Flash。
@@ -279,21 +492,21 @@ const MODEL_REGISTRY: ModelEntry[] = [
     pattern: /^deepseek-v4-pro/i,
     profile: {
       family: 'deepseek-v4-pro', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
   {
     pattern: /^deepseek-v4-flash/i,
     profile: {
       family: 'deepseek-v4-flash', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
   {
     pattern: /^deepseek-v4-/i,
     profile: {
       family: 'deepseek-v4', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
 
@@ -302,14 +515,14 @@ const MODEL_REGISTRY: ModelEntry[] = [
     pattern: /^deepseek-reasoner/i,
     profile: {
       family: 'deepseek-reasoner', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
   {
     pattern: /^deepseek-chat/i,
     profile: {
       family: 'deepseek-chat', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
 
@@ -318,22 +531,53 @@ const MODEL_REGISTRY: ModelEntry[] = [
     pattern: /^deepseek-/i,
     profile: {
       family: 'deepseek-legacy', maxContextWindow: 128_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'medium', supportsStructuredOutput: false, supportsJsonMode: true,
     },
   },
 
   // ════════════════════════════════════════════════════════
   // Anthropic Claude 系列
-  //
-  // Claude Opus 4.6 (2026-02-05):
-  //   1M 上下文 (GA), 128K max output
-  // Claude Sonnet 4.6 (2026-02-17):
-  //   1M 上下文 (GA), 64K max output
-  // Claude Haiku 4.5: 200K 上下文, 64K max output
-  // 来源: anthropic.com, support.claude.com, morphllm.com
+  // Claude 5 当前阵容：Fable/Opus/Sonnet 均为 1M 上下文、128K 最大输出。
+  // Claude Haiku 4.5：200K 上下文、64K 最大输出。
   // ════════════════════════════════════════════════════════
 
-  // Claude 4.6 — 具体型号优先于 generic 4
+  {
+    pattern: /^claude-fable-5-/i,
+    profile: {
+      family: 'claude-fable-5', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+    },
+  },
+  {
+    pattern: /^claude-opus-5-/i,
+    profile: {
+      family: 'claude-opus-5', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+    },
+  },
+  {
+    pattern: /^claude-sonnet-5-/i,
+    profile: {
+      family: 'claude-sonnet-5', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+    },
+  },
+  {
+    pattern: /^claude-mythos-5-/i,
+    profile: {
+      family: 'claude-mythos-5', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+    },
+  },
+
+  // Claude 4.x — 具体型号优先于 generic 4
+  {
+    pattern: /^claude-opus-4-(8|7)-/i,
+    profile: {
+      family: 'claude-opus-4.x', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
+      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+    },
+  },
   {
     pattern: /^claude-opus-4-6/i,
     profile: {
@@ -358,12 +602,11 @@ const MODEL_REGISTRY: ModelEntry[] = [
     },
   },
 
-  // Claude 4 通用 (含 sonnet-4, opus-4, 4- 等)
-  // → 1M (beta/GA), 64K max output
+  // 未单列的 Claude 4 型号采用 200K 保守窗口，避免把 4.5 等旧型号误判为 1M。
   {
     pattern: /^claude-(sonnet-4|opus-4|4-)/i,
     profile: {
-      family: 'claude-4', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      family: 'claude-4', maxContextWindow: 200_000, recommendedMaxTokens: 8_192,
       tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
     },
   },
@@ -387,61 +630,92 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // Google Gemini 2.5 系列
-  // 全系列 1M 上下文, ~64K max output
-  // Gemini 2.5 Pro: 1M (Vertex 2M), 64K max output
-  // Gemini 2.5 Flash/Lite: 1M, 64K max output
-  // 来源: ai.google.dev, sim.ai, futureagi.com, oracle.com
+  // Google Gemini 2.5 系列：1M 上下文，支持结构化输出
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gemini-2\.5-pro/i,
     profile: {
       family: 'gemini-2.5-pro', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gemini-2\.5-flash-lite/i,
     profile: {
       family: 'gemini-2.5-flash-lite', maxContextWindow: 1_000_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gemini-2\.5-flash/i,
     profile: {
       family: 'gemini-2.5-flash', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gemini-2\.5-/i,
     profile: {
       family: 'gemini-2.5', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
-  // Gemini 3 / 3.1 (2026)
+  // Gemini 3.x：当前 Flash 系列为 1,048,576 输入 / 65,536 输出。
+  {
+    pattern: /^gemini-3\.7-flash/i,
+    profile: {
+      family: 'gemini-3.7-flash', maxContextWindow: 1_048_576, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gemini-3\.6-flash/i,
+    profile: {
+      family: 'gemini-3.6-flash', maxContextWindow: 1_048_576, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gemini-3\.5-flash-lite/i,
+    profile: {
+      family: 'gemini-3.5-flash-lite', maxContextWindow: 1_048_576, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gemini-3\.5-flash/i,
+    profile: {
+      family: 'gemini-3.5-flash', maxContextWindow: 1_048_576, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^gemini-3\.1-flash-lite/i,
+    profile: {
+      family: 'gemini-3.1-flash-lite', maxContextWindow: 1_048_576, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
   {
     pattern: /^gemini-3\.1-pro/i,
     profile: {
-      family: 'gemini-3.1-pro', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'gemini-3.1-pro', maxContextWindow: 1_048_576, recommendedMaxTokens: 16_384,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gemini-3\.1-flash/i,
     profile: {
-      family: 'gemini-3.1-flash', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'gemini-3.1-flash', maxContextWindow: 1_048_576, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^gemini-3-/i,
     profile: {
-      family: 'gemini-3', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'gemini-3', maxContextWindow: 1_048_576, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
 
@@ -455,44 +729,48 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // xAI Grok 系列
-  // Grok 4.3 (2026-04-30): 1M 上下文, 128K max output
-  // Grok 4.1 Fast: 2M 上下文, 30K max output
-  // 来源: docs.x.ai, mem0.ai, llm-stats.com
+  // xAI Grok 系列：Grok 4.3/4.20 为 1M；旧 4.x 别名已重定向到 4.3。
   // ════════════════════════════════════════════════════════
+  {
+    pattern: /^grok-build-0\.1-/i,
+    profile: {
+      family: 'grok-build-0.1', maxContextWindow: 256_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
   {
     pattern: /^grok-4\.3/i,
     profile: {
       family: 'grok-4.3', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^grok-4\.1-fast/i,
     profile: {
-      family: 'grok-4.1-fast', maxContextWindow: 2_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'grok-4.1-fast', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^grok-4\.1-/i,
     profile: {
-      family: 'grok-4.1', maxContextWindow: 2_000_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'grok-4.1', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^grok-4\.20-/i,
     profile: {
-      family: 'grok-4.20', maxContextWindow: 2_000_000, recommendedMaxTokens: 16_384,
-      tier: 'very-high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'grok-4.20', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^grok-4-/i,
     profile: {
-      family: 'grok-4', maxContextWindow: 256_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'grok-4', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
@@ -507,7 +785,6 @@ const MODEL_REGISTRY: ModelEntry[] = [
   // Meta Llama 4 系列
   // Llama 4 Scout: 10M 上下文 (行业最大)
   // Llama 4 Maverick: 1M 上下文
-  // 来源: morphllm.com
   // ════════════════════════════════════════════════════════
   {
     pattern: /^llama-4-scout/i,
@@ -539,28 +816,34 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // Mistral AI 系列 (2026)
-  // Mistral Large: 128K 上下文
+  // Mistral AI 当前通用模型：Large 3 / Medium 3.5 / Small 4 均为 256K。
   // ════════════════════════════════════════════════════════
+  {
+    pattern: /^ministral-(14b|8b|3b)-/i,
+    profile: {
+      family: 'ministral-3', maxContextWindow: 256_000, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
   {
     pattern: /^mistral-large/i,
     profile: {
-      family: 'mistral-large', maxContextWindow: 128_000, recommendedMaxTokens: 8_192,
-      tier: 'high', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'mistral-large', maxContextWindow: 256_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^mistral-medium/i,
     profile: {
-      family: 'mistral-medium', maxContextWindow: 128_000, recommendedMaxTokens: 4_096,
-      tier: 'medium', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'mistral-medium', maxContextWindow: 256_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
     pattern: /^mistral-small/i,
     profile: {
-      family: 'mistral-small', maxContextWindow: 32_000, recommendedMaxTokens: 2_048,
-      tier: 'low', supportsStructuredOutput: false, supportsJsonMode: false,
+      family: 'mistral-small', maxContextWindow: 256_000, recommendedMaxTokens: 8_192,
+      tier: 'medium', supportsStructuredOutput: true, supportsJsonMode: true,
     },
   },
   {
@@ -573,8 +856,57 @@ const MODEL_REGISTRY: ModelEntry[] = [
 
   // ════════════════════════════════════════════════════════
   // Qwen (通义千问) 系列
-  // 部分模型支持 1M+ 上下文
+  // Qwen 3.8 / 3.7 主力系列为 1M 上下文，并支持结构化输出。
   // ════════════════════════════════════════════════════════
+  {
+    pattern: /^qwen3\.8-max/i,
+    profile: {
+      family: 'qwen3.8-max', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3\.7-max/i,
+    profile: {
+      family: 'qwen3.7-max', maxContextWindow: 1_000_000, recommendedMaxTokens: 32_768,
+      tier: 'very-high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3\.7-plus/i,
+    profile: {
+      family: 'qwen3.7-plus', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3\.7-flash/i,
+    profile: {
+      family: 'qwen3.7-flash', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3\.6-(plus|flash)/i,
+    profile: {
+      family: 'qwen3.6', maxContextWindow: 1_000_000, recommendedMaxTokens: 8_192,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3-coder-plus/i,
+    profile: {
+      family: 'qwen3-coder-plus', maxContextWindow: 1_000_000, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
+  {
+    pattern: /^qwen3-coder-next/i,
+    profile: {
+      family: 'qwen3-coder-next', maxContextWindow: 262_144, recommendedMaxTokens: 16_384,
+      tier: 'high', supportsStructuredOutput: true, supportsJsonMode: true,
+    },
+  },
   {
     pattern: /^qwen-?max/i,
     profile: {
@@ -622,6 +954,21 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+/**
+ * 将厂商/聚合平台常见的模型写法归一为注册表可匹配的形式。
+ *
+ * 支持例如 `openai/gpt-5.6-sol`、`models/gemini-3.7-flash`、
+ * `z-ai/glm-5.3:free`；末尾补 `-` 让精确模型 ID 与带快照后缀的 ID
+ * 走同一套前缀规则，同时避免 `gpt-4.1` 误匹配 `gpt-4.10`。
+ */
+function normalizeModelId(model: string): string {
+  const withoutQuery = model.trim().split(/[?#]/, 1)[0]
+  const segments = withoutQuery.split('/').filter(Boolean)
+  const lastSegment = segments[segments.length - 1] ?? ''
+  const withoutProviderVariant = lastSegment.split(':', 1)[0]
+  return `${withoutProviderVariant.toLowerCase()}-`
+}
+
 // ─── 层级 → 上下文预算上限 ──────────────────────────────
 // 防止单个对话无限吞噬上下文，按模型层级设合理的上限。
 const TIER_CONTEXT_CAP: Record<ModelTier, number> = {
@@ -653,8 +1000,9 @@ export const MAX_TOOL_TURNS = 50
  * 匹配结果可通过日志观察，方便新模型接入时排查。
  */
 export function getModelProfile(model: string): ModelProfile {
+  const normalizedModel = normalizeModelId(model)
   for (const entry of MODEL_REGISTRY) {
-    if (entry.pattern.test(model)) {
+    if (entry.pattern.test(normalizedModel)) {
       log.debug('模型 [%s] 匹配→%s (窗口=%d, 层级=%s)',
         model, entry.profile.family, entry.profile.maxContextWindow, entry.profile.tier)
       return { ...entry.profile }

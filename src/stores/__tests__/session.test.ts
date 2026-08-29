@@ -244,4 +244,20 @@ describe('useSessionStore', () => {
     store.saveCurrentSession()
     expect(store.currentSession!.messages).toHaveLength(2)
   })
+
+  it('保存脱敏协议上下文，但不长期持久化思考过程', async () => {
+    const store = useSessionStore()
+    await store.init()
+    const chat = useChatStore()
+    chat.loadMessages([
+      { id: 'u1', role: 'user', text: '继续任务', timestamp: 1 },
+      { id: 'a1', role: 'assistant', text: '已完成', thinking: '内部推理', voice: '完成しました', timestamp: 2 },
+    ])
+
+    store.saveCurrentSession()
+
+    expect(store.currentSession!.messages[1].thinking).toBeUndefined()
+    expect(store.currentSession!.context?.version).toBe(1)
+    expect(store.currentSession!.context?.messages.some(m => m.role === 'tool')).toBe(true)
+  })
 })

@@ -84,6 +84,9 @@ export const CHANNEL_DESKPET_UI_LANG = 'deskpet-ui-lang'
 /** 角色增删改后广播：通知主窗口刷新角色列表（设置窗口 → 主窗口） */
 export const EVENT_CHARACTERS_CHANGED = 'characters-changed'
 
+/** AI 服务或模型配置保存后广播：主窗口据此重建上下文预算。 */
+export const EVENT_AI_CONFIG_CHANGED = 'ai-config-changed'
+
 /** Rust 端轮询的全局光标位置（物理屏幕坐标），主窗口据此做鼠标穿透命中测试 */
 export const EVENT_CURSOR_POS = 'cursor-pos'
 

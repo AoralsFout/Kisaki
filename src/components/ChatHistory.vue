@@ -28,6 +28,11 @@ const listRef = ref<HTMLElement | null>(null)
 /** 正在二次确认回档的消息 id */
 const confirmRollbackId = ref<string | null>(null)
 
+function formatTokens(value: number): string {
+  if (value < 1000) return String(value)
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`
+}
+
 /** 执行回档：还原文件 + 恢复视觉状态 + 截断此后对话 */
 async function doRollback(messageId: string) {
   confirmRollbackId.value = null
@@ -75,6 +80,18 @@ watch(
                 class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
+        </div>
+
+        <div class="context-status" :title="t('chat.history.contextDetail', {
+          used: chat.contextStats.estimatedTokens,
+          max: chat.contextStats.maxContextTokens,
+          tools: chat.contextStats.toolDefinitionTokens,
+          pruned: chat.contextStats.prunedMessages,
+        })">
+          <span>{{ t('chat.history.context') }}</span>
+          <div class="context-meter"><i :style="{ width: `${Math.round(chat.contextStats.utilization * 100)}%` }"></i></div>
+          <span>{{ formatTokens(chat.contextStats.estimatedTokens) }}/{{ formatTokens(chat.contextStats.maxContextTokens) }}</span>
+          <span v-if="chat.contextStats.summarizedRounds > 0">{{ t('chat.history.summarized', { n: chat.contextStats.summarizedRounds }) }}</span>
         </div>
 
         <!-- 消息列表 -->
@@ -166,6 +183,32 @@ watch(
   font-size: 14px;
   font-weight: 600;
   color: white;
+}
+
+.context-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 16px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.context-meter {
+  width: 64px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.context-meter i {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  background: linear-gradient(90deg, #667eea, #f0b85c);
+  transition: width 0.2s ease;
 }
 
 .header-actions {
