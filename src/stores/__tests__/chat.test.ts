@@ -112,6 +112,29 @@ describe('resolveSayContent', () => {
     expect(r).toEqual({ voice: '版本二点六,已经完成', display: '版本 2.6，已经完成！' })
   })
 
+  it('已调用 say 且仅有日语句读问题时本地修复，不走翻译兜底', async () => {
+    const { resolveSayContent } = await import('../chat')
+    let translateCalls = 0
+    const translate = async () => {
+      translateCalls++
+      return '不应调用'
+    }
+    const r = await resolveSayContent(
+      {
+        voice: 'こんにちは、私はあなたのデスクトップペットです、こ,れからよろしくお願いします。',
+        display: '你好！我是你的桌面宠物，请多多关照哦。',
+      },
+      'ja-JP',
+      'zh-CN',
+      translate,
+    )
+    expect(translateCalls).toBe(0)
+    expect(r).toEqual({
+      voice: 'こんにちは,私はあなたのデスクトップペットです,これからよろしくお願いします',
+      display: '你好！我是你的桌面宠物，请多多关照哦。',
+    })
+  })
+
   it('语言相同：互为兜底，不调翻译', async () => {
     const { resolveSayContent } = await import('../chat')
     const r = await resolveSayContent({ voice: '你好' }, 'zh-CN', 'zh-CN', fakeTranslate)

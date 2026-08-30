@@ -122,6 +122,69 @@ function isTtsSafeVoice(text: string): boolean {
 }
 
 /**
+ * 修复模型在日语单词内误插的半角逗号。
+ *
+ * 例如 `こ,れから` 应为 `これから`；而 `はい,わかりました` 仍保留分句逗号。
+ * Intl.Segmenter 不可用时安全回退为不修改。
+ */
+function repairJapaneseWordCommas(text: string, voiceLang: string): string {
+  if (!/^ja(?:-|$)/i.test(voiceLang) || !text.includes(',')) return text
+  const Segmenter = (Intl as unknown as {
+    Segmenter?: new (locale: string, options: { granularity: 'word' }) => {
+      segment(input: string): Iterable<{ segment: string; isWordLike?: boolean }>
+    }
+  }).Segmenter
+  if (!Segmenter) return text
+
+  const segmenter = new Segmenter('ja', { granularity: 'word' })
+  return text.replace(
+    /[\p{Script=Hiragana}\p{Script=Katakana}]+(?:,[\p{Script=Hiragana}\p{Script=Katakana}]+)+/gu,
+    (run) => {
+      const parts = run.split(',')
+      const joined = parts.join('')
+      const wordBoundaries = new Set<number>()
+      let segmentedLength = 0
+      for (const part of segmenter.segment(joined)) {
+        segmentedLength += part.segment.length
+        if (part.isWordLike && segmentedLength < joined.length) wordBoundaries.add(segmentedLength)
+      }
+
+      let result = parts[0]
+      let sourceOffset = parts[0].length
+      for (const next of parts.slice(1)) {
+        // 逗号正好落在分词边界时是分句；落在词内时是模型误插。
+        result += wordBoundaries.has(sourceOffset) ? `,${next}` : next
+        sourceOffset += next.length
+      }
+      return result
+    },
+  )
+}
+
+/**
+ * 对不需要语义理解的 voice 问题做本地、确定性修复。
+ *
+ * 只接受文字、空白、半角逗号和常见中日句读符号。数字、网址、代码或其他符号
+ * 仍返回 null，交给翻译模型按语义改写，避免简单删符号造成误读。
+ *
+ * @internal 导出以支持单元测试
+ */
+export function normalizeTtsSafeVoice(text: string, voiceLang: string): string | null {
+  const trimmed = (text ?? '').trim()
+  if (!trimmed) return ''
+  if (!/^[\p{L}\p{M}\s,、，。！？；：]*$/u.test(trimmed)) return null
+
+  let normalized = trimmed
+    .replace(/[、，。！？；：]+/gu, ',')
+    .replace(/\s+/gu, ' ')
+    .replace(/\s*,\s*/gu, ',')
+    .replace(/,+/gu, ',')
+    .replace(/^,+|,+$/gu, '')
+  normalized = repairJapaneseWordCommas(normalized, voiceLang)
+  return normalized && isTtsSafeVoice(normalized) ? normalized : null
+}
+
+/**
  * 从一组工具调用中分出 say（说话）与动作调用。
  * 多余的 say 仅取第一个，其余忽略。
  *
@@ -163,7 +226,7 @@ export function parseSayArgs(argStr: string): { voice?: string; display?: string
 
 /**
  * say 内容字段级兜底：缺失的语言版本由系统翻译补出。
- * - voice 缺失或包含 TTS 不支持的字符时，按母语执行语音安全改写
+ * - voice 只有句读问题时本地修复；缺失或需要语义改写时才调用翻译兜底
  * - display 缺失且语言不同时，翻译 voice 补出
  *
  * @internal 导出以支持单元测试（translate 可注入桩）
@@ -176,15 +239,17 @@ export async function resolveSayContent(
 ): Promise<{ voice: string; display: string }> {
   let voice = raw.voice ?? ''
   let display = raw.display ?? ''
+  const normalizedVoice = voice ? normalizeTtsSafeVoice(voice, voiceLang) : null
+  if (normalizedVoice !== null) voice = normalizedVoice
   if (voiceLang === displayLang) {
     if (!display) display = voice
     if (!voice && display) voice = await translate(display, voiceLang, { ttsSafe: true })
-    else if (voice && !isTtsSafeVoice(voice)) voice = await translate(voice, voiceLang, { ttsSafe: true })
+    else if (voice && normalizedVoice === null) voice = await translate(voice, voiceLang, { ttsSafe: true })
     return { voice, display }
   }
   if (!display && voice) display = await translate(voice, displayLang)
   if (!voice && display) voice = await translate(display, voiceLang, { ttsSafe: true })
-  else if (voice && !isTtsSafeVoice(voice)) voice = await translate(voice, voiceLang, { ttsSafe: true })
+  else if (voice && normalizedVoice === null) voice = await translate(voice, voiceLang, { ttsSafe: true })
   return { voice, display }
 }
 
