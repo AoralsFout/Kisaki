@@ -164,8 +164,8 @@ fn read_log_page(
     };
     let mut ranges = Vec::<(usize, usize)>::new();
     let mut line_start = first_complete;
-    for i in first_complete..buffer.len() {
-        if buffer[i] == b'\n' {
+    for (i, &byte) in buffer.iter().enumerate().skip(first_complete) {
+        if byte == b'\n' {
             if i > line_start {
                 ranges.push((line_start, i));
             }
@@ -354,7 +354,7 @@ mod tests {
         assert!(!is_log_filename("app-2026-8-30.jsonl"));
         assert!(!is_log_filename("app-2026-08-30.jsonl.backup"));
 
-        let mut files = vec![
+        let mut files = [
             "app-2026-08-29.jsonl".to_string(),
             "app-2026-08-30.jsonl.2".to_string(),
             "app-2026-08-30.jsonl".to_string(),
