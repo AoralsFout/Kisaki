@@ -16,10 +16,31 @@ export interface AIConfig {
 /** 消息角色 */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
+/** 可随用户消息发送给图像识别模型的本地图片。 */
+export interface ImageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  dataUrl: string
+  size: number
+}
+
+export interface ChatInputPayload {
+  text: string
+  images: ImageAttachment[]
+}
+
+/** OpenAI 兼容的多模态消息内容。 */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+
+export type ChatMessageContent = string | ChatContentPart[]
+
 /** 对话消息 */
 export interface ChatMessage {
   role: MessageRole
-  content: string
+  content: ChatMessageContent
   /** tool_call 的 id（用于 tool 角色的回执） */
   tool_call_id?: string
   /** 工具调用列表（assistant 角色） */

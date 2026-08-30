@@ -24,6 +24,7 @@ import { useSessionStore } from './stores/session'
 import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure } from './ai'
+import type { ChatInputPayload } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
 import { setAvailableCharacters, setOnCharacterSwitched, getAgentLive2DController } from './agent'
@@ -233,12 +234,12 @@ function handleCharacterClick() {
   chat.openInput()
 }
 
-function handleSend(text: string) {
+function handleSend(payload: ChatInputPayload) {
   if (noCharacter.value) return
   // 立绘角色需控制器就绪；Live2D 角色无立绘控制器，仅由 noCharacter 把关
   if (charStore.render === 'illustration' && !getCharacterController()) return
   chat.closeInput()
-  chat.sendMessage(text)
+  chat.sendMessage(payload)
 }
 
 async function openSettingsWindow(tab?: string) {
@@ -546,7 +547,7 @@ async function handleSelectCharacter(charId: string) {
 }
 
 .input-wrapper.open {
-  max-height: 260px;
+  max-height: 380px;
 }
 
 /* ---- 底部工具栏 ---- */

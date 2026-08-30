@@ -16,7 +16,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText } from '../ai'
-import type { ChatContextSnapshot, ContextStats, ToolCallData } from '../ai'
+import type { ChatContextSnapshot, ChatInputPayload, ContextStats, ImageAttachment, ToolCallData } from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolResult } from '../agent'
@@ -72,6 +72,8 @@ export interface ChatMessage {
   thinking?: string
   /** 角色母语台词（say 的 voice），用于会话恢复时忠实重建 say 工具调用 */
   voice?: string
+  /** 用户本轮发送的图片；仅用户消息使用。 */
+  images?: ImageAttachment[]
   timestamp: number
 }
 
@@ -457,22 +459,24 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 发送消息给 AI（支持工具调用循环） */
-  async function sendMessage(text: string) {
+  async function sendMessage(input: string | ChatInputPayload) {
     const _fn = 'sendMessage'
     const _timer = debugTimer(_fn)
-    log.trace('[%s] ▶ text="%s"', _fn, text?.slice(0, 50))
+    const rawText = typeof input === 'string' ? input : input.text
+    const images = typeof input === 'string' ? [] : input.images
+    log.trace('[%s] ▶ text="%s" images=%d', _fn, rawText?.slice(0, 50), images.length)
 
     // ── 守卫条件检查 ────────────────────────────────────
     if (isProcessing.value) {
-      log.warn('[%s] ⚠ 正在处理中，忽略重复请求 (text=%s)', _fn, text?.slice(0, 30))
+      log.warn('[%s] ⚠ 正在处理中，忽略重复请求 (text=%s)', _fn, rawText?.slice(0, 30))
       return
     }
-    if (!text || !text.trim()) {
+    if ((!rawText || !rawText.trim()) && images.length === 0) {
       log.warn('[%s] ⚠ 收到空消息，忽略', _fn)
       return
     }
 
-    const userText = text.trim()
+    const userText = rawText.trim() || t('chat.input.imageOnlyPrompt')
     isProcessing.value = true
     log.debug('[%s] isProcessing → true', _fn)
 
@@ -505,12 +509,12 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     log.info('[%s] 用户消息: "%s"', _fn, userText.slice(0, 100))
-    log.debug('[%s] 消息长度: %d 字符', _fn, userText.length)
+    log.debug('[%s] 消息长度: %d 字符, 图片: %d 张', _fn, userText.length, images.length)
 
     // ── 添加用户消息 ────────────────────────────────────
-    chatContext.addUserMessage(userText)
+    chatContext.addUserMessage(userText, images)
     syncContextStats()
-    const userMsgId = addMessage('user', userText)
+    const userMsgId = addMessage('user', userText, undefined, undefined, images)
     log.trace('[%s] 用户消息已加入 ChatContext', _fn)
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
@@ -990,7 +994,13 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ◀', _fn)
   }
 
-  function addMessage(role: ChatMessage['role'], text: string, thinking?: string, voice?: string): string {
+  function addMessage(
+    role: ChatMessage['role'],
+    text: string,
+    thinking?: string,
+    voice?: string,
+    images?: ImageAttachment[],
+  ): string {
     const _fn = 'addMessage'
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const msgLen = text.length
@@ -1005,6 +1015,7 @@ export const useChatStore = defineStore('chat', () => {
       text,
       thinking: thinking || undefined,
       voice: voice || undefined,
+      images: images?.length ? images : undefined,
       timestamp: Date.now(),
     })
 
@@ -1112,6 +1123,9 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ChatContext 已重置', _fn)
 
     if (snapshot && chatContext.importSnapshot(snapshot)) {
+      chatContext.restoreUserImages(msgs
+        .filter(msg => msg.role === 'user')
+        .map(msg => ({ text: msg.text, images: msg.images })))
       syncContextStats()
       log.info('[%s] ✓ 已恢复持久化协议上下文（%d 条）', _fn, snapshot.messages.length)
     } else {
@@ -1124,7 +1138,7 @@ export const useChatStore = defineStore('chat', () => {
     for (let i = 0; i < msgs.length; i++) {
       const msg = msgs[i]
       if (msg.role === 'user') {
-        chatContext.addUserMessage(msg.text)
+        chatContext.addUserMessage(msg.text, msg.images)
         log.trace('[%s]   [%d/%d] user → context: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
       } else if (msg.role === 'assistant') {
         // 重建为 say 调用：voice 取持久化的母语台词（旧会话缺失则回退显示文本）
@@ -1187,6 +1201,9 @@ export const useChatStore = defineStore('chat', () => {
       )
     }
     chatContext.importSnapshot(snapshot)
+    chatContext.restoreUserImages(messages.value
+      .filter(msg => msg.role === 'user')
+      .map(msg => ({ text: msg.text, images: msg.images })))
     configReady.value = isConfigValid(loadConfig())
     syncContextStats()
     useSessionStore().saveCurrentSession()

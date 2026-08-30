@@ -3,9 +3,18 @@
  * 对话输入框组件
  * - 支持回车发送
  * - 支持 Shift+Enter 换行
+ * - 支持粘贴或选择图片，发送给图像识别模型
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import {
+  createImageAttachment,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_COUNT,
+  MAX_TOTAL_IMAGE_BYTES,
+  validateImageFiles,
+} from '../ai'
+import type { ChatInputPayload, ImageAttachment, ImageValidationError } from '../ai'
 
 const { t } = useI18n()
 
@@ -23,13 +32,18 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  send: [text: string]
+  send: [payload: ChatInputPayload]
   'update:modelValue': [text: string]
   close: []
 }>()
 
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 const inputText = ref(props.modelValue)
+const images = ref<ImageAttachment[]>([])
+const imageError = ref('')
+const isAddingImages = ref(false)
+const hasContent = computed(() => Boolean(inputText.value.trim()) || images.value.length > 0)
 
 // 同步 v-model
 watch(() => props.modelValue, (v) => {
@@ -46,6 +60,8 @@ watch(() => props.visible, (v) => {
     setTimeout(() => inputRef.value?.focus(), 100)
   } else {
     inputText.value = ''
+    images.value = []
+    imageError.value = ''
   }
 })
 
@@ -58,9 +74,62 @@ function handleKeydown(e: KeyboardEvent) {
 
 function sendMessage() {
   const text = inputText.value.trim()
-  if (!text || props.disabled) return
-  emit('send', text)
+  if (!hasContent.value || props.disabled || isAddingImages.value) return
+  emit('send', { text, images: [...images.value] })
   inputText.value = ''
+  images.value = []
+  imageError.value = ''
+}
+
+function validationMessage(error: ImageValidationError): string {
+  const sizes = {
+    max: Math.round(MAX_IMAGE_BYTES / 1024 / 1024),
+    total: Math.round(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024),
+    count: MAX_IMAGE_COUNT,
+  }
+  return t(`chat.input.imageErrors.${error}`, sizes)
+}
+
+async function addFiles(files: Iterable<File>) {
+  if (props.disabled) return
+  imageError.value = ''
+  const result = validateImageFiles(files, images.value)
+  if (result.error) imageError.value = validationMessage(result.error)
+  if (result.accepted.length === 0) return
+
+  isAddingImages.value = true
+  try {
+    const added = await Promise.all(result.accepted.map(createImageAttachment))
+    images.value.push(...added)
+  } catch {
+    imageError.value = t('chat.input.imageErrors.readFailed')
+  } finally {
+    isAddingImages.value = false
+  }
+}
+
+function handlePaste(event: ClipboardEvent) {
+  const directFiles = Array.from(event.clipboardData?.files ?? [])
+  const itemFiles = Array.from(event.clipboardData?.items ?? [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  const files = (directFiles.length ? directFiles : itemFiles)
+    .filter(file => file.type.startsWith('image/'))
+  if (files.length === 0) return
+  if (!event.clipboardData?.getData('text/plain')) event.preventDefault()
+  void addFiles(files)
+}
+
+function handleFilePicked(event: Event) {
+  const target = event.target as HTMLInputElement
+  void addFiles(Array.from(target.files ?? []))
+  target.value = ''
+}
+
+function removeImage(id: string) {
+  images.value = images.value.filter(image => image.id !== id)
+  imageError.value = ''
 }
 
 function handleClose() {
@@ -77,13 +146,29 @@ function handleClose() {
       </div>
       <textarea ref="inputRef" v-model="inputText" class="input-field"
         :placeholder="placeholder || t('chat.input.placeholder')" :disabled="disabled" rows="3"
-        @keydown="handleKeydown"></textarea>
+        @keydown="handleKeydown" @paste="handlePaste"></textarea>
+      <div v-if="images.length" class="image-list" :aria-label="t('chat.input.imagesLabel')">
+        <div v-for="image in images" :key="image.id" class="image-preview">
+          <img :src="image.dataUrl" :alt="image.name" />
+          <button type="button" class="btn-remove-image" :aria-label="t('chat.input.removeImage', { name: image.name })"
+            @click="removeImage(image.id)">✕</button>
+        </div>
+      </div>
+      <p v-if="imageError" class="image-error" role="alert">{{ imageError }}</p>
       <div class="input-footer">
-        <span class="hint">{{ t('chat.input.hint') }}</span>
-        <button class="btn-send" :disabled="!inputText.trim() || disabled" @click="sendMessage"
-          :aria-label="t('chat.input.sendAria')">
-          {{ t('chat.input.send') }}
-        </button>
+        <div class="input-actions">
+          <input ref="fileInputRef" class="file-input" type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="handleFilePicked" />
+          <button type="button" class="btn-image" :disabled="disabled || isAddingImages || images.length >= MAX_IMAGE_COUNT"
+            :title="t('chat.input.chooseImageHint', { count: MAX_IMAGE_COUNT })"
+            :aria-label="t('chat.input.chooseImage')" @click="fileInputRef?.click()">
+            <i class="fas fa-image"></i>
+            <span>{{ t('chat.input.chooseImage') }}</span>
+          </button>
+          <span class="hint">{{ t('chat.input.hint') }}</span>
+        </div>
+        <button class="btn-send" :disabled="!hasContent || disabled || isAddingImages" @click="sendMessage"
+          :aria-label="t('chat.input.sendAria')">{{ t('chat.input.send') }}</button>
       </div>
     </div>
   </div>
@@ -159,11 +244,89 @@ function handleClose() {
   color: rgba(255, 255, 255, 0.35);
 }
 
+.image-list {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.image-preview {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  overflow: hidden;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.btn-remove-image {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(10, 10, 16, 0.78);
+  cursor: pointer;
+}
+
+.image-error {
+  margin: 6px 2px 0;
+  color: #ff9f9f;
+  font-size: 11px;
+}
+
 .input-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-top: 8px;
+}
+
+.input-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-input {
+  display: none;
+}
+
+.btn-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.btn-image:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.btn-image:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .hint {

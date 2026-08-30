@@ -8,7 +8,7 @@
  * 传入 model 名称 → 从 ModelProfile 推导合适值；
  * 不传则退化为原有保守默认值。
  */
-import type { ChatMessage } from './types'
+import type { ChatMessage, ChatMessageContent, ImageAttachment } from './types'
 import { getDefaultMessages } from './prompts'
 import { getContextLimit, getMaxRounds } from './modelCapabilities'
 import { langName } from './langNames'
@@ -122,10 +122,47 @@ function sanitizeToolArguments(raw: string): string {
   }
 }
 
+function contentText(content: ChatMessageContent): string {
+  if (typeof content === 'string') return content
+  return content
+    .filter(part => part.type === 'text')
+    .map(part => part.text)
+    .join('\n')
+}
+
+function contentImageCount(content: ChatMessageContent): number {
+  return Array.isArray(content)
+    ? content.filter(part => part.type === 'image_url').length
+    : 0
+}
+
+function multimodalContent(text: string, images: readonly ImageAttachment[]): ChatMessageContent {
+  if (images.length === 0) return text
+  return [
+    { type: 'text', text },
+    ...images.map(image => ({
+      type: 'image_url' as const,
+      image_url: { url: image.dataUrl, detail: 'auto' as const },
+    })),
+  ]
+}
+
+/** 快照不重复保存 base64；图片本体由界面消息持久化并在恢复时重新注入。 */
+function snapshotContent(content: ChatMessageContent): string {
+  const text = contentText(content)
+  const imageCount = contentImageCount(content)
+  if (imageCount === 0) return redactSecrets(compactText(text, MAX_TOOL_RESULT_LENGTH))
+  return redactSecrets(compactText(`${text}\n[本轮包含 ${imageCount} 张本地图片]`, MAX_TOOL_RESULT_LENGTH))
+}
+
 function cloneMessage(message: ChatMessage): ChatMessage {
   return {
     role: message.role,
-    content: message.content,
+    content: typeof message.content === 'string'
+      ? message.content
+      : message.content.map(part => part.type === 'text'
+        ? { type: 'text', text: part.text }
+        : { type: 'image_url', image_url: { ...part.image_url } }),
     tool_call_id: message.tool_call_id,
     tool_calls: message.tool_calls?.map(tc => ({
       id: tc.id,
@@ -277,14 +314,15 @@ export class ChatContext {
 
   /** 估算单条消息的 token（含 tool_calls 参数体与 tool_call_id） */
   private estimateMessageTokens(m: ChatMessage): number {
-    let text = m.content || ''
+    let text = contentText(m.content)
     if (m.tool_calls) {
       for (const tc of m.tool_calls) {
         text += tc.function.name + tc.function.arguments
       }
     }
     if (m.tool_call_id) text += m.tool_call_id
-    return estimateTokens(text)
+    // 图像 token 数随分辨率和 provider 而异；auto detail 以保守常量参与裁剪。
+    return estimateTokens(text) + contentImageCount(m.content) * 1100
   }
 
   /** 当前上下文估计 token 总数（用于裁剪决策） */
@@ -312,7 +350,9 @@ export class ChatContext {
     const base = this.messages.map(cloneMessage)
     if (base.length === 0) return base
     if (includeTurnReminder && this.voiceLang && this.displayLang) {
-      base[0].content += `\n\n${buildTurnReminder(this.voiceLang, this.displayLang)}`
+      if (typeof base[0].content === 'string') {
+        base[0].content += `\n\n${buildTurnReminder(this.voiceLang, this.displayLang)}`
+      }
     }
     return [base[0], ...this.summaryMessages(), ...base.slice(1)]
   }
@@ -356,9 +396,25 @@ export class ChatContext {
   }
 
   /** 添加用户消息 */
-  addUserMessage(content: string) {
-    this.messages.push({ role: 'user', content })
+  addUserMessage(content: string, images: readonly ImageAttachment[] = []) {
+    this.messages.push({ role: 'user', content: multimodalContent(content, images) })
     log.debug('用户消息已添加, 当前 %d 条', this.messages.length)
+  }
+
+  /**
+   * 会话快照会去掉 base64；切换或重启会话后，从界面历史中恢复用户图片。
+   * 以用户消息顺序配对，不影响中间的 assistant/tool 协议消息。
+   */
+  restoreUserImages(turns: readonly { text: string; images?: readonly ImageAttachment[] }[]) {
+    const userMessages = this.messages.filter(message => message.role === 'user')
+    // prune() 只会从最旧回合开始移除，因此用尾部对齐才能和完整 UI 历史正确配对。
+    const alignedTurns = turns.slice(-userMessages.length)
+    for (let index = 0; index < userMessages.length; index++) {
+      const message = userMessages[index]
+      const turn = alignedTurns[index]
+      if (!turn?.images?.length) continue
+      message.content = multimodalContent(turn.text, turn.images)
+    }
   }
 
   /** 添加助手回复（纯文本） */
@@ -434,7 +490,7 @@ export class ChatContext {
   exportSnapshot(): ChatContextSnapshot {
     const messages = this.messages.slice(1).map(message => ({
       ...cloneMessage(message),
-      content: redactSecrets(compactText(message.content, MAX_TOOL_RESULT_LENGTH)),
+      content: snapshotContent(message.content),
       tool_calls: message.tool_calls?.map(tc => ({
         id: tc.id,
         type: 'function' as const,
@@ -521,7 +577,7 @@ export class ChatContext {
     // 单个活跃回合仍过大时，先压缩旧工具回执，再压缩已执行调用的参数。
     if (totalTokens() > this.maxContextTokens) {
       for (const message of this.messages) {
-        if (message.role === 'tool' && message.content.length > MIN_TOOL_RESULT_LENGTH) {
+        if (message.role === 'tool' && typeof message.content === 'string' && message.content.length > MIN_TOOL_RESULT_LENGTH) {
           message.content = compactText(message.content, MIN_TOOL_RESULT_LENGTH)
         }
       }
@@ -545,17 +601,17 @@ export class ChatContext {
 
   /** 只总结可信的对话事实与工具名称，不把原始工具输出提升为长期指令。 */
   private appendRoundSummary(round: ChatMessage[]) {
-    const user = round.find(m => m.role === 'user')?.content ?? ''
+    const user = contentText(round.find(m => m.role === 'user')?.content ?? '')
     const assistantText = round
       .filter(m => m.role === 'assistant' && m.content)
-      .map(m => m.content)
+      .map(m => contentText(m.content))
       .join(' ')
     const toolNames = [...new Set(round.flatMap(m =>
       m.tool_calls?.map(tc => tc.function.name) ?? [],
     ))]
     const toolStatus = round
       .filter(m => m.role === 'tool')
-      .map(m => /失败|错误|error|failed/i.test(m.content) ? '失败' : '完成')
+      .map(m => /失败|错误|error|failed/i.test(contentText(m.content)) ? '失败' : '完成')
     const status = toolStatus.includes('失败') ? '部分工具失败' : toolStatus.length ? '工具已执行' : ''
     const parts = [
       `用户：${compactText(user.replace(/\s+/g, ' ').trim(), 500)}`,

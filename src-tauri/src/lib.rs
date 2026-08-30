@@ -136,6 +136,7 @@ pub fn run() {
             tts::gptsovits_tts_stream,
             log::append_log_entries,
             log::read_log_file,
+            log::read_log_file_page,
             log::export_log_file,
             log::list_log_files,
             fileio::agent_pick_workspace,

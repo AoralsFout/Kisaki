@@ -25,6 +25,8 @@ vi.mock('../../../utils/logger', () => ({
 }))
 vi.mock('../../../constants', () => ({
   EXPERIMENTAL_COMMAND_AVAILABLE: false,
+  STORAGE_CHARACTER_OPACITY: 'deskpet-character-opacity',
+  STORAGE_CHARACTER_OPACITY_WHEEL_ENABLED: 'deskpet-character-opacity-wheel-enabled',
 }))
 
 describe('SettingsGeneral release mode', () => {

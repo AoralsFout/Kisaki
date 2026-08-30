@@ -9,6 +9,10 @@ import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../../i18n'
 import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
 import { createLogger } from '../../utils/logger'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../../constants'
+import {
+  isCharacterOpacityWheelEnabled,
+  setCharacterOpacityWheelEnabled,
+} from '../../character/opacity'
 
 const log = createLogger('SettingsGeneral')
 const { t } = useI18n()
@@ -16,6 +20,7 @@ const { t } = useI18n()
 const uiLang = ref(getUiLanguage())
 const autoExec = ref(getAutoExecFiles())
 const commandEnabled = ref(getCommandEnabled())
+const opacityWheelEnabled = ref(isCharacterOpacityWheelEnabled())
 
 // ── 开机自启 ──
 const autoStart = ref(false)
@@ -33,6 +38,11 @@ function onAutoExecChange() {
 function onCommandEnabledChange() {
   commandEnabled.value = !commandEnabled.value
   setCommandEnabled(commandEnabled.value)
+}
+
+function onOpacityWheelEnabledChange() {
+  opacityWheelEnabled.value = !opacityWheelEnabled.value
+  setCharacterOpacityWheelEnabled(opacityWheelEnabled.value)
 }
 
 async function refreshAutoStart() {
@@ -71,6 +81,19 @@ onMounted(() => { void refreshAutoStart() })
     </div>
 
     <hr class="section-divider" />
+
+    <div class="form-group">
+      <div class="toggle-row">
+        <label class="toggle-label">
+          <span class="toggle-label-text">{{ t('settings.general.opacityWheelTitle') }}</span>
+          <span class="toggle-label-desc">{{ t('settings.general.opacityWheelDesc') }}</span>
+        </label>
+        <button :class="['toggle-switch', { active: opacityWheelEnabled }]"
+          @click="onOpacityWheelEnabledChange" role="switch" :aria-checked="opacityWheelEnabled">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+    </div>
 
     <div class="form-group">
       <div class="toggle-row">

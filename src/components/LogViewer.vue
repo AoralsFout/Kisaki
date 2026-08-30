@@ -5,7 +5,7 @@
  * 显示应用运行时的日志，支持实时/历史模式、级别过滤、
  * 命名空间搜索、关键词搜索和导出功能。
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getBuffer, clearBuffer, subscribe, subscribeCrossWindow } from '../utils/logger'
 import type { LogEntry, LogLevel } from '../utils/logger'
@@ -100,9 +100,13 @@ const mode = ref<ViewMode>('realtime')
 // 历史模式
 const historyEntries = ref<DisplayEntry[]>([])
 const historyLoading = ref(false)
+const historyLoadingOlder = ref(false)
 const historyError = ref('')
 const availableLogFiles = ref<string[]>([])
 const selectedLogFile = ref('')
+const historyHasMore = ref(false)
+const historyBefore = ref<number | null>(null)
+const HISTORY_PAGE_SIZE = 200
 
 // 滚动
 const logListRef = ref<HTMLElement | null>(null)
@@ -129,7 +133,8 @@ const filteredEntries = computed(() => {
 const stats = computed(() => {
   const counts: Record<string, number> = { total: 0 }
   for (const lvl of ALL_LEVELS) counts[lvl] = 0
-  for (const e of entries.value) {
+  const source = mode.value === 'realtime' ? entries.value : historyEntries.value
+  for (const e of source) {
     counts.total++
     counts[e.level] = (counts[e.level] || 0) + 1
   }
@@ -175,6 +180,9 @@ function toggleExpand(entry: DisplayEntry) {
 function handleScroll() {
   if (!logListRef.value) return
   const el = logListRef.value
+  if (mode.value === 'history' && el.scrollTop < 80 && historyHasMore.value) {
+    void loadOlderHistory()
+  }
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
   if (dist < 80) {
     autoScroll.value = true
@@ -231,31 +239,56 @@ function addEntry(entry: LogEntry) {
 
 // ─── 历史模式 ─────────────────────────────────────────
 
+interface HistoryResultEntry {
+  line: number
+  timestamp: string
+  level: string
+  namespace: string
+  message: string
+  source: string
+}
+
+interface HistoryPage {
+  entries: HistoryResultEntry[]
+  next_before: number | null
+  has_more: boolean
+}
+
+function mapHistoryEntries(result: HistoryResultEntry[]): DisplayEntry[] {
+  return result.map(r => ({
+    id: nextId++,
+    timestamp: r.timestamp,
+    level: (ALL_LEVELS.includes(r.level as LogLevel) ? r.level : 'info') as LogLevel,
+    namespace: r.namespace,
+    message: r.message,
+    source: r.source || undefined,
+    expanded: false,
+  }))
+}
+
+async function readHistoryPage(before: number | null): Promise<HistoryPage> {
+  return invoke<HistoryPage>('read_log_file_page', {
+    filename: selectedLogFile.value,
+    before,
+    limit: HISTORY_PAGE_SIZE,
+  })
+}
+
 async function loadHistory() {
   if (!selectedLogFile.value) return
   historyLoading.value = true
   historyError.value = ''
   historyEntries.value = []
+  historyBefore.value = null
+  historyHasMore.value = false
 
   try {
-    const result: Array<{
-      line: number
-      timestamp: string
-      level: string
-      namespace: string
-      message: string
-      source: string
-    }> = await invoke('read_log_file', { filename: selectedLogFile.value })
-
-    historyEntries.value = result.map(r => ({
-      id: nextId++,
-      timestamp: r.timestamp,
-      level: (ALL_LEVELS.includes(r.level as LogLevel) ? r.level : 'info') as LogLevel,
-      namespace: r.namespace,
-      message: r.message,
-      source: r.source || undefined,
-      expanded: false,
-    }))
+    const page = await readHistoryPage(null)
+    historyEntries.value = mapHistoryEntries(page.entries)
+    historyBefore.value = page.next_before
+    historyHasMore.value = page.has_more
+    await nextTick()
+    scrollToBottom()
   } catch (e) {
     historyError.value = (e as Error).message
   } finally {
@@ -263,15 +296,53 @@ async function loadHistory() {
   }
 }
 
+async function loadOlderHistory() {
+  if (
+    !selectedLogFile.value
+    || !historyHasMore.value
+    || historyBefore.value === null
+    || historyLoading.value
+    || historyLoadingOlder.value
+  ) return
+
+  const list = logListRef.value
+  const previousHeight = list?.scrollHeight ?? 0
+  const previousTop = list?.scrollTop ?? 0
+  historyLoadingOlder.value = true
+  historyError.value = ''
+
+  try {
+    const page = await readHistoryPage(historyBefore.value)
+    historyEntries.value = [...mapHistoryEntries(page.entries), ...historyEntries.value]
+    historyBefore.value = page.next_before
+    historyHasMore.value = page.has_more
+    // 先移除顶部加载提示，再计算新增日志造成的真实高度差，避免视口跳动。
+    historyLoadingOlder.value = false
+    await nextTick()
+    if (list) {
+      list.scrollTop = list.scrollHeight - previousHeight + previousTop
+    }
+  } catch (e) {
+    historyError.value = (e as Error).message
+  } finally {
+    historyLoadingOlder.value = false
+  }
+}
+
 async function refreshLogFileList() {
   try {
     availableLogFiles.value = await invoke<string[]>('list_log_files')
-    if (availableLogFiles.value.length > 0 && !selectedLogFile.value) {
-      selectedLogFile.value = availableLogFiles.value[0]
+    if (!availableLogFiles.value.includes(selectedLogFile.value)) {
+      selectedLogFile.value = availableLogFiles.value[0] ?? ''
     }
   } catch {
     availableLogFiles.value = []
   }
+}
+
+async function refreshHistory() {
+  await refreshLogFileList()
+  if (mode.value === 'history' && selectedLogFile.value) await loadHistory()
 }
 
 // ─── 导出 ─────────────────────────────────────────────
@@ -521,7 +592,7 @@ function onWheel() {
           <input v-model="searchFilter" class="search-input" :placeholder="t('logs.searchPlaceholder')" :title="t('logs.searchTitle')" />
         </div>
 
-        <button class="toolbar-btn" :title="t('logs.refreshTitle')" @click="refreshLogFileList(); loadHistory()">
+        <button class="toolbar-btn" :title="t('logs.refreshTitle')" @click="refreshHistory">
           <i class="fas fa-rotate"></i>
         </button>
         <button class="toolbar-btn" :title="t('logs.exportTitle')" @click="exportLog">
@@ -545,7 +616,12 @@ function onWheel() {
       </div>
 
       <!-- 加载中 -->
-      <div v-if="historyLoading" class="loading-state">
+      <div v-if="historyLoading && historyEntries.length === 0" class="loading-state">
+        <i class="fas fa-spinner spinning"></i>
+        <span>{{ t('common.loading') }}</span>
+      </div>
+
+      <div v-if="historyLoadingOlder" class="loading-older">
         <i class="fas fa-spinner spinning"></i>
         <span>{{ t('common.loading') }}</span>
       </div>
@@ -891,6 +967,16 @@ function onWheel() {
   gap: 8px;
   height: 100px;
   color: #888;
+}
+
+.loading-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  color: #777;
+  font-size: 11px;
 }
 
 .spinning {

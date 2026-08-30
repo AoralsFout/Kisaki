@@ -80,6 +80,7 @@ async function handleTest() {
     <div class="form-group">
       <label class="form-label">{{ t('settings.api.model') }}</label>
       <input v-model="config.model" class="form-input" placeholder="gpt-4o-mini" />
+      <p class="form-hint">{{ t('settings.api.visionHint') }}</p>
     </div>
 
     <div class="form-actions">

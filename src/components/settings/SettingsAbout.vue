@@ -98,6 +98,7 @@ async function openLogWindow() {
     console.error('无法打开日志窗口', e)
   }
 }
+
 </script>
 
 <template>

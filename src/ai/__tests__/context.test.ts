@@ -129,4 +129,52 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(msgs.some(m => m.role === 'assistant' && m.tool_calls?.[0]?.function.name === 'read_file')).toBe(true)
     expect(msgs.some(m => m.role === 'tool' && m.tool_call_id === 'read')).toBe(true)
   })
+
+  it('发送标准多模态图片内容，快照去重后可从界面历史恢复图片', () => {
+    const image = {
+      id: 'img-1',
+      name: 'screen.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,SECRET_IMAGE_BYTES',
+      size: 123,
+    }
+    const ctx = new ChatContext({ maxContextTokens: 100000 })
+    ctx.addUserMessage('这张图里有什么？', [image])
+
+    const user = ctx.getMessages().find(message => message.role === 'user')
+    expect(Array.isArray(user?.content)).toBe(true)
+    expect(user?.content).toEqual([
+      { type: 'text', text: '这张图里有什么？' },
+      { type: 'image_url', image_url: { url: image.dataUrl, detail: 'auto' } },
+    ])
+
+    const snapshot = ctx.exportSnapshot()
+    expect(JSON.stringify(snapshot)).not.toContain('SECRET_IMAGE_BYTES')
+    expect(snapshot.messages[0].content).toContain('[本轮包含 1 张本地图片]')
+
+    const restored = new ChatContext({ maxContextTokens: 100000 })
+    expect(restored.importSnapshot(snapshot)).toBe(true)
+    restored.restoreUserImages([{ text: '这张图里有什么？', images: [image] }])
+    expect(restored.getMessages().find(message => message.role === 'user')?.content).toEqual(user?.content)
+  })
+
+  it('上下文裁剪旧回合后，按历史尾部恢复正确的图片', () => {
+    const oldImage = { id: 'old', name: 'old.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,OLD', size: 3 }
+    const newImage = { id: 'new', name: 'new.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,NEW', size: 3 }
+    const ctx = new ChatContext({ maxRounds: 1, maxContextTokens: 100000 })
+    ctx.addUserMessage('旧图片', [oldImage])
+    ctx.addAssistantMessage('旧回复')
+    ctx.addUserMessage('新图片', [newImage])
+    ctx.getMessages() // 触发裁剪，只保留最后一个用户回合
+
+    const restored = new ChatContext({ maxContextTokens: 100000 })
+    restored.importSnapshot(ctx.exportSnapshot())
+    restored.restoreUserImages([
+      { text: '旧图片', images: [oldImage] },
+      { text: '新图片', images: [newImage] },
+    ])
+
+    expect(JSON.stringify(restored.getMessages())).toContain('base64,NEW')
+    expect(JSON.stringify(restored.getMessages())).not.toContain('base64,OLD')
+  })
 })

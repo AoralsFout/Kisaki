@@ -115,6 +115,9 @@ watch(
                 <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
                 <div class="thinking-text">{{ msg.thinking }}</div>
               </details>
+              <div v-if="msg.images?.length" class="msg-images">
+                <img v-for="image in msg.images" :key="image.id" :src="image.dataUrl" :alt="image.name" />
+              </div>
               <div class="msg-text">{{ msg.text }}</div>
 
               <!-- 回档（仅用户消息）：还原文件 + 截断此后对话 -->
@@ -260,6 +263,21 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.msg-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 120px));
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.msg-images img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .message-list::-webkit-scrollbar {

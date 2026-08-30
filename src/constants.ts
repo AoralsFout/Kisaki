@@ -31,6 +31,12 @@ export const STORAGE_UI_LANGUAGE = 'deskpet-ui-language'
 /** 鼠标穿透开关（透明区域点击穿透到下方窗口） */
 export const STORAGE_PASSTHROUGH_ENABLED = 'deskpet-passthrough-enabled'
 
+/** 悬浮角色时用滚轮调整透明度（默认开启） */
+export const STORAGE_CHARACTER_OPACITY_WHEEL_ENABLED = 'deskpet-character-opacity-wheel-enabled'
+
+/** 当前角色显示透明度 */
+export const STORAGE_CHARACTER_OPACITY = 'deskpet-character-opacity'
+
 /** 全局「自动执行文件修改」开关（开启后改文件工具跳过逐次确认） */
 export const STORAGE_AUTO_EXEC_FILES = 'deskpet-auto-exec-files'
 
