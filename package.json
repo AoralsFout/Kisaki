@@ -32,14 +32,14 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "@vitejs/plugin-vue": "^5.2.1",
+    "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
-    "adm-zip": "^0.5.16",
-    "happy-dom": "^20.10.2",
-    "jsdom": "^29.1.1",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "vitest": "^4.1.8",
-    "vue-tsc": "^2.1.10"
+    "adm-zip": "^0.6.0",
+    "happy-dom": "^20.11.8",
+    "jsdom": "^30.0.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.11"
   }
 }
