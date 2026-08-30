@@ -438,8 +438,8 @@ let historyRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   if (isStandalone) {
-    // 记住并恢复日志窗口位置/大小
-    void initWindowState('logs')
+    // 隐藏创建，恢复位置/大小后再显示，避免白窗闪现和瞬移。
+    await initWindowState('logs', { showAfterRestore: true })
     // 独立窗口：从文件加载历史日志（跨窗口共享）
     await refreshLogFileList()
     if (selectedLogFile.value) {

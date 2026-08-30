@@ -30,6 +30,11 @@ export interface PersistedWindowState {
   height: number
 }
 
+export interface InitWindowStateOptions {
+  /** 恢复完成后再显示预先以 visible:false 创建的窗口。 */
+  showAfterRestore?: boolean
+}
+
 /** 读取保存的状态；无或非法返回 null */
 function readState(key: string): PersistedWindowState | null {
   try {
@@ -91,7 +96,10 @@ async function clampToVisible(state: PersistedWindowState): Promise<PersistedWin
  *
  * @param key 唯一标识该窗口，如 'main' | 'settings' | 'logs'
  */
-export async function initWindowState(key: string): Promise<void> {
+export async function initWindowState(
+  key: string,
+  options: InitWindowStateOptions = {},
+): Promise<void> {
   const win = getCurrentWindow()
 
   // ── 恢复 ──
@@ -108,6 +116,16 @@ export async function initWindowState(key: string): Promise<void> {
       }
     } else {
       log.info('窗口状态越界（显示器已变更），跳过恢复: %s', key)
+    }
+  }
+
+  // 窗口以 hidden 状态创建：必须等位置/大小恢复后再显示，
+  // 避免默认位置的白色 WebView 闪现后瞬移。恢复失败也要显示，不能留下隐形窗口。
+  if (options.showAfterRestore) {
+    try {
+      await win.show()
+    } catch (e) {
+      log.warn('恢复后显示窗口失败: %s', (e as Error)?.message || String(e))
     }
   }
 

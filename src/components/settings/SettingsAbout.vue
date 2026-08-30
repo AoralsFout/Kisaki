@@ -93,6 +93,7 @@ async function openLogWindow() {
       height: 500,
       decorations: false,
       resizable: true,
+      visible: false,
     })
   } catch (e) {
     console.error('无法打开日志窗口', e)

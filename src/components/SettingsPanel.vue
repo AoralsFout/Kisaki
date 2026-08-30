@@ -30,17 +30,17 @@ const selfWindow = ref<WebviewWindow | null>(null)
 type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about' | 'privacy'
 const activeTab = ref<Tab>('general')
 
-onMounted(() => {
-  if (isSettingsWindow) {
-    selfWindow.value = getCurrentWebviewWindow()
-    // 记住并恢复设置窗口位置/大小
-    void initWindowState('settings')
-  }
-  // 支持通过 URL ?tab=character 定位标签页
+onMounted(async () => {
+  // 支持通过 URL ?tab=character 定位标签页；在窗口显示前完成，避免先闪过默认页。
   const tabParam = new URLSearchParams(window.location.search).get('tab')
   const validTabs: Tab[] = ['general', 'api', 'search', 'character', 'tts', 'dev', 'about', 'privacy']
   if (tabParam && (validTabs as string[]).includes(tabParam)) {
     activeTab.value = tabParam as Tab
+  }
+  if (isSettingsWindow) {
+    selfWindow.value = getCurrentWebviewWindow()
+    // 隐藏创建，恢复位置/大小后再显示，避免白窗闪现和瞬移。
+    await initWindowState('settings', { showAfterRestore: true })
   }
 })
 

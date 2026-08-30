@@ -17,6 +17,7 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
+        "visible": false,
         "width": 1000,
         "height": 600
       }

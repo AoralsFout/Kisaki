@@ -132,6 +132,14 @@ onMounted(async () => {
   // 日志窗口/Dev 窗口不初始化角色和对话
   if (isLogs || isDev) return
 
+  if (!isSettings) {
+    // 主窗口在 Tauri 配置中隐藏创建：先恢复上次的位置/大小再显示，
+    // 避免默认位置白窗闪现后瞬移。穿透初始化放在恢复之后，确保初始坐标正确。
+    await initWindowState('main', { showAfterRestore: true })
+      .catch(() => { /* 浏览器预览环境无原生窗口 */ })
+    await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
+  }
+
   // 加载并解密 API Key（填充解密缓存，后续 sync loadConfig 直接取缓存）
   await Promise.allSettled([
     loadConfigSecure(),
@@ -212,12 +220,6 @@ onMounted(async () => {
       .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
   }
 
-  // 初始化鼠标穿透（仅主窗口；设置窗口跳过，logs/dev 已在前面 return）
-  if (!isSettings) {
-    await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
-    // 记住并恢复主窗口位置/大小（桌宠回到上次待的位置）
-    await initWindowState('main').catch(() => { /* 浏览器预览环境无原生窗口 */ })
-  }
 })
 
 // ---- 交互 ----
@@ -263,6 +265,7 @@ async function openSettingsWindow(tab?: string) {
       decorations: false,
       resizable: true,
       center: true,
+      visible: false,
     })
   } catch (e) {
     log.error('无法打开设置窗口', e)
@@ -293,6 +296,7 @@ async function openLogWindow() {
       y: mainPos ? mainPos.y : undefined,
       decorations: false,
       resizable: true,
+      visible: false,
     })
   } catch (e) {
     log.error('无法打开日志窗口', e)
