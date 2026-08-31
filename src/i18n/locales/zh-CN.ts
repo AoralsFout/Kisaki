@@ -412,7 +412,7 @@ export default {
       costume: '服装',
       emotion: '情绪',
       clickToRemove: '点击移除',
-      emotionPlaceholder: '输入后按空格添加',
+      emotionPlaceholder: '输入后按空格或回车添加',
       empty: '← 从左侧选择一张立绘',
     },
   },

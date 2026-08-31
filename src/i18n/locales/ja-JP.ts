@@ -409,7 +409,7 @@ export default {
       costume: '衣装',
       emotion: '表情',
       clickToRemove: 'クリックで削除',
-      emotionPlaceholder: '入力後スペースキーで追加',
+      emotionPlaceholder: '入力後スペースキーまたは Enter で追加',
       empty: '← 左から立ち絵を選択',
     },
   },

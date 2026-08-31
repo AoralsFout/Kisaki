@@ -409,7 +409,7 @@ export default {
       costume: 'Costume',
       emotion: 'Emotion',
       clickToRemove: 'Click to remove',
-      emotionPlaceholder: 'Type then press space to add',
+      emotionPlaceholder: 'Type then press Space or Enter to add',
       empty: '← Select a sprite on the left',
     },
   },

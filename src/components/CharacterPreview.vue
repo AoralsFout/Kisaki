@@ -29,7 +29,7 @@ const emit = defineEmits<{
 const emotionInput = ref('')
 
 function handleEmotionKeydown(e: KeyboardEvent) {
-  if (e.key === ' ') {
+  if (!e.isComposing && (e.key === ' ' || e.key === 'Enter')) {
     e.preventDefault()
     const val = emotionInput.value.trim()
     if (!val || !props.image) return

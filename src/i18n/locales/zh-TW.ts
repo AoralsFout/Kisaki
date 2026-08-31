@@ -409,7 +409,7 @@ export default {
       costume: '服裝',
       emotion: '情緒',
       clickToRemove: '點擊移除',
-      emotionPlaceholder: '輸入後按空白鍵新增',
+      emotionPlaceholder: '輸入後按空白鍵或 Enter 新增',
       empty: '← 從左側選擇一張立繪',
     },
   },
