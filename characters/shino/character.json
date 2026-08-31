@@ -1,0 +1,74 @@
+{
+  "id": "shino",
+  "name": "shino",
+  "description": "shino",
+  "version": 2,
+  "render": "illustration",
+  "poses": [
+    "standing"
+  ],
+  "emotions": [
+    "idle",
+    "smile",
+    "shy",
+    "happy",
+    "worried",
+    "competitive"
+  ],
+  "costumes": [
+    "home"
+  ],
+  "images": [
+    {
+      "file": "shino_1788178778411_iri6.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "shino_1788178778462_cx2m.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "smile"
+      ]
+    },
+    {
+      "file": "shino_1788178778516_ws9n.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "shino_1788178778570_ozrn.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "shino_1788178778713_fz53.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "worried"
+      ]
+    },
+    {
+      "file": "shino_1788178778782_2yv8.png",
+      "pose": "standing",
+      "costume": "home",
+      "emotions": [
+        "competitive"
+      ]
+    }
+  ],
+  "voiceLanguage": "ja-JP",
+  "textLanguage": "zh-CN",
+  "gptsovitsPromptLang": "ja-JP"
+}

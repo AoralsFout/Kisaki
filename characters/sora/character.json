@@ -758,5 +758,7 @@
   ],
   "voiceLanguage": "ja-JP",
   "textLanguage": "zh-CN",
-  "gptsovitsPromptLang": "ja-JP"
+  "gptsovitsPromptLang": "ja-JP",
+  "gptsovitsRefAudio": "E:\\AI\\GPT-SoVITS-v2pro-20250604\\samples\\sora_sample.wav",
+  "gptsovitsPromptText": "子供扱いしないで、同い年のくせに。"
 }
