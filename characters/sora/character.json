@@ -1,0 +1,762 @@
+{
+  "id": "sora",
+  "name": "春日野穹",
+  "description": "春日野穹",
+  "version": 2,
+  "render": "illustration",
+  "poses": [
+    "standing",
+    "turning"
+  ],
+  "emotions": [
+    "idle",
+    "shy",
+    "happy",
+    "angry",
+    "sad",
+    "surprised"
+  ],
+  "costumes": [
+    "school",
+    "dress",
+    "gothic",
+    "swimsuit",
+    "gym",
+    "bikini"
+  ],
+  "images": [
+    {
+      "file": "sora_1788155770659_mdqd.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770681_qvdi.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155770716_58ed.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155770740_mbmn.png",
+      "pose": "turning",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770764_h4il.png",
+      "pose": "turning",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770785_m2as.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155770806_bq1m.png",
+      "pose": "turning",
+      "costume": "school",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155770826_yz56.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155770847_ep4i.png",
+      "pose": "turning",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770864_08mo.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155770886_hh9c.png",
+      "pose": "turning",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770911_09ip.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770929_ypin.png",
+      "pose": "standing",
+      "costume": "school",
+      "emotions": [
+        "shy",
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155770952_j5i5.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155770971_ucxh.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155770992_xkug.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155771020_8hxg.png",
+      "pose": "turning",
+      "costume": "dress",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771039_y9ee.png",
+      "pose": "turning",
+      "costume": "dress",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771058_f9w1.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155771083_aezt.png",
+      "pose": "turning",
+      "costume": "dress",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155771105_3183.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771129_zrtz.png",
+      "pose": "turning",
+      "costume": "dress",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771155_nbfx.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "happy",
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771174_8cnw.png",
+      "pose": "turning",
+      "costume": "dress",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771194_4yey.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771214_a4sn.png",
+      "pose": "standing",
+      "costume": "dress",
+      "emotions": [
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155771238_4ju4.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771258_amtl.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771281_h3a2.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155771303_5iyf.png",
+      "pose": "turning",
+      "costume": "gothic",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771327_vh8u.png",
+      "pose": "turning",
+      "costume": "gothic",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771347_w7ok.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155771368_ay3m.png",
+      "pose": "turning",
+      "costume": "gothic",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155771392_2i1w.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771413_uea5.png",
+      "pose": "turning",
+      "costume": "gothic",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771434_6drf.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771461_ousw.png",
+      "pose": "turning",
+      "costume": "gothic",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771478_d2a6.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771496_slnb.png",
+      "pose": "standing",
+      "costume": "gothic",
+      "emotions": [
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155771521_62m8.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771535_mhqe.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771550_xpnl.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155771569_3bpu.png",
+      "pose": "turning",
+      "costume": "swimsuit",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771585_7nvo.png",
+      "pose": "turning",
+      "costume": "swimsuit",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771607_dqve.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155771624_8rfe.png",
+      "pose": "turning",
+      "costume": "swimsuit",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155771646_i74z.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771663_uo4b.png",
+      "pose": "turning",
+      "costume": "swimsuit",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771682_5070.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771697_vxrx.png",
+      "pose": "turning",
+      "costume": "swimsuit",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771716_kefc.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771737_uayy.png",
+      "pose": "standing",
+      "costume": "swimsuit",
+      "emotions": [
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155771757_os9k.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771776_3suy.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771795_oj9r.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155771815_cumz.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771837_ve6s.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771858_2kca.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155771881_gssf.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155771905_bh9b.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771927_bk9g.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155771946_wpk2.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771964_uukz.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155771984_5glb.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772004_odfy.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155772021_5dq2.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772042_lepo.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772065_bre4.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155772083_oorl.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772103_pgcz.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772121_6f37.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155772143_ijg7.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155772163_vvnh.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772186_r3hu.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772208_lrcy.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772224_x1ql.png",
+      "pose": "turning",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772242_yzq9.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772260_mdj8.png",
+      "pose": "standing",
+      "costume": "gym",
+      "emotions": [
+        "surprised"
+      ]
+    },
+    {
+      "file": "sora_1788155772281_lisg.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772330_3m6p.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772348_mizr.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "happy"
+      ]
+    },
+    {
+      "file": "sora_1788155772370_layv.png",
+      "pose": "turning",
+      "costume": "bikini",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772388_z0hm.png",
+      "pose": "turning",
+      "costume": "bikini",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772404_ba2w.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "angry"
+      ]
+    },
+    {
+      "file": "sora_1788155772424_uvn7.png",
+      "pose": "turning",
+      "costume": "bikini",
+      "emotions": [
+        "sad"
+      ]
+    },
+    {
+      "file": "sora_1788155772441_56hi.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772462_y30z.png",
+      "pose": "turning",
+      "costume": "bikini",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772481_ohlu.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772502_esaz.png",
+      "pose": "turning",
+      "costume": "bikini",
+      "emotions": [
+        "shy"
+      ]
+    },
+    {
+      "file": "sora_1788155772518_d7ty.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "idle"
+      ]
+    },
+    {
+      "file": "sora_1788155772537_0hs8.png",
+      "pose": "standing",
+      "costume": "bikini",
+      "emotions": [
+        "surprised"
+      ]
+    }
+  ],
+  "voiceLanguage": "ja-JP",
+  "textLanguage": "zh-CN",
+  "gptsovitsPromptLang": "ja-JP"
+}
