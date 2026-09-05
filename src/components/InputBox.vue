@@ -5,7 +5,7 @@
  * - 支持 Shift+Enter 换行
  * - 支持粘贴或选择图片，发送给图像识别模型
  */
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   createImageAttachment,
@@ -22,12 +22,15 @@ const props = withDefaults(defineProps<{
   visible?: boolean
   placeholder?: string
   disabled?: boolean
+  /** 会话草稿标识；草稿仅保留在当前窗口内存中 */
+  draftKey?: string
   /** 初始文本 */
   modelValue?: string
 }>(), {
   visible: false,
   placeholder: '',
   disabled: false,
+  draftKey: 'default',
   modelValue: '',
 })
 
@@ -39,10 +42,19 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const inputText = ref(props.modelValue)
-const images = ref<ImageAttachment[]>([])
-const imageError = ref('')
-const isAddingImages = ref(false)
+type Draft = { text: string; images: ImageAttachment[]; error: string; adding: boolean }
+const drafts = reactive(new Map<string, Draft>())
+drafts.set(props.draftKey, { text: props.modelValue, images: [], error: '', adding: false })
+const draft = computed(() => {
+  if (!drafts.has(props.draftKey)) {
+    drafts.set(props.draftKey, { text: '', images: [], error: '', adding: false })
+  }
+  return drafts.get(props.draftKey)!
+})
+const inputText = computed({ get: () => draft.value.text, set: v => { draft.value.text = v } })
+const images = computed({ get: () => draft.value.images, set: v => { draft.value.images = v } })
+const imageError = computed({ get: () => draft.value.error, set: v => { draft.value.error = v } })
+const isAddingImages = computed(() => draft.value.adding)
 const hasContent = computed(() => Boolean(inputText.value.trim()) || images.value.length > 0)
 
 // 同步 v-model
@@ -54,18 +66,15 @@ watch(inputText, (v) => {
   emit('update:modelValue', v)
 })
 
-// 显示时自动聚焦，关闭时清空输入
+// 关闭只隐藏，文字和附件随会话保留。
 watch(() => props.visible, (v) => {
   if (v) {
     setTimeout(() => inputRef.value?.focus(), 100)
-  } else {
-    inputText.value = ''
-    images.value = []
-    imageError.value = ''
   }
 })
 
 function handleKeydown(e: KeyboardEvent) {
+  if (e.isComposing || e.keyCode === 229) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     sendMessage()
@@ -91,20 +100,22 @@ function validationMessage(error: ImageValidationError): string {
 }
 
 async function addFiles(files: Iterable<File>) {
-  if (props.disabled) return
+  if (props.disabled || isAddingImages.value) return
+  // 异步读图完成时仍写回原会话，避免切换会话后附件串入。
+  const target = draft.value
   imageError.value = ''
   const result = validateImageFiles(files, images.value)
   if (result.error) imageError.value = validationMessage(result.error)
   if (result.accepted.length === 0) return
 
-  isAddingImages.value = true
+  target.adding = true
   try {
     const added = await Promise.all(result.accepted.map(createImageAttachment))
-    images.value.push(...added)
+    target.images.push(...added)
   } catch {
-    imageError.value = t('chat.input.imageErrors.readFailed')
+    target.error = t('chat.input.imageErrors.readFailed')
   } finally {
-    isAddingImages.value = false
+    target.adding = false
   }
 }
 

@@ -416,7 +416,7 @@ async function handleSelectCharacter(charId: string) {
 
       <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
       <div class="input-wrapper" :class="{ open: chat.showInput }">
-        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" @send="handleSend"
+        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId" @send="handleSend"
           @close="chat.closeInput()" />
       </div>
     </div>
