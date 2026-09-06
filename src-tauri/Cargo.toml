@@ -1,6 +1,6 @@
 [package]
 name = "kisaki"
-version = "0.2.10"
+version = "0.2.11"
 description = "Local-first AI desktop companion with customizable characters"
 authors = ["AoralsFout"]
 edition = "2021"
