@@ -13,6 +13,9 @@ export interface CharacterEdits {
   voiceModel?: string
   voiceLanguage: string
   textLanguage: string
+  // —— 基本信息（name 空值回退 id 由调用方保证；description 空串=清除） ——
+  name?: string
+  description?: string
   // —— GPT-SoVITS 角色级覆盖 ——
   gptsovitsRefAudio?: string
   gptsovitsPromptText?: string
@@ -41,6 +44,9 @@ export function buildCharacterJson(
   out.voiceModel = edits.voiceModel || undefined
   out.voiceLanguage = edits.voiceLanguage
   out.textLanguage = edits.textLanguage
+  // 基本信息：未编辑（undefined）保留原值；description 显式空串清除
+  if (edits.name !== undefined) out.name = edits.name
+  if (edits.description !== undefined) out.description = edits.description || undefined
   // GPT-SoVITS 角色级覆盖（显式 undefined 时删除旧值）
   if (edits.gptsovitsRefAudio !== undefined) {
     out.gptsovitsRefAudio = edits.gptsovitsRefAudio || undefined

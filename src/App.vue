@@ -6,7 +6,6 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
 import DialogueBubble from './components/DialogueBubble.vue'
-import InputBox from './components/InputBox.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
@@ -19,7 +18,7 @@ import CommandExecution from './components/CommandExecution.vue'
 import DevPanel from './components/settings/DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
 import Onboarding from './components/Onboarding.vue'
-import { useChatStore } from './stores/chat'
+import { useChatStore, setChatCharacterIdentity } from './stores/chat'
 import { useSessionStore } from './stores/session'
 import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
@@ -30,9 +29,7 @@ import { resolveDisplayLanguage } from './stores/language'
 import { setAvailableCharacters, setOnCharacterSwitched, getAgentLive2DController } from './agent'
 import { createLogger } from './utils/logger'
 import {
-  WINDOW_MAIN,
   WINDOW_SETTINGS,
-  WINDOW_LOGS,
   QUERY_DEV,
   QUERY_SETTINGS,
   QUERY_LOGS,
@@ -69,10 +66,45 @@ const noCharacter = computed(() => charReady.value && charStore.availableList.le
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
 const bubbleRef = ref<InstanceType<typeof DialogueBubble> | null>(null)
 
-const showHistory = ref(false)
+// 聊天面板（会话标题 + 消息列表 + 输入框连续面板）与其它浮层
+const showChatPanel = ref(false)
 const showSession = ref(false)
 const showCharacterSelect = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
+
+/** 打开聊天面板；会话/换角色等其它浮层互斥关闭 */
+function openChatPanel() {
+  if (noCharacter.value) {
+    openSettingsWindow('character')
+    return
+  }
+  showChatPanel.value = true
+  showSession.value = false
+  showCharacterSelect.value = false
+}
+
+// ── 「更多」菜单：语音、穿透、会话、设置收敛于此（日志入口在 设置 → 诊断） ──
+const showMoreMenu = ref(false)
+
+function toggleMoreMenu() {
+  showMoreMenu.value = !showMoreMenu.value
+}
+
+function closeMoreMenu() {
+  showMoreMenu.value = false
+}
+
+/** 「更多」菜单项动作：先收起菜单再执行 */
+function menuAct(action: () => void) {
+  closeMoreMenu()
+  action()
+}
+
+/** 从聊天面板头部跳转会话管理 */
+function openSessions() {
+  showChatPanel.value = false
+  showSession.value = true
+}
 
 function toggleTts() {
   ttsEnabled.value = !ttsEnabled.value
@@ -205,6 +237,8 @@ onMounted(async () => {
   if (charStore.prompt) {
     applyCharacterPersona()
   }
+  // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
+  setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
   // 注入“AI 自助切换角色后刷新人格”回调（switch_character 工具会调用）
   setOnCharacterSwitched(applyCharacterPersona)
 
@@ -278,19 +312,13 @@ function handleCharacterClick() {
     bubbleRef.value?.skipTyping()
     return
   }
-  chat.openInput()
+  openChatPanel()
 }
 
 async function handleSend(payload: ChatInputPayload): Promise<boolean> {
   if (noCharacter.value || chat.isProcessing) return false
   if (charStore.render === 'illustration' && !getCharacterController()) return false
-  const sessionId = sessionStore.currentSessionId
-  const accepted = await chat.sendMessage(payload)
-  if (sessionId === sessionStore.currentSessionId) {
-    if (accepted) chat.closeInput()
-    else chat.openInput()
-  }
-  return accepted
+  return await chat.sendMessage(payload)
 }
 
 async function openSettingsWindow(tab?: string) {
@@ -323,37 +351,6 @@ async function openSettingsWindow(tab?: string) {
     })
   } catch (e) {
     log.error('无法打开设置窗口', e)
-  }
-}
-
-async function openLogWindow() {
-  try {
-    const all = await getAllWindows()
-    const existing = all.find(w => w.label === WINDOW_LOGS)
-    if (existing) {
-      await existing.unminimize()
-      await existing.show()
-      await existing.setFocus()
-      return
-    }
-
-    const appWindow = all.find(w => w.label === WINDOW_MAIN)
-    const mainPos = appWindow ? await appWindow.outerPosition() : undefined
-    const mainSize = appWindow ? await appWindow.outerSize() : undefined
-
-    new WebviewWindow(WINDOW_LOGS, {
-      url: `/?${QUERY_LOGS}=1`,
-      title: t('window.logs'),
-      width: 800,
-      height: 500,
-      x: mainPos ? mainPos.x + (mainSize?.width ?? 400) : undefined,
-      y: mainPos ? mainPos.y : undefined,
-      decorations: false,
-      resizable: true,
-      visible: false,
-    })
-  } catch (e) {
-    log.error('无法打开日志窗口', e)
   }
 }
 
@@ -414,76 +411,74 @@ async function handleSelectCharacter(charId: string) {
       <DialogueBubble ref="bubbleRef" :text="chat.currentBubbleText" :thinking="chat.currentThinking"
         :visible="chat.showBubble" :typing="chat.isTyping" @typing-end="chat.isTyping = false" />
 
+      <!-- 状态行：停止生成 / 配置待办；无内容时不渲染，出现时不推动工具栏位置 -->
+      <div v-if="chat.isProcessing || showConfigTodo" class="status-row" data-pet-solid>
+        <button v-if="chat.isProcessing" class="stop-btn" @click="chat.cancelResponse()"
+          :aria-label="t('app.aria.stop')">
+          <i class="fas fa-stop"></i>
+          <span>{{ t('app.stop') }}</span>
+        </button>
+        <button v-if="showConfigTodo" class="stop-btn config-todo" @click="showOnboarding = true"
+          :aria-label="t('app.aria.configTodo')">
+          <i class="fas fa-clipboard-check"></i>
+          <span>{{ t('app.configTodo') }}</span>
+        </button>
+      </div>
+
       <div class="bars">
         <!-- 工作区条（AI 文件读写目录，按会话独立） -->
         <WorkspaceChip v-if="!noCharacter" />
 
-        <!-- 工具按钮行（悬停展开文字） -->
+        <!-- 陪伴状态工具栏：聊天 / 换角色 / 更多（语音、穿透、会话、设置收敛进更多；日志入口在 设置 → 诊断） -->
         <div class="toolbar" data-pet-solid>
-          <button class="tool-btn" :disabled="noCharacter" @click="chat.openInput()"
+          <button class="tool-btn" :disabled="noCharacter" @click="openChatPanel"
             :aria-label="t('app.aria.chatInput')">
             <i class="fas fa-comment btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
-          </button>
-          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showSession = !showSession"
-            :aria-label="t('app.aria.session')">
-            <i class="fas fa-comments btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.session') }}</span>
-          </button>
-          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="showHistory = !showHistory"
-            :aria-label="t('app.aria.history')">
-            <i class="fas fa-clipboard-list btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.history') }}</span>
           </button>
           <button class="tool-btn" :disabled="chat.isProcessing || noCharacter"
             @click="showCharacterSelect = !showCharacterSelect" :aria-label="t('app.aria.switchCharacter')">
             <i class="fas fa-rotate btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.character') }}</span>
           </button>
-          <button class="tool-btn" :class="{ 'tts-off': !ttsEnabled }" @click="toggleTts"
-            :aria-label="ttsEnabled ? t('app.aria.ttsOff') : t('app.aria.ttsOn')">
-            <i class="fas fa-volume-high btn-icon"></i>
-            <span class="btn-label">{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
-          </button>
-          <button class="tool-btn" :class="{ 'tts-off': !passthroughOn }" @click="togglePassthrough"
-            :aria-label="passthroughOn ? t('app.aria.passthroughOff') : t('app.aria.passthroughOn')">
-            <i class="fas fa-arrow-pointer btn-icon"></i>
-            <span class="btn-label">{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
-          </button>
-          <button class="tool-btn" @click="openLogWindow()" :aria-label="t('app.aria.logs')">
-            <i class="fas fa-receipt btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.logs') }}</span>
-          </button>
-          <button class="tool-btn" @click="openSettingsWindow()" :aria-label="t('app.aria.settings')">
-            <i class="fas fa-gear btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.settings') }}</span>
-          </button>
+          <div class="more-wrap">
+            <button class="tool-btn" :class="{ active: showMoreMenu }" @click="toggleMoreMenu"
+              :aria-expanded="showMoreMenu" aria-haspopup="menu" :aria-label="t('app.aria.more')">
+              <i class="fas fa-ellipsis btn-icon"></i>
+              <span class="btn-label">{{ t('app.toolbar.more') }}</span>
+            </button>
+            <Transition name="menu-fade">
+              <div v-if="showMoreMenu" class="more-menu" role="menu" data-pet-solid>
+                <button class="menu-item" role="menuitem" @click="menuAct(toggleTts)">
+                  <i class="fas fa-volume-high menu-icon" :class="{ 'is-off': !ttsEnabled }"></i>
+                  <span>{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
+                </button>
+                <button class="menu-item" role="menuitem" @click="menuAct(togglePassthrough)">
+                  <i class="fas fa-arrow-pointer menu-icon" :class="{ 'is-off': !passthroughOn }"></i>
+                  <span>{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
+                </button>
+                <button class="menu-item" role="menuitem" :disabled="chat.isProcessing || noCharacter"
+                  @click="menuAct(() => { showSession = true })">
+                  <i class="fas fa-comments menu-icon"></i>
+                  <span>{{ t('app.toolbar.session') }}</span>
+                </button>
+                <button class="menu-item" role="menuitem" @click="menuAct(() => { openSettingsWindow() })">
+                  <i class="fas fa-gear menu-icon"></i>
+                  <span>{{ t('app.toolbar.settings') }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
-
-        <!-- 停止生成按钮（仅在 AI 生成中显示） -->
-        <button v-if="chat.isProcessing" class="stop-btn" data-pet-solid @click="chat.cancelResponse()"
-          :aria-label="t('app.aria.stop')">
-          <i class="fas fa-stop"></i>
-          <span>{{ t('app.stop') }}</span>
-        </button>
       </div>
 
-      <!-- 配置待办（引导被搁置且配置未完成时可恢复） -->
-      <button v-if="showConfigTodo" class="stop-btn config-todo" data-pet-solid @click="showOnboarding = true"
-        :aria-label="t('app.aria.configTodo')">
-        <i class="fas fa-clipboard-check"></i>
-        <span>{{ t('app.configTodo') }}</span>
-      </button>
-
-      <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
-      <div class="input-wrapper" :class="{ open: chat.showInput }">
-        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId" :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
-          @close="chat.closeInput()" />
-      </div>
+      <!-- 点击「更多」菜单外的任意位置关闭菜单 -->
+      <div v-if="showMoreMenu" class="menu-backdrop" data-pet-solid @click="closeMoreMenu"></div>
     </div>
 
     <!-- 面板 -->
-    <ChatHistory :visible="showHistory" @close="showHistory = false" />
+    <ChatHistory :visible="showChatPanel" :submit="handleSend" @close="showChatPanel = false"
+      @switch-session="openSessions" />
     <SessionList :visible="showSession" @close="showSession = false" />
     <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false"
       @select="handleSelectCharacter" />
@@ -603,19 +598,6 @@ async function handleSelectCharacter(charId: string) {
   border-color: transparent;
 }
 
-/* ---- 输入框展开动画（缓慢抬升工具栏/气泡） ---- */
-.input-wrapper {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.4s ease;
-  width: 100%;
-  pointer-events: auto;
-}
-
-.input-wrapper.open {
-  max-height: 380px;
-}
-
 /* ---- 底部工具栏 ---- */
 .bottom-area {
   position: absolute;
@@ -634,26 +616,26 @@ async function handleSelectCharacter(charId: string) {
 }
 
 .bars {
-  display: grid;
-  /* 三列 */
-  grid-template-columns: 3fr 7fr 3fr;
-  max-width: 600px;
-  gap: 6px;
-
-  :chlidren {
-    width: 30%;
-  }
+  display: flex;
+  flex-direction: row;
+  align-items: stretch; /* 工作区条与工具栏等高，垂直居中对齐 */
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .toolbar {
   display: flex;
   gap: 6px;
-  margin-bottom: 8px;
   background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
   padding: 6px 10px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  /* 高于 menu-backdrop（z:45）：backdrop-filter 使工具栏成为独立堆叠上下文，
+     不抬层会让内部 z 更高的菜单整体被遮罩盖住 */
+  position: relative;
+  z-index: 46;
 }
 
 .tool-btn {
@@ -704,21 +686,97 @@ async function handleSelectCharacter(charId: string) {
   opacity: 1;
 }
 
-.tool-btn.tts-off {
-  opacity: 0.5;
+.tool-btn.active {
+  background: rgba(255, 255, 255, 0.14);
 }
 
-.tool-btn.tts-off:hover {
-  opacity: 0.8;
+/* ---- 「更多」菜单 ---- */
+.more-wrap {
+  position: relative;
+  display: flex;
 }
 
-/* ---- 停止生成按钮 ---- */
+.more-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  min-width: 150px;
+  padding: 6px;
+  background: rgba(20, 20, 35, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-overlay);
+  z-index: 55;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--c-text);
+  font-size: var(--fs-body);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menu-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.menu-icon {
+  width: 16px;
+  text-align: center;
+  color: var(--c-brand-text);
+}
+
+.menu-icon.is-off {
+  color: var(--c-text-muted);
+}
+
+/* 菜单打开时铺满窗口的透明点击捕获层 */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: transparent;
+}
+
+.menu-fade-enter-active,
+.menu-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.menu-fade-enter-from,
+.menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* ---- 停止生成 / 配置待办（共用固定高度状态行） ---- */
+.status-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+
 .stop-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-bottom: 8px;
   background: rgba(210, 60, 60, 0.88);
   color: var(--c-text-bright);
   border: none;

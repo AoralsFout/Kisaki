@@ -75,6 +75,17 @@ export interface ChatMessage {
   /** 用户本轮发送的图片；仅用户消息使用。 */
   images?: ImageAttachment[]
   timestamp: number
+  /** 消息发出时的角色身份快照（assistant 消息）；旧数据缺失时由界面回退当前角色名 */
+  charId?: string
+  charName?: string
+}
+
+/** 角色身份来源：由 App 注入（避免 store 直接依赖 Pinia 角色状态） */
+let characterIdentity: (() => { id: string; name: string } | null) | null = null
+
+/** 注入角色身份读取函数，assistant 消息落库时记录身份快照 */
+export function setChatCharacterIdentity(getter: () => { id: string; name: string } | null): void {
+  characterIdentity = getter
 }
 
 /** 工具调用活动（主窗口右侧列表用，临时态，不持久化） */
@@ -1077,6 +1088,8 @@ export const useChatStore = defineStore('chat', () => {
     log.trace('[%s] ▶ role=%s text=%d字 thinking=%d字', _fn, role, msgLen, thinkLen)
     log.debug('[%s] 消息ID=%s role=%s text="%s"', _fn, id, role, text.slice(0, 60))
 
+    // assistant 消息记录当时的角色身份快照；旧会话数据无此字段，界面按当前角色回退
+    const identity = role === 'assistant' ? characterIdentity?.() ?? null : null
     messages.value.push({
       id,
       role,
@@ -1085,6 +1098,8 @@ export const useChatStore = defineStore('chat', () => {
       voice: voice || undefined,
       images: images?.length ? images : undefined,
       timestamp: Date.now(),
+      charId: identity?.id,
+      charName: identity?.name,
     })
 
     log.debug('[%s] ✓ 已添加: 当前消息总数=%d 最新ID=%s', _fn, messages.value.length, id)

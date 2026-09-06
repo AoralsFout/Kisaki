@@ -67,10 +67,9 @@ function clearWorkspace() {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-bottom: 8px;
   background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
-  padding: 4px 8px 4px 4px;
+  padding: 4px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.06);
 }

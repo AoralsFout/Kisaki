@@ -52,12 +52,12 @@ function toolLabel(name: string): string {
 
 <style scoped>
 .tool-activity {
+  /* 就近展示：贴在底部交互区上方（输入/确认卡附近），处理时自动显现 */
   position: absolute;
   right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 140px;
   z-index: 60;
-  max-height: 70vh;
+  max-height: 46vh;
   overflow: hidden;
   pointer-events: none; /* 纯展示，不拦截鼠标 */
 }

@@ -57,6 +57,23 @@ describe('buildCharacterJson', () => {
     expect(out.futureField).toEqual({ keep: true })
   })
 
+  it('name/description 编辑：提供时覆盖，未提供保留原值', () => {
+    const data: any = { id: 'k', name: '旧名', description: '旧描述', version: 2, render: 'illustration', poses: [], emotions: [], costumes: [], images: [] }
+    const out = buildCharacterJson(data, 'illustration', { ...baseEdits, name: '新名', description: '新描述' })
+    expect(out.name).toBe('新名')
+    expect(out.description).toBe('新描述')
+
+    const untouched = buildCharacterJson(data, 'illustration', baseEdits)
+    expect(untouched.name).toBe('旧名')
+    expect(untouched.description).toBe('旧描述')
+  })
+
+  it('description 空串清除，name 空串由调用方保证不出现（原样写入）', () => {
+    const data: any = { id: 'k', name: 'K', description: 'd', version: 2, render: 'illustration', poses: [], emotions: [], costumes: [], images: [] }
+    const out = buildCharacterJson(data, 'illustration', { ...baseEdits, description: '' })
+    expect(out.description).toBeUndefined()
+  })
+
   it('voice 空串清除为 undefined（JSON 序列化时被丢弃）', () => {
     const data: any = { id: 'k', name: 'K', description: '', version: 2, prompt: '', render: 'illustration', voice: 'old', poses: [], emotions: [], costumes: [], images: [] }
     const out = buildCharacterJson(data, 'illustration', { ...baseEdits, voice: '' })

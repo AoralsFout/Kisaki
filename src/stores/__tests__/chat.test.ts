@@ -208,6 +208,28 @@ describe('ChatStore - 消息管理', () => {
     expect(store.messages.length).toBe(1)
   })
 
+  it('assistant 消息记录角色身份快照；无身份来源或 user 消息不记录', async () => {
+    const { useChatStore, setChatCharacterIdentity } = await import('../chat')
+    setChatCharacterIdentity(() => ({ id: 'kisaki', name: 'Kisaki' }))
+    const store = useChatStore()
+    store.addMessage('assistant', '回复1')
+    expect(store.messages[0].charId).toBe('kisaki')
+    expect(store.messages[0].charName).toBe('Kisaki')
+
+    // 身份来源返回 null（如角色未加载）：字段缺省，界面回退展示
+    setChatCharacterIdentity(() => null)
+    store.addMessage('assistant', '回复2')
+    expect(store.messages[1].charId).toBeUndefined()
+    expect(store.messages[1].charName).toBeUndefined()
+
+    // user 消息不记录身份快照
+    store.addMessage('user', '提问')
+    expect(store.messages[2].charId).toBeUndefined()
+    expect(store.messages[2].charName).toBeUndefined()
+
+    setChatCharacterIdentity(() => null)
+  })
+
   it('消息包含 id 和 timestamp', async () => {
     const { useChatStore } = await import('../chat')
     const store = useChatStore()

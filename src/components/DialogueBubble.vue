@@ -7,7 +7,7 @@
  * - typing=false：直接显示完整文本
  * - 打字速度可在设置面板中调整（localStorage: deskpet-typing-speed）
  */
-import { ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getTypingSpeed } from '../stores/language'
 
@@ -35,6 +35,21 @@ const emit = defineEmits<{
 const displayText = ref('')
 const isAnimating = ref(false)
 let typingTimer: ReturnType<typeof setInterval> | null = null
+
+/** 长回复判断：超过约 6 行（≈140 字符或 6 个换行）时提供展开能力 */
+const LINE_BREAK = String.fromCharCode(10)
+const isLong = computed(() => displayText.value.length > 140 || displayText.value.split(LINE_BREAK).length > 6)
+const expanded = ref(false)
+
+function toggleExpand() {
+  if (isLong.value && !isAnimating.value) expanded.value = !expanded.value
+}
+
+/** 气泡点击：打字中=跳过动画；否则长回复时切换展开 */
+function onBubbleClick() {
+  if (isAnimating.value) { skipTyping(); return }
+  toggleExpand()
+}
 
 function cleanupTimer() {
   if (typingTimer !== null) {
@@ -70,6 +85,7 @@ watch(
   (newText) => {
     cleanupTimer()
     isAnimating.value = false
+    expanded.value = false
 
     const text = newText ?? ''
     if (!text) {
@@ -103,7 +119,7 @@ defineExpose({ skipTyping })
 
 <template>
   <div v-show="visible" class="bubble-wrapper" data-pet-solid>
-    <div :class="['bubble-body', variant]" @click="skipTyping">
+    <div :class="['bubble-body', variant, { expanded }]" @click="onBubbleClick">
       <!-- 思考内容（灰色斜体，折叠样式） -->
       <details v-if="thinking" class="thinking-block" @click.stop>
         <summary class="thinking-summary">{{ t('chat.bubble.thinking') }}</summary>
@@ -115,6 +131,12 @@ defineExpose({ skipTyping })
 
       <!-- 光标（打字机动画中） -->
       <span v-if="isAnimating" class="cursor">▌</span>
+
+      <!-- 长回复展开/收起 -->
+      <button v-if="isLong && !isAnimating" class="bubble-toggle" @click.stop="toggleExpand"
+        :aria-expanded="expanded" :title="expanded ? t('chat.bubble.collapse') : t('chat.bubble.expand')">
+        <i class="fas" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </button>
     </div>
   </div>
 </template>
@@ -145,8 +167,46 @@ defineExpose({ skipTyping })
 .bubble-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  max-height: 100px;
-  overflow-y: scroll;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+/* 展开态：不限制高度，完整阅读长回复 */
+.bubble-body.expanded .bubble-text {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.bubble-toggle {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  width: 22px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.06);
+  color: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.bubble-toggle:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.bubble-body.dark .bubble-toggle {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bubble-body.dark .bubble-toggle:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 /* ---- 思考内容 ---- */

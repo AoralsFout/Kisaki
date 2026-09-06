@@ -1,38 +1,54 @@
 <script setup lang="ts">
 /**
- * 对话历史面板
+ * 聊天面板 —— 会话标题 + 消息列表 + 输入框的连续面板
  *
- * 展示所有历史消息，可滚动，最新消息在最下方。
+ * 取代「历史浮层 + 底部悬浮输入框」的往返切换：打开即读、即输入。
+ * - 头部：当前会话标题（可跳转会话管理）、上下文预算、清空；
+ * - 中部：完整历史消息（生成中仍可阅读，回档/清空等改变上下文的操作被锁定）；
+ * - 底部：内嵌 InputBox，草稿按会话隔离。
  */
 import { ref, watch, nextTick } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import InputBox from './InputBox.vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { useSessionStore } from '../stores/session'
+import { useCharacterStore } from '../character'
+import type { ChatInputPayload } from '../ai'
 
 const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   visible?: boolean
+  /** 发送回调（App 提供，等待父组件接受结果） */
+  submit?: (payload: ChatInputPayload) => Promise<boolean>
 }>(), {
   visible: false,
 })
 
 const emit = defineEmits<{
   close: []
+  'switch-session': []
 }>()
 
 const chat = useChatStore()
 const sessionStore = useSessionStore()
+const charStore = useCharacterStore()
 const listRef = ref<HTMLElement | null>(null)
 const clearTarget = ref<{ id: string; name: string } | null>(null)
 function requestClear() {
+  if (chat.isProcessing) return // 生成中锁定改变上下文的操作
   const session = sessionStore.currentSession
   if (session) clearTarget.value = { id: session.id, name: session.name }
 }
 function confirmClear() {
   if (clearTarget.value?.id === sessionStore.currentSessionId) chat.clearMessages()
   clearTarget.value = null
+}
+
+/** 助手消息展示名：优先消息内的角色身份快照，旧数据回退当前角色名/品牌名 */
+function assistantLabel(charName?: string): string {
+  return charName || charStore.name || 'Kisaki'
 }
 
 /** 正在二次确认回档的消息 id */
@@ -64,16 +80,19 @@ watch(() => props.visible, (v) => {
   }
 })
 
-// 消息数量变化时自动滚到底部
+// 滚到底部：新消息平滑滚动；面板打开时瞬时定位（不做进入动画）
+function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+  nextTick(() => {
+    listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior })
+  })
+}
 watch(
   () => chat.messages.length,
-  () => {
-    if (props.visible) {
-      nextTick(() => {
-        listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior: 'smooth' })
-      })
-    }
-  },
+  () => { if (props.visible) scrollToBottom() },
+)
+watch(
+  () => props.visible,
+  (v) => { if (v) scrollToBottom('auto') },
 )
 </script>
 
@@ -81,16 +100,19 @@ watch(
   <ConfirmDialog :visible="Boolean(clearTarget)" :title="t('safety.clearTitle')"
     :message="t('safety.clearBody', { name: clearTarget?.name })" :confirm-label="t('safety.clearAction')" danger
     @cancel="clearTarget = null" @confirm="confirmClear" />
-  <Transition name="panel-slide">
-    <div v-if="visible" class="history-overlay" data-pet-solid>
+  <div v-if="visible" class="history-overlay" data-pet-solid>
       <div class="history-panel">
-        <!-- 头部 -->
+        <!-- 头部：会话标题 + 操作 -->
         <div class="history-header">
-          <span class="history-title"><i class="fas fa-clipboard-list"></i> {{ t('chat.history.title') }}</span>
+          <button class="session-title" :title="t('chat.history.switchSession')" @click="emit('switch-session')">
+            <i class="fas fa-comments"></i>
+            <span class="session-name">{{ sessionStore.currentSession?.name ?? t('chat.history.title') }}</span>
+            <i class="fas fa-chevron-up session-switch-hint"></i>
+          </button>
           <div class="header-actions">
             <span class="msg-count">{{ t('chat.history.count', { n: chat.messages.length }) }}</span>
-            <button class="btn-clear" @click="requestClear" :title="t('chat.history.clear')"><i
-                class="fas fa-trash-can"></i></button>
+            <button class="btn-clear" :disabled="chat.isProcessing" @click="requestClear"
+              :title="t('chat.history.clear')"><i class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
         </div>
@@ -107,7 +129,7 @@ watch(
           <span v-if="chat.contextStats.summarizedRounds > 0">{{ t('chat.history.summarized', { n: chat.contextStats.summarizedRounds }) }}</span>
         </div>
 
-        <!-- 消息列表 -->
+        <!-- 消息列表（生成中仍可阅读） -->
         <div ref="listRef" class="message-list">
           <div v-if="chat.messages.length === 0" class="empty-hint">
             {{ t('chat.history.empty') }}
@@ -120,7 +142,7 @@ watch(
             </div>
             <div class="msg-content">
               <div class="msg-role-label">
-                {{ msg.role === 'user' ? t('chat.history.you') : 'Kisaki' }}
+                {{ msg.role === 'user' ? t('chat.history.you') : assistantLabel(msg.charName) }}
                 <span class="msg-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</span>
               </div>
               <!-- 思考内容（仅 assistant 消息可能有） -->
@@ -156,9 +178,14 @@ watch(
           <!-- 底部占位，确保最后一条不被遮挡 -->
           <div class="list-end"></div>
         </div>
+
+        <!-- 输入区：与消息列表同面板，免去历史/输入往返切换 -->
+        <div class="panel-input">
+          <InputBox :visible="visible" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId"
+            :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="submit" />
+        </div>
       </div>
     </div>
-  </Transition>
 </template>
 
 <style scoped>
@@ -174,8 +201,8 @@ watch(
 
 .history-panel {
   width: 100%;
-  max-width: 520px;
-  max-height: 80vh;
+  max-width: min(520px, 94vw);
+  max-height: 86vh;
   background: rgba(20, 20, 35, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px 16px 0 0;
@@ -195,10 +222,38 @@ watch(
   flex-shrink: 0;
 }
 
-.history-title {
-  font-size: 14px;
+/* 会话标题：点击跳转会话管理 */
+.session-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  margin-left: -8px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--c-text-bright);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.session-title:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.session-name {
+  font-size: var(--fs-body);
   font-weight: 600;
-  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.session-switch-hint {
+  font-size: 10px;
+  color: var(--c-text-muted);
 }
 
 .context-status {
@@ -249,8 +304,13 @@ watch(
   color: rgba(255, 255, 255, 0.4);
 }
 
-.btn-clear:hover {
+.btn-clear:hover:not(:disabled) {
   opacity: 1;
+}
+
+.btn-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.25;
 }
 
 .btn-close {
@@ -279,10 +339,12 @@ watch(
 }
 
 .msg-images {
+  /* 多图自适应换行，窄窗口不裁切 */
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 120px));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 6px;
   margin-bottom: 7px;
+  max-width: 280px;
 }
 
 .msg-images img {
@@ -481,15 +543,10 @@ watch(
   flex-shrink: 0;
 }
 
-/* ---- 过渡动画 ---- */
-.panel-slide-enter-active,
-.panel-slide-leave-active {
-  transition: all 0.25s ease;
-}
-
-.panel-slide-enter-from,
-.panel-slide-leave-to {
-  transform: translateY(30px);
-  opacity: 0;
+/* ---- 底部输入区：与消息列表同面板 ---- */
+.panel-input {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(16, 16, 30, 0.92);
 }
 </style>

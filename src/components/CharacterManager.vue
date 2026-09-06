@@ -58,6 +58,11 @@ const editableCostumes = ref<string[]>([])
 const editableLive2dConfig = ref<Live2DConfig>({ model: '' })
 const live2dManifest = ref<Live2DManifest | null>(null)
 const hasChanges = ref(false)
+// 基本信息：名称在顶栏编辑，描述在「基本信息」分区
+const editingName = ref('')
+const editingDesc = ref('')
+// 右侧预览可收起，避免固定宽度挤压编辑区
+const previewCollapsed = ref(false)
 
 // ---- 创建角色表单 ----
 const showCreateForm = ref(false)
@@ -290,6 +295,8 @@ async function loadData() {
   await loadPrompt()
   const data = charStore.data
   if (!data) return
+  editingName.value = data.name ?? editingId.value
+  editingDesc.value = (data as any).description ?? ''
   editableImages.value = JSON.parse(JSON.stringify(data.images))
   editablePoses.value = [...data.poses]
   editableCostumes.value = [...data.costumes]
@@ -547,6 +554,9 @@ async function persistAll() {
 
   const render = charStore.render
   const edits: CharacterEdits = {
+    // 名称留空时回退为角色 id（与创建表单一致）；描述空串=清除
+    name: editingName.value.trim() || editingId.value,
+    description: editingDesc.value,
     voice: selectedVoice.value || undefined,
     voiceModel: selectedVoiceModel.value || undefined,
     voiceLanguage: selectedVoiceLang.value,
@@ -757,9 +767,15 @@ async function importPack() {
       <div class="editor-left">
         <div class="editor-sticky">
           <div class="editor-topbar">
-            <h2 class="editor-title"><i class="fas fa-masks-theater"></i> {{ editingId.charAt(0).toUpperCase() + editingId.slice(1) }}</h2>
+            <button class="btn-back" @click="backToList">{{ t('common.back') }}</button>
+            <!-- 名称固定在顶栏编辑，随保存写入 character.json -->
+            <input v-model="editingName" class="editor-name-input" :placeholder="editingId"
+              :aria-label="t('character.mgr.nameLabel')" @input="markChanged" />
             <div class="editor-actions">
-              <button class="btn-back" @click="backToList">{{ t('common.back') }}</button>
+              <button class="btn-icon-btn" :class="{ active: !previewCollapsed }" :aria-pressed="!previewCollapsed"
+                :title="t('character.mgr.previewToggle')" @click="previewCollapsed = !previewCollapsed">
+                <i class="fas" :class="previewCollapsed ? 'fa-eye' : 'fa-eye-slash'"></i>
+              </button>
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
                 <i v-if="hasChanges" class="fas fa-floppy-disk"></i> {{ saving ? t('safety.saving') : t('character.mgr.saveBtn') }}
               </button>
@@ -780,169 +796,96 @@ async function importPack() {
         </div>
 
         <div class="editor-body">
-          <!-- 提示词 -->
+          <!-- ── 基本信息 ── -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-pencil"></i> {{ t('character.mgr.prompt') }}</h3>
+            <h3 class="mgr-label"><i class="fas fa-id-badge"></i> {{ t('character.mgr.groupBasic') }}</h3>
+            <div class="form-group">
+              <label class="lang-label">{{ t('character.mgr.descLabel') }}</label>
+              <input v-model="editingDesc" class="form-input" :placeholder="t('character.mgr.descPlaceholder')"
+                @input="markChanged" />
+            </div>
+            <p class="mgr-desc"><i class="fas fa-fingerprint"></i> ID: {{ editingId }}</p>
+          </section>
+
+          <!-- ── 人设 ── -->
+          <section class="mgr-section">
+            <h3 class="mgr-label"><i class="fas fa-pencil"></i> {{ t('character.mgr.groupPersona') }}</h3>
             <textarea v-model="promptText" class="mgr-textarea" rows="8" @input="markChanged"></textarea>
           </section>
 
-          <template v-if="charStore.render === 'illustration'">
-          <!-- 姿势列表 -->
+          <!-- ── 外观与动作 ── -->
           <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-person"></i> {{ t('character.mgr.poses') }}</h3>
-            <div class="tag-list">
-              <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" :title="t('character.mgr.clickToRemove')">{{ p }} ✕</span>
-              <template v-if="addingPose">
-                <input
-                  ref="poseInputRef"
-                  v-model="newPoseName"
-                  class="tag-input"
-                  :placeholder="t('character.mgr.tagInputPlaceholder')"
-                  @keydown.enter="commitNewPose"
-                  @keydown.esc="addingPose = false"
-                  @blur="commitNewPose"
-                />
-              </template>
-              <button v-else class="tag-add" @click="addingPose = true">{{ t('character.mgr.addTag') }}</button>
-            </div>
-          </section>
+            <h3 class="mgr-label"><i class="fas fa-images"></i> {{ t('character.mgr.groupAppearance') }}</h3>
 
-          <!-- 服装列表 -->
-          <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-shirt"></i> {{ t('character.mgr.costumes') }}</h3>
-            <div class="tag-list">
-              <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" :title="t('character.mgr.clickToRemove')">{{ c }} ✕</span>
-              <template v-if="addingCostume">
-                <input
-                  ref="costumeInputRef"
-                  v-model="newCostumeName"
-                  class="tag-input"
-                  :placeholder="t('character.mgr.tagInputPlaceholder')"
-                  @keydown.enter="commitNewCostume"
-                  @keydown.esc="addingCostume = false"
-                  @blur="commitNewCostume"
-                />
-              </template>
-              <button v-else class="tag-add" @click="addingCostume = true">{{ t('character.mgr.addTag') }}</button>
-            </div>
-          </section>
-          </template>
-
-          <!-- 语音合成：CosyVoice -->
-          <section v-if="ttsProvider === 'cosyvoice'" class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.voiceTitle') }}</h3>
-            <div class="voice-select-row">
-              <select v-model="selectedVoice" class="voice-select" @change="markChanged">
-                <option value="">{{ t('character.mgr.voiceNone') }}</option>
-                <option v-for="v in availableVoices" :key="v.voiceId" :value="v.voiceId">
-                  {{ v.voiceId }}
-                </option>
-              </select>
-              <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" :title="t('character.mgr.voiceRefresh')">
-                <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
-              </button>
-            </div>
-            <div v-if="selectedVoice" class="voice-preview-row">
-              <button
-                class="voice-preview-btn"
-                :class="{ playing: voicePreviewing }"
-                :disabled="!selectedVoice"
-                @click="previewVoice"
-              >
-                <i :class="voicePreviewing ? 'fas fa-stop' : 'fas fa-play'"></i>
-                {{ voicePreviewing ? t('character.mgr.previewStop') : t('character.mgr.preview') }}
-              </button>
-              <span class="voice-preview-hint">{{ voicePreviewText }}</span>
-            </div>
-            <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
-            <p v-else-if="availableVoices.length === 0" class="voice-hint">
-              {{ t('character.mgr.voiceNoneHint') }}
-            </p>
-            <p v-else-if="selectedVoice" class="voice-hint-ok">
-              <i class="fas fa-check-circle"></i> {{ t('character.mgr.voiceSelectedHint') }}
-            </p>
-          </section>
-
-          <!-- 语音合成：GPT-SoVITS -->
-          <section v-if="ttsProvider === 'gptsovits'" class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-server"></i> GPT-SoVITS</h3>
-            <p class="mgr-desc">{{ t('character.mgr.gptsovitsDesc') }}</p>
-
-            <div class="form-group gs-field">
-              <label class="lang-label">{{ t('character.mgr.gptsovitsRefAudio') }}</label>
-              <div class="file-picker-row">
-                <input v-model="gsRefAudio" class="form-input file-picker-input" type="text" readonly
-                  :placeholder="t('character.mgr.gptsovitsRefAudioPlaceholder')" @click="pickRefAudio" />
-                <button class="btn-browse" @click="pickRefAudio" :title="t('character.mgr.gptsovitsPickAudio')">
-                  <i class="fas fa-folder-open"></i>
-                </button>
+            <template v-if="charStore.render === 'illustration'">
+            <!-- 姿势 -->
+            <div class="mgr-field">
+              <div class="mgr-sublabel">{{ t('character.mgr.poses') }}</div>
+              <div class="tag-list">
+                <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" :title="t('character.mgr.clickToRemove')">{{ p }} ✕</span>
+                <template v-if="addingPose">
+                  <input
+                    ref="poseInputRef"
+                    v-model="newPoseName"
+                    class="tag-input"
+                    :placeholder="t('character.mgr.tagInputPlaceholder')"
+                    @keydown.enter="commitNewPose"
+                    @keydown.esc="addingPose = false"
+                    @blur="commitNewPose"
+                  />
+                </template>
+                <button v-else class="tag-add" @click="addingPose = true">{{ t('character.mgr.addTag') }}</button>
               </div>
             </div>
 
-            <div class="form-group gs-field">
-              <label class="lang-label">{{ t('character.mgr.gptsovitsPromptText') }}</label>
-              <input v-model="gsPromptText" class="form-input" type="text"
-                :placeholder="t('character.mgr.gptsovitsPromptTextPlaceholder')" @input="markChanged" />
-            </div>
-
-            <div class="form-group gs-field">
-              <label class="lang-label">{{ t('character.mgr.gptsovitsPromptLang') }}</label>
-              <select v-model="gsPromptLang" class="voice-select" @change="markChanged">
-                <option value="ja-JP">日本語</option>
-                <option value="zh-CN">中文</option>
-                <option value="en-US">English</option>
-                <option value="ko-KR">한국어</option>
-              </select>
-            </div>
-          </section>
-
-          <!-- 语音合成：语言设置（两引擎共用，none 时隐藏） -->
-          <section v-if="ttsProvider !== 'none'" class="mgr-section">
-            <div class="lang-row">
-              <div class="lang-field">
-                <label class="lang-label">{{ t('character.mgr.ttsLang') }}</label>
-                <select v-model="selectedVoiceLang" class="voice-select" @change="markChanged">
-                  <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
-                </select>
-              </div>
-              <div class="lang-field">
-                <label class="lang-label">{{ t('character.mgr.defaultDisplayLang') }}</label>
-                <select v-model="selectedTextLang" class="voice-select" @change="markChanged">
-                  <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
-                </select>
+            <!-- 服装 -->
+            <div class="mgr-field">
+              <div class="mgr-sublabel">{{ t('character.mgr.costumes') }}</div>
+              <div class="tag-list">
+                <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" :title="t('character.mgr.clickToRemove')">{{ c }} ✕</span>
+                <template v-if="addingCostume">
+                  <input
+                    ref="costumeInputRef"
+                    v-model="newCostumeName"
+                    class="tag-input"
+                    :placeholder="t('character.mgr.tagInputPlaceholder')"
+                    @keydown.enter="commitNewCostume"
+                    @keydown.esc="addingCostume = false"
+                    @blur="commitNewCostume"
+                  />
+                </template>
+                <button v-else class="tag-add" @click="addingCostume = true">{{ t('character.mgr.addTag') }}</button>
               </div>
             </div>
-          </section>
 
-          <template v-if="charStore.render === 'illustration'">
-          <!-- 立绘网格 -->
-          <section class="mgr-section">
-            <h3 class="mgr-label"><i class="fas fa-image"></i> {{ t('character.mgr.imagesTitle') }}</h3>
-            <div class="img-grid">
-              <div
-                v-for="img in editableImages"
-                :key="img.file"
-                :class="['img-card', { selected: editFile === img.file }]"
-                @click="editFile = img.file"
-              >
-                <div class="img-wrap">
-                  <img class="img-grid-thumb" :src="charStore.getImageUrl(img.file)" :alt="img.file" />
+            <!-- 立绘 -->
+            <div class="mgr-field">
+              <div class="mgr-sublabel">{{ t('character.mgr.imagesTitle') }}</div>
+              <div class="img-grid">
+                <div
+                  v-for="img in editableImages"
+                  :key="img.file"
+                  :class="['img-card', { selected: editFile === img.file }]"
+                  @click="editFile = img.file"
+                >
+                  <div class="img-wrap">
+                    <img class="img-grid-thumb" :src="charStore.getImageUrl(img.file)" :alt="img.file" />
+                  </div>
+                  <div class="img-grid-info">
+                    <div class="img-grid-name">{{ img.file }}</div>
+                    <div class="img-grid-tags">{{ img.pose }} · {{ img.costume }} · {{ img.emotions.join('、') }}</div>
+                  </div>
                 </div>
-                <div class="img-grid-info">
-                  <div class="img-grid-name">{{ img.file }}</div>
-                  <div class="img-grid-tags">{{ img.pose }} · {{ img.costume }} · {{ img.emotions.join('、') }}</div>
+                <div class="img-card img-card-add" @click="triggerAddImage">
+                  <div class="img-add-icon">+</div>
+                  <div class="img-grid-info">
+                    <div class="img-grid-name">{{ t('character.mgr.addImage') }}</div>
+                  </div>
                 </div>
               </div>
-              <div class="img-card img-card-add" @click="triggerAddImage">
-                <div class="img-add-icon">+</div>
-                <div class="img-grid-info">
-                  <div class="img-grid-name">{{ t('character.mgr.addImage') }}</div>
-                </div>
-              </div>
+              <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFilePicked" />
             </div>
-            <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFilePicked" />
-          </section>
-          </template>
+            </template>
 
           <!-- Live2D 编辑区 -->
           <Live2DEditor
@@ -952,12 +895,107 @@ async function importPack() {
             @change="markChanged"
             @import-model="handleImportLive2dModel"
           />
+
+            </section>
+
+          <!-- ── 语音 ── -->
+          <section class="mgr-section">
+            <h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.groupVoice') }}</h3>
+
+            <template v-if="ttsProvider === 'cosyvoice'">
+            <div class="mgr-field">
+              <div class="mgr-sublabel">{{ t('character.mgr.voiceTitle') }}</div>
+              <div class="voice-select-row">
+                <select v-model="selectedVoice" class="voice-select" @change="markChanged">
+                  <option value="">{{ t('character.mgr.voiceNone') }}</option>
+                  <option v-for="v in availableVoices" :key="v.voiceId" :value="v.voiceId">
+                    {{ v.voiceId }}
+                  </option>
+                </select>
+                <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" :title="t('character.mgr.voiceRefresh')">
+                  <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
+                </button>
+              </div>
+              <div v-if="selectedVoice" class="voice-preview-row">
+                <button
+                  class="voice-preview-btn"
+                  :class="{ playing: voicePreviewing }"
+                  :disabled="!selectedVoice"
+                  @click="previewVoice"
+                >
+                  <i :class="voicePreviewing ? 'fas fa-stop' : 'fas fa-play'"></i>
+                  {{ voicePreviewing ? t('character.mgr.previewStop') : t('character.mgr.preview') }}
+                </button>
+                <span class="voice-preview-hint">{{ voicePreviewText }}</span>
+              </div>
+              <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
+              <p v-else-if="availableVoices.length === 0" class="voice-hint">
+                {{ t('character.mgr.voiceNoneHint') }}
+              </p>
+              <p v-else-if="selectedVoice" class="voice-hint-ok">
+                <i class="fas fa-check-circle"></i> {{ t('character.mgr.voiceSelectedHint') }}
+              </p>
+            </div>
+            </template>
+
+            <template v-if="ttsProvider === 'gptsovits'">
+            <div class="mgr-field">
+              <div class="mgr-sublabel">GPT-SoVITS</div>
+              <p class="mgr-desc">{{ t('character.mgr.gptsovitsDesc') }}</p>
+
+              <div class="form-group gs-field">
+                <label class="lang-label">{{ t('character.mgr.gptsovitsRefAudio') }}</label>
+                <div class="file-picker-row">
+                  <input v-model="gsRefAudio" class="form-input file-picker-input" type="text" readonly
+                    :placeholder="t('character.mgr.gptsovitsRefAudioPlaceholder')" @click="pickRefAudio" />
+                  <button class="btn-browse" @click="pickRefAudio" :title="t('character.mgr.gptsovitsPickAudio')">
+                    <i class="fas fa-folder-open"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group gs-field">
+                <label class="lang-label">{{ t('character.mgr.gptsovitsPromptText') }}</label>
+                <input v-model="gsPromptText" class="form-input" type="text"
+                  :placeholder="t('character.mgr.gptsovitsPromptTextPlaceholder')" @input="markChanged" />
+              </div>
+
+              <div class="form-group gs-field">
+                <label class="lang-label">{{ t('character.mgr.gptsovitsPromptLang') }}</label>
+                <select v-model="gsPromptLang" class="voice-select" @change="markChanged">
+                  <option value="ja-JP">日本語</option>
+                  <option value="zh-CN">中文</option>
+                  <option value="en-US">English</option>
+                  <option value="ko-KR">한국어</option>
+                </select>
+              </div>
+            </div>
+            </template>
+
+            <div v-if="ttsProvider !== 'none'" class="mgr-field">
+              <div class="mgr-sublabel">{{ t('character.mgr.groupVoiceLang') }}</div>
+              <div class="lang-row">
+                <div class="lang-field">
+                  <label class="lang-label">{{ t('character.mgr.ttsLang') }}</label>
+                  <select v-model="selectedVoiceLang" class="voice-select" @change="markChanged">
+                    <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+                  </select>
+                </div>
+                <div class="lang-field">
+                  <label class="lang-label">{{ t('character.mgr.defaultDisplayLang') }}</label>
+                  <select v-model="selectedTextLang" class="voice-select" @change="markChanged">
+                    <option v-for="l in SUPPORTED_LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
-      <!-- 右栏：预览 -->
+      <!-- 右栏：预览（可收起，避免固定宽度挤压编辑区） -->
       <CharacterPreview
-        v-if="charStore.render === 'illustration'"
+        v-if="charStore.render === 'illustration' && !previewCollapsed"
         :image="editingImage"
         :image-url="editingImageUrl"
         :poses="editablePoses"
@@ -969,7 +1007,7 @@ async function importPack() {
         @delete="deleteImage"
         @close="editFile = null"
       />
-      <div v-else class="l2d-preview-panel">
+      <div v-else-if="charStore.render === 'live2d' && !previewCollapsed" class="l2d-preview-panel">
         <Live2DPreview :id="editingId" :config="editableLive2dConfig" />
       </div>
     </div>
@@ -1048,6 +1086,55 @@ async function importPack() {
   background: var(--c-panel);
   padding: 14px 0 12px;
   flex-shrink: 0;
+}
+
+.editor-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--c-text);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.editor-name-input:hover {
+  background: var(--c-hover);
+}
+
+.editor-name-input:focus {
+  border-color: var(--c-brand);
+  background: var(--c-control);
+  box-shadow: var(--focus-ring);
+}
+
+.btn-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-icon-btn:hover {
+  border-color: var(--c-brand);
+  color: var(--c-brand);
+}
+
+.btn-icon-btn.active {
+  border-color: var(--c-brand);
+  color: var(--c-brand);
+  background: var(--c-brand-soft);
 }
 
 .editor-topbar {
@@ -1228,6 +1315,17 @@ async function importPack() {
 /* ---- 表单 ---- */
 .mgr-section {
   margin-bottom: 20px;
+}
+
+.mgr-field {
+  margin-bottom: 16px;
+}
+
+.mgr-sublabel {
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  margin-bottom: 6px;
 }
 
 .mgr-label {
@@ -1477,7 +1575,8 @@ async function importPack() {
 
 /* Live2D 预览右栏 */
 .l2d-preview-panel {
-  width: 340px;
+  width: clamp(240px, 30vw, 340px);
+  min-width: 0;
   flex-shrink: 0;
   background: var(--c-bg);
   border-left: 1px solid var(--c-border);

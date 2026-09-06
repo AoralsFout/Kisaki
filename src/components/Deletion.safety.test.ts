@@ -15,6 +15,8 @@ vi.mock('../stores/session', () => ({ useSessionStore: () => ({
   deleteSession: stores.remove,
 }) }))
 vi.mock('../stores/chat', () => ({ useChatStore: () => ({ messages: [], contextStats: { utilization: 0, estimatedTokens: 0, maxContextTokens: 100 }, clearMessages: stores.clear }) }))
+// 聊天面板读取当前角色名做旧数据回退展示；此处无需真实角色 store
+vi.mock('../character', () => ({ useCharacterStore: () => ({ name: 'Kisaki' }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
 afterEach(() => { document.body.innerHTML = ''; vi.clearAllMocks(); stores.currentId = 'a' })
 
