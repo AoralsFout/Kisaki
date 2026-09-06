@@ -9,6 +9,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../../constants'
+import ToggleRow from '../ui/ToggleRow.vue'
 
 const { t } = useI18n()
 
@@ -16,12 +17,10 @@ const autoExec = ref(getAutoExecFiles())
 const commandEnabled = ref(getCommandEnabled())
 
 function onAutoExecChange() {
-  autoExec.value = !autoExec.value
   setAutoExecFiles(autoExec.value)
 }
 
 function onCommandEnabledChange() {
-  commandEnabled.value = !commandEnabled.value
   setCommandEnabled(commandEnabled.value)
 }
 </script>
@@ -31,30 +30,11 @@ function onCommandEnabledChange() {
     <h2 class="section-title"><i class="fas fa-user-shield"></i> {{ t('settings.permissions.title') }}</h2>
     <p class="section-desc">{{ t('settings.permissions.desc') }}</p>
 
-    <div class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.permissions.autoExecTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.permissions.autoExecDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: autoExec }]"
-          @click="onAutoExecChange" role="switch" :aria-checked="autoExec">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-model:checked="autoExec" :title="t('settings.permissions.autoExecTitle')"
+      :desc="t('settings.permissions.autoExecDesc')" @update:checked="onAutoExecChange" />
 
-    <div v-if="EXPERIMENTAL_COMMAND_AVAILABLE" class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.permissions.commandTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.permissions.commandDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: commandEnabled }]"
-          @click="onCommandEnabledChange" role="switch" :aria-checked="commandEnabled">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-if="EXPERIMENTAL_COMMAND_AVAILABLE" v-model:checked="commandEnabled"
+      :title="t('settings.permissions.commandTitle')" :desc="t('settings.permissions.commandDesc')"
+      @update:checked="onCommandEnabledChange" />
   </div>
 </template>

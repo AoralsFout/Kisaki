@@ -86,7 +86,7 @@ async function exitApp() {
       <img src="/images/kisaki_logo_alpha.png" height="70" />
       <p>{{ t('settings.about.desc1') }}</p>
       <p>{{ t('settings.about.desc2') }}</p>
-      <p style="margin-top:12px;color:#999;font-size:12px;">
+      <p style="margin-top:12px;color:var(--c-text-muted);font-size:12px;">
         {{ t('settings.about.privacy') }}
       </p>
       <hr class="section-divider" />
@@ -153,19 +153,19 @@ async function exitApp() {
 
 .update-status.checking,
 .update-status.downloading {
-  color: #ffa726;
+  color: var(--c-warn);
 }
 
 .update-status.up-to-date,
 .update-status.installed {
-  color: #30b94e;
+  color: var(--c-ok);
 }
 
 .update-status.available {
-  color: #9bb4ff;
+  color: var(--c-brand-text);
 }
 
 .update-status.error {
-  color: #ef5350;
+  color: var(--c-error);
 }
 </style>

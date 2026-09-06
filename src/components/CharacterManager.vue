@@ -1015,7 +1015,7 @@ async function importPack() {
   font-weight: 700;
   margin: 0 0 4px;
   padding: 16px 16px 0;
-  color: #e0e0e0;
+  color: var(--c-text);
 }
 
 /* ---- 编辑器双栏布局 ---- */
@@ -1045,7 +1045,7 @@ async function importPack() {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #1a1a2e;
+  background: var(--c-panel);
   padding: 14px 0 12px;
   flex-shrink: 0;
 }
@@ -1059,7 +1059,7 @@ async function importPack() {
 .editor-title {
   font-size: 18px;
   font-weight: 700;
-  color: #e0e0e0;
+  color: var(--c-text);
   margin: 0;
 }
 
@@ -1077,16 +1077,16 @@ async function importPack() {
 .btn-back {
   padding: 5px 14px;
   font-size: 13px;
-  border: 1px solid #2a2a4a;
-  background: #1e1e38;
-  color: #aaa;
+  border: 1px solid var(--c-border);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .btn-back:hover {
-  border-color: #4a7aff;
-  color: #4a7aff;
+  border-color: var(--c-brand);
+  color: var(--c-brand);
 }
 
 .btn-save-top {
@@ -1094,7 +1094,7 @@ async function importPack() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #4a7aff;
+  background: var(--c-brand);
   color: white;
   border-radius: 20px;
   cursor: pointer;
@@ -1106,17 +1106,17 @@ async function importPack() {
 }
 
 .btn-save-top.dirty {
-  background: #30b94e;
+  background: var(--c-ok);
 }
 
 .save-msg {
   font-size: 12px;
-  color: #30b94e;
+  color: var(--c-ok);
 }
 
 .save-err {
   font-size: 12px;
-  color: #ef5350;
+  color: var(--c-error);
 }
 
 .editor-body {
@@ -1134,11 +1134,11 @@ async function importPack() {
   background: transparent;
 }
 .editor-body::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: var(--c-border);
   border-radius: 3px;
 }
 .editor-body::-webkit-scrollbar-thumb:hover {
-  background: #3a3a5a;
+  background: var(--c-border-strong);
 }
 
 /* ---- 立绘 Grid ---- */
@@ -1149,7 +1149,7 @@ async function importPack() {
 }
 
 .img-card {
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
@@ -1157,11 +1157,11 @@ async function importPack() {
 }
 
 .img-card:hover {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
 }
 
 .img-card.selected {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
   box-shadow: 0 0 0 2px rgba(74, 122, 255, 0.2);
 }
 
@@ -1170,7 +1170,7 @@ async function importPack() {
   justify-content: center;
   align-items: flex-start;
   height: 100px;
-  background: #1e1e38;
+  background: var(--c-control);
   overflow: hidden;
 }
 
@@ -1186,8 +1186,8 @@ async function importPack() {
 
 .img-grid-name {
   font-size: 10px;
-  font-family: monospace;
-  color: #aaa;
+  font-family: var(--font-mono);
+  color: var(--c-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1199,26 +1199,26 @@ async function importPack() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border: 2px dashed #2a2a4a;
-  background: #1a1a2e;
+  border: 2px dashed var(--c-border);
+  background: var(--c-panel);
   min-height: 140px;
   transition: border-color 0.12s, background 0.12s;
 }
 .img-card-add:hover {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
   background: rgba(74, 122, 255, 0.08);
 }
 
 .img-add-icon {
   font-size: 32px;
-  color: #666;
+  color: var(--c-text-muted);
   line-height: 1;
   margin-top: 12px;
 }
 
 .img-grid-tags {
   font-size: 10px;
-  color: #777;
+  color: var(--c-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1233,7 +1233,7 @@ async function importPack() {
 .mgr-label {
   font-size: 13px;
   font-weight: 600;
-  color: #aaa;
+  color: var(--c-text-secondary);
   margin: 0 0 8px;
 }
 
@@ -1242,11 +1242,11 @@ async function importPack() {
   min-height: 140px;
   padding: 12px;
   font-size: 13px;
-  font-family: monospace;
-  border: 1px solid #2a2a4a;
+  font-family: var(--font-mono);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   box-sizing: border-box;
   resize: vertical;
@@ -1254,7 +1254,7 @@ async function importPack() {
 }
 
 .mgr-textarea:focus {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
   box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
@@ -1266,16 +1266,16 @@ async function importPack() {
   background: transparent;
 }
 .mgr-textarea::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: var(--c-border);
   border-radius: 3px;
 }
 .mgr-textarea::-webkit-scrollbar-thumb:hover {
-  background: #3a3a5a;
+  background: var(--c-border-strong);
 }
 
 /* textarea 右下角调整柄深色 */
 .mgr-textarea::-webkit-resizer {
-  background: #2a2a4a;
+  background: var(--c-border);
   border-radius: 0 0 10px 0;
 }
 
@@ -1291,16 +1291,16 @@ async function importPack() {
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 14px;
-  border: 1px solid #2a2a4a;
-  background: #1e1e38;
-  color: #aaa;
+  border: 1px solid var(--c-border);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   cursor: pointer;
   transition: all 0.12s;
 }
 
 .tag-item:hover {
-  border-color: #ef5350;
-  color: #ef5350;
+  border-color: var(--c-error);
+  color: var(--c-error);
   background: rgba(239, 83, 80, 0.1);
 }
 
@@ -1309,24 +1309,24 @@ async function importPack() {
   padding: 4px 10px;
   border: 1px dashed #555;
   background: none;
-  color: #777;
+  color: var(--c-text-muted);
   border-radius: 14px;
   cursor: pointer;
 }
 
 .tag-add:hover {
-  border-color: #4a7aff;
-  color: #4a7aff;
+  border-color: var(--c-brand);
+  color: var(--c-brand);
 }
 
 /* ---- 行内标签输入 ---- */
 .tag-input {
   font-size: 12px;
   padding: 4px 10px;
-  border: 1px solid #4a7aff;
+  border: 1px solid var(--c-brand);
   border-radius: 14px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   font-family: inherit;
   min-width: 120px;
@@ -1350,8 +1350,8 @@ async function importPack() {
 }
 
 .modal-card {
-  background: #16162a;
-  border: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
   border-radius: 16px;
   width: 420px;
   max-width: 90vw;
@@ -1369,7 +1369,7 @@ async function importPack() {
 .modal-title {
   font-size: 16px;
   font-weight: 700;
-  color: #e0e0e0;
+  color: var(--c-text);
   margin: 0;
 }
 
@@ -1377,15 +1377,15 @@ async function importPack() {
   background: none;
   border: none;
   font-size: 18px;
-  color: #666;
+  color: var(--c-text-muted);
   cursor: pointer;
   padding: 2px 8px;
   border-radius: 6px;
 }
 
 .modal-close:hover {
-  background: #2a2a4a;
-  color: #ddd;
+  background: var(--c-border);
+  color: var(--c-text);
 }
 
 .modal-body {
@@ -1400,23 +1400,23 @@ async function importPack() {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #aaa;
+  color: var(--c-text-secondary);
   margin-bottom: 5px;
 }
 
 .modal-body .label-note {
   font-weight: 400;
-  color: #777;
+  color: var(--c-text-muted);
 }
 
 .modal-body .form-input {
   width: 100%;
   padding: 9px 12px;
   font-size: 14px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
@@ -1424,13 +1424,13 @@ async function importPack() {
 }
 
 .modal-body .form-input:focus {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
   box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
 .form-error {
   font-size: 13px;
-  color: #ef5350;
+  color: var(--c-error);
   margin: 0;
 }
 
@@ -1439,7 +1439,7 @@ async function importPack() {
   display: flex;
   gap: 16px;
   font-size: 13px;
-  color: #ccc;
+  color: var(--c-text-secondary);
 }
 .render-radio label {
   display: inline-flex;
@@ -1447,7 +1447,7 @@ async function importPack() {
   gap: 5px;
   cursor: pointer;
 }
-.render-radio input { accent-color: #4a7aff; cursor: pointer; }
+.render-radio input { accent-color: var(--c-brand); cursor: pointer; }
 .model-pick {
   display: flex;
   align-items: center;
@@ -1459,19 +1459,19 @@ async function importPack() {
   gap: 6px;
   padding: 6px 12px;
   font-size: 12px;
-  border: 1px solid #3a3a5a;
+  border: 1px solid var(--c-border-strong);
   border-radius: 6px;
-  background: #1e1e38;
+  background: var(--c-control);
   color: #cdd;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
 }
-.btn-pick:hover { background: #2a2a4a; border-color: #4a7aff; color: #fff; }
+.btn-pick:hover { background: var(--c-border); border-color: var(--c-brand); color: var(--c-text-bright); }
 .model-path {
   font-size: 11px;
-  font-family: monospace;
-  color: #888;
+  font-family: var(--font-mono);
+  color: var(--c-text-muted);
   word-break: break-all;
 }
 
@@ -1479,8 +1479,8 @@ async function importPack() {
 .l2d-preview-panel {
   width: 340px;
   flex-shrink: 0;
-  background: #16162a;
-  border-left: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border-left: 1px solid var(--c-border);
 }
 
 .modal-footer {
@@ -1493,16 +1493,16 @@ async function importPack() {
 .btn-cancel {
   padding: 8px 18px;
   font-size: 13px;
-  border: 1px solid #2a2a4a;
-  background: #1e1e38;
-  color: #aaa;
+  border: 1px solid var(--c-border);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .btn-cancel:hover {
   border-color: #555;
-  color: #ddd;
+  color: var(--c-text);
 }
 
 .btn-create {
@@ -1510,7 +1510,7 @@ async function importPack() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #4a7aff;
+  background: var(--c-brand);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -1547,7 +1547,7 @@ async function importPack() {
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid #4a7aff;
+  border: 1px solid var(--c-brand);
   background: rgba(74, 122, 255, 0.12);
   color: #6f9bff;
   border-radius: 8px;
@@ -1577,18 +1577,18 @@ async function importPack() {
 }
 .empty-guide-icon {
   font-size: 48px;
-  color: #3a3a5a;
+  color: var(--c-border-strong);
   margin-bottom: 16px;
 }
 .empty-guide-title {
   font-size: 16px;
   font-weight: 600;
-  color: #ccc;
+  color: var(--c-text-secondary);
   margin: 0 0 6px;
 }
 .empty-guide-hint {
   font-size: 13px;
-  color: #777;
+  color: var(--c-text-muted);
   margin: 0 0 20px;
 }
 .empty-guide-actions {
@@ -1606,7 +1606,7 @@ async function importPack() {
 }
 .btn-import-lg {
   border: none;
-  background: #4a7aff;
+  background: var(--c-brand);
   color: white;
 }
 .btn-import-lg:hover:not(:disabled) {
@@ -1617,13 +1617,13 @@ async function importPack() {
   cursor: not-allowed;
 }
 .btn-create-lg {
-  border: 1px solid #2a2a4a;
-  background: #1e1e38;
-  color: #aaa;
+  border: 1px solid var(--c-border);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
 }
 .btn-create-lg:hover {
-  border-color: #4a7aff;
-  color: #ccc;
+  border-color: var(--c-brand);
+  color: var(--c-text-secondary);
 }
 
 /* ---- 导出角色包按钮 ---- */
@@ -1631,7 +1631,7 @@ async function importPack() {
   background: none;
   border: none;
   font-size: 16px;
-  color: #aaa;
+  color: var(--c-text-secondary);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1653,7 +1653,7 @@ async function importPack() {
   background: none;
   border: none;
   font-size: 16px;
-  color: #aaa;
+  color: var(--c-text-secondary);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1671,7 +1671,7 @@ async function importPack() {
   font-size: 13px;
   font-weight: 500;
   border: none;
-  background: #ef5350;
+  background: var(--c-error);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -1690,16 +1690,16 @@ async function importPack() {
 .delete-warn-text {
   font-size: 14px;
   line-height: 1.7;
-  color: #aaa;
+  color: var(--c-text-secondary);
   margin: 0;
 }
 
 .delete-warn-text strong {
-  color: #e0e0e0;
+  color: var(--c-text);
 }
 
 .modal-warn {
-  border-top: 3px solid #ef5350;
+  border-top: 3px solid var(--c-error);
 }
 
 /* ---- 语音音色选择 ---- */
@@ -1713,10 +1713,10 @@ async function importPack() {
   flex: 1;
   padding: 8px 10px;
   font-size: 13px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   font-family: inherit;
   cursor: pointer;
@@ -1724,7 +1724,7 @@ async function importPack() {
 }
 
 .voice-select:focus {
-  border-color: #4a7aff;
+  border-color: var(--c-brand);
   box-shadow: 0 0 0 3px rgba(74, 122, 255, 0.15);
 }
 
@@ -1734,18 +1734,18 @@ async function importPack() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
-  background: #1e1e38;
-  color: #888;
+  background: var(--c-control);
+  color: var(--c-text-muted);
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
 }
 
 .voice-refresh-btn:hover:not(:disabled) {
-  border-color: #4a7aff;
-  color: #4a7aff;
+  border-color: var(--c-brand);
+  color: var(--c-brand);
 }
 
 .voice-refresh-btn:disabled {
@@ -1755,13 +1755,13 @@ async function importPack() {
 
 .voice-hint {
   font-size: 11px;
-  color: #999;
+  color: var(--c-text-muted);
   margin: 6px 0 0;
 }
 
 .voice-hint-ok {
   font-size: 11px;
-  color: #30b94e;
+  color: var(--c-ok);
   margin: 6px 0 0;
 }
 
@@ -1787,7 +1787,7 @@ async function importPack() {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: #777;
+  color: var(--c-text-muted);
   margin-bottom: 4px;
 }
 
@@ -1803,9 +1803,9 @@ async function importPack() {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 500;
-  border: 1px solid #30b94e;
+  border: 1px solid var(--c-ok);
   background: transparent;
-  color: #30b94e;
+  color: var(--c-ok);
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.15s;
@@ -1813,8 +1813,8 @@ async function importPack() {
 }
 
 .voice-preview-btn:hover:not(:disabled) {
-  background: #30b94e;
-  color: #1a1a2e;
+  background: var(--c-ok);
+  color: var(--c-panel);
 }
 
 .voice-preview-btn.playing {
@@ -1830,7 +1830,7 @@ async function importPack() {
 
 .voice-preview-hint {
   font-size: 11px;
-  color: #aaa;
+  color: var(--c-text-secondary);
   font-style: italic;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1852,12 +1852,12 @@ async function importPack() {
 .file-picker-input {
   flex: 1;
   cursor: pointer;
-  background: #16162a !important;
-  color: #888 !important;
+  background: var(--c-bg) !important;
+  color: var(--c-text-muted) !important;
 }
 
 .file-picker-input:not(:placeholder-shown) {
-  color: #e0e0e0 !important;
+  color: var(--c-text) !important;
 }
 
 .btn-browse {
@@ -1867,7 +1867,7 @@ async function importPack() {
   justify-content: center;
   border: 1px solid #3a3a5c;
   border-radius: 8px;
-  background: #1e1e38;
+  background: var(--c-control);
   color: #a0a0c0;
   cursor: pointer;
   font-size: 14px;

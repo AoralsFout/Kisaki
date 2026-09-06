@@ -1,0 +1,67 @@
+/**
+ * 设计令牌（阶段 4）
+ *
+ * 全部 UI 共用的颜色、圆角、间距、字号变量。
+ * 组件样式引用这些变量，不再散落硬编码十六进制值。
+ * 品牌蓝 #4A7AFF 与深靛背景 #16162A 延续现有视觉。
+ */
+:root {
+  /* ── 品牌与语义状态 ── */
+  --c-brand: #4a7aff;
+  --c-brand-text: #9bb4ff;            /* 深底上的品牌浅文字/链接 */
+  --c-brand-soft: rgba(74, 122, 255, 0.12);   /* 浅底/描边按钮底色 */
+  --c-brand-soft-strong: rgba(74, 122, 255, 0.25);
+  --c-ok: #30b94e;
+  --c-warn: #ffa726;
+  --c-error: #ef5350;
+  --c-error-text: #ff7c8b;            /* 深底上的错误文字 */
+  --c-danger-border: rgba(239, 68, 68, 0.3);
+  --c-danger-bg: rgba(239, 68, 68, 0.12);
+
+  /* ── 背景：窗口 < 面板 < 卡片 < 控件 ── */
+  --c-bg: #16162a;                    /* 窗口/侧栏深靛底 */
+  --c-panel: #1a1a2e;                 /* 内容面板 */
+  --c-control: #1e1e38;               /* 输入控件/次级按钮底 */
+  --c-border: #2a2a4a;
+  --c-border-strong: #3a3a5a;
+  --c-hover: #2a2a4a;                 /* 悬停/未选中高亮底 */
+
+  /* ── 文本层级 ── */
+  --c-text-bright: #ffffff;
+  --c-text: #e0e0e0;                  /* 正文 */
+  --c-text-secondary: #aaa;           /* 次要说明 */
+  --c-text-muted: #888;               /* 辅助/占位提示 */
+
+  /* ── 桌宠浮层 ── */
+  --c-scrim-overlay: rgba(12, 12, 24, 0.6);   /* 全屏遮罩（引导/弹窗） */
+  --c-scrim-toolbar: rgba(0, 0, 0, 0.25);     /* 工具条薄底 */
+  --c-bubble-light: rgba(255, 255, 255, 0.95);/* 浅色气泡（明确变体） */
+  --c-bubble-dark: rgba(22, 22, 42, 0.92);    /* 深色气泡（稳定底色） */
+
+  /* ── 圆角：控件 8 / 卡片 12 / 浮层 16；胶囊仅用于标签 ── */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-overlay: 16px;
+  --radius-pill: 999px;
+
+  /* ── 间距（4px 基础刻度） ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ── 字号：正文 14 / 辅助 12 / 标题 20 ── */
+  --fs-body: 14px;
+  --fs-aux: 12px;
+  --fs-title: 20px;
+
+  /* ── 等宽字体：仅用于路径、命令、ID 等内容 ── */
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* ── 阴影 ── */
+  --shadow-overlay: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --focus-ring: 0 0 0 3px rgba(74, 122, 255, 0.15);
+}

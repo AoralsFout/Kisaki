@@ -306,7 +306,7 @@ function handleClose() {
   padding: 0;
   border: none;
   border-radius: 50%;
-  color: #fff;
+  color: var(--c-text-bright);
   background: rgba(10, 10, 16, 0.78);
   cursor: pointer;
 }

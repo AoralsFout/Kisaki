@@ -110,11 +110,11 @@ function setMotion(group: string, v: string) {
 .l2d-model-path {
   flex: 1;
   font-size: 11px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: #9fb3c8;
   word-break: break-all;
   background: #14142a;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 6px 8px;
 }
@@ -135,15 +135,15 @@ function setMotion(group: string, v: string) {
 .l2d-field select {
   padding: 6px 8px;
   font-size: 13px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   transition: border-color 0.15s;
 }
 .l2d-field input:focus,
-.l2d-field select:focus { border-color: #4a7aff; }
+.l2d-field select:focus { border-color: var(--c-brand); }
 
 .l2d-check {
   display: flex;
@@ -155,7 +155,7 @@ function setMotion(group: string, v: string) {
   align-self: end;
   padding-bottom: 6px;
 }
-.l2d-check input { accent-color: #4a7aff; width: 15px; height: 15px; cursor: pointer; }
+.l2d-check input { accent-color: var(--c-brand); width: 15px; height: 15px; cursor: pointer; }
 
 .l2d-btn {
   display: inline-flex;
@@ -163,20 +163,20 @@ function setMotion(group: string, v: string) {
   gap: 6px;
   padding: 6px 12px;
   font-size: 12px;
-  border: 1px solid #3a3a5a;
+  border: 1px solid var(--c-border-strong);
   border-radius: 6px;
-  background: #1e1e38;
+  background: var(--c-control);
   color: #cdd;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
 }
-.l2d-btn:hover { background: #2a2a4a; border-color: #4a7aff; color: #fff; }
+.l2d-btn:hover { background: var(--c-border); border-color: var(--c-brand); color: var(--c-text-bright); }
 
 .l2d-anno { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .l2d-anno code {
   font-size: 11px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: #7c8cff;
   min-width: 110px;
   flex-shrink: 0;
@@ -185,12 +185,12 @@ function setMotion(group: string, v: string) {
   flex: 1;
   padding: 5px 8px;
   font-size: 12px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: #1e1e38;
-  color: #e0e0e0;
+  background: var(--c-control);
+  color: var(--c-text);
   outline: none;
   transition: border-color 0.15s;
 }
-.l2d-anno input:focus { border-color: #4a7aff; }
+.l2d-anno input:focus { border-color: var(--c-brand); }
 </style>

@@ -305,13 +305,13 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
 
 .dev-panel.embedded {
   background: transparent;
-  color: #ccc;
+  color: var(--c-text-secondary);
   min-height: auto;
 }
 
 .section {
   padding: 12px 0;
-  border-bottom: 1px solid #2a2a4a;
+  border-bottom: 1px solid var(--c-border);
 }
 
 .section:last-child {
@@ -323,7 +323,7 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  color: #888;
+  color: var(--c-text-muted);
   margin: 0 0 8px;
 }
 
@@ -335,7 +335,7 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
   font-size: 13px;
 }
 
-.status-label { color: #777; }
+.status-label { color: var(--c-text-muted); }
 .status-value { color: #7c8cff; font-weight: 500; }
 
 .btn-row {
@@ -347,9 +347,9 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
 .tag-btn {
   padding: 6px 14px;
   font-size: 12px;
-  border: 1px solid #2a2a4a;
-  background: #1e1e38;
-  color: #aaa;
+  border: 1px solid var(--c-border);
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.12s;
@@ -371,15 +371,15 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
 .tag-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-  border-color: #1e1e38;
-  background: #16162a;
+  border-color: var(--c-control);
+  background: var(--c-bg);
   color: #555;
 }
 
 .tag-btn:disabled:hover {
-  border-color: #1e1e38;
+  border-color: var(--c-control);
   color: #555;
-  background: #16162a;
+  background: var(--c-bg);
 }
 
 .tag-btn .cnt {
@@ -401,7 +401,7 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
   display: flex;
   gap: 4px;
   margin-bottom: 10px;
-  background: #1e1e38;
+  background: var(--c-control);
   border-radius: 8px;
   padding: 3px;
 }
@@ -412,20 +412,20 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
   font-size: 12px;
   border: none;
   background: transparent;
-  color: #777;
+  color: var(--c-text-muted);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.12s;
 }
 
 .tab.active {
-  background: #2a2a4a;
-  color: #e0e0e0;
+  background: var(--c-border);
+  color: var(--c-text);
   font-weight: 500;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.tab:hover:not(.active) { color: #ccc; }
+.tab:hover:not(.active) { color: var(--c-text-secondary); }
 
 .pose-grid {
   display: grid;

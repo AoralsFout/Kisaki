@@ -13,6 +13,7 @@ import {
   isCharacterOpacityWheelEnabled,
   setCharacterOpacityWheelEnabled,
 } from '../../character/opacity'
+import ToggleRow from '../ui/ToggleRow.vue'
 
 const log = createLogger('SettingsGeneral')
 const { t } = useI18n()
@@ -70,34 +71,14 @@ onMounted(() => { void refreshAutoStart() })
 
     <hr class="section-divider" />
 
-    <div class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.general.opacityWheelTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.general.opacityWheelDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: opacityWheelEnabled }]"
-          @click="onOpacityWheelEnabledChange" role="switch" :aria-checked="opacityWheelEnabled">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-model:checked="opacityWheelEnabled" :title="t('settings.general.opacityWheelTitle')"
+      :desc="t('settings.general.opacityWheelDesc')" @update:checked="onOpacityWheelEnabledChange" />
 
     <hr class="section-divider" />
 
     <!-- 开机自启（仅在插件可用时显示） -->
-    <div v-if="autoStartSupported" class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.general.autostartTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.general.autostartDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: autoStart }]"
-          @click="autoStart = !autoStart; onAutoStartChange()" role="switch" :aria-checked="autoStart">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-if="autoStartSupported" v-model:checked="autoStart" :title="t('settings.general.autostartTitle')"
+      :desc="t('settings.general.autostartDesc')" @update:checked="onAutoStartChange" />
 
     <!-- 全局快捷键说明 -->
     <div class="form-group">
@@ -118,13 +99,13 @@ onMounted(() => { void refreshAutoStart() })
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
-  background: #16162a;
-  border: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
 }
 
 .shortcut-hint > i {
-  color: #4a7aff;
+  color: var(--c-brand);
   font-size: 15px;
   margin-top: 2px;
 }
@@ -132,12 +113,12 @@ onMounted(() => { void refreshAutoStart() })
 .shortcut-title {
   font-size: 13px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--c-text);
 }
 
 .shortcut-desc {
   font-size: 12px;
-  color: #888;
+  color: var(--c-text-muted);
   margin-top: 2px;
 }
 </style>

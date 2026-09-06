@@ -20,6 +20,9 @@ import { fetchVoiceList } from '../../tts/api'
 import type { CosyVoiceConfig, GptSoVitsConfig, VoiceInfo, TtsProvider } from '../../tts/types'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../../stores/language'
 import { getTypingSpeed, setTypingSpeed } from '../../stores/language'
+import SaveBar from '../ui/SaveBar.vue'
+import BaseButton from '../ui/BaseButton.vue'
+import ToggleRow from '../ui/ToggleRow.vue'
 
 const { t } = useI18n()
 
@@ -103,20 +106,9 @@ async function handleGsSave() { return gsForm.save() }
     <p class="section-desc">{{ t('settings.tts.desc') }}</p>
 
     <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
-    <p v-if="cvSaveError || gsSaveError" role="alert" class="status-error">{{ t('safety.saveFailed', { message: cvSaveError || gsSaveError }) }}</p>
     <!-- TTS 总开关 -->
-    <div class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.tts.enableTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.tts.enableDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: ttsEnabled }]"
-          @click="ttsEnabled = !ttsEnabled; setTtsEnabled(ttsEnabled)" role="switch" :aria-checked="ttsEnabled">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-model:checked="ttsEnabled" :title="t('settings.tts.enableTitle')"
+      :desc="t('settings.tts.enableDesc')" @update:checked="setTtsEnabled(ttsEnabled)" />
 
     <hr class="section-divider" />
 
@@ -177,20 +169,17 @@ async function handleGsSave() { return gsForm.save() }
         <p class="form-hint">{{ t('settings.tts.workspaceIdHint') }}</p>
       </div>
 
-      <div class="form-actions">
-        <button class="btn-save" :disabled="cvSaving" @click="handleCvSave">
-          {{ cvSaving ? t('safety.saving') : cvSaved && !cvForm.dirty.value ? t('common.saved') : t('settings.tts.saveConfig') }}
-        </button>
-      </div>
+      <SaveBar :saving="cvSaving" :saved="cvSaved" :dirty="cvForm.dirty.value" :error="cvSaveError"
+        :save-text="t('settings.tts.saveConfig')" @save="handleCvSave" />
 
       <hr class="section-divider" />
 
       <div class="form-group">
         <label class="form-label">{{ t('settings.tts.myVoices') }}</label>
-        <button class="btn-secondary" :disabled="loadingVoices || !cvConfig.apiKey" @click="handleFetchVoices">
+        <BaseButton variant="secondary" :disabled="loadingVoices || !cvConfig.apiKey" @click="handleFetchVoices">
           <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
           {{ loadingVoices ? t('settings.tts.fetching') : t('settings.tts.fetchVoices') }}
-        </button>
+        </BaseButton>
 
         <div v-if="voiceError" class="voice-error">{{ voiceError }}</div>
 
@@ -254,11 +243,8 @@ async function handleGsSave() { return gsForm.save() }
         </div>
       </template>
 
-      <div class="form-actions">
-        <button class="btn-save" :disabled="gsSaving" @click="handleGsSave">
-          {{ gsSaving ? t('safety.saving') : gsSaved && !gsForm.dirty.value ? t('common.saved') : t('settings.tts.saveConfig') }}
-        </button>
-      </div>
+      <SaveBar :saving="gsSaving" :saved="gsSaved" :dirty="gsForm.dirty.value" :error="gsSaveError"
+        :save-text="t('settings.tts.saveConfig')" @save="handleGsSave" />
     </template>
 
     <hr class="section-divider" />

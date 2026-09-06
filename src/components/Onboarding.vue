@@ -25,6 +25,7 @@ import { useCharacterStore } from '../stores/character'
 import { loadConfigSecure, isConfigValid } from '../ai'
 import { createLogger } from '../utils/logger'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import BaseButton from './ui/BaseButton.vue'
 
 const log = createLogger('Onboarding')
 
@@ -127,12 +128,12 @@ onUnmounted(() => {
         <p class="ob-voice"><i class="fas fa-volume-high"></i> {{ t('onboarding.voice') }}</p>
 
         <div class="ob-actions">
-          <button v-if="allReady" class="ob-primary" @click="emit('finish')">
+          <BaseButton v-if="allReady" class="ob-primary" @click="emit('finish')">
             <i class="fas fa-paw"></i> {{ t('onboarding.start') }}
-          </button>
-          <button v-else class="ob-primary soft" @click="emit('open-settings', pendingTab)">
+          </BaseButton>
+          <BaseButton v-else class="ob-primary" @click="emit('open-settings', pendingTab)">
             <i class="fas fa-arrow-right"></i> {{ t('onboarding.continue') }}
-          </button>
+          </BaseButton>
           <button v-if="!allReady" class="ob-later" @click="emit('later')">{{ t('onboarding.later') }}</button>
         </div>
         <p v-if="!allReady" class="ob-hint">{{ t('onboarding.notReady') }}</p>
@@ -156,12 +157,12 @@ onUnmounted(() => {
 .ob-card {
   width: 460px;
   max-width: 92vw;
-  background: linear-gradient(180deg, #1e1e38 0%, #16162a 100%);
-  border: 1px solid #2a2a4a;
-  border-radius: 18px;
-  padding: 26px 28px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  color: #e0e0e0;
+  background: linear-gradient(180deg, var(--c-control) 0%, var(--c-bg) 100%);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-overlay);
+  padding: var(--space-6) 28px;
+  box-shadow: var(--shadow-overlay);
+  color: var(--c-text);
 }
 
 .ob-head {
@@ -171,7 +172,7 @@ onUnmounted(() => {
 
 .ob-spark {
   font-size: 30px;
-  color: #4a7aff;
+  color: var(--c-brand);
   margin-bottom: 6px;
 }
 
@@ -179,13 +180,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: #fff;
+  color: var(--c-text-bright);
 }
 
 .ob-subtitle {
   margin: 6px 0 0;
-  font-size: 13px;
-  color: #999;
+  font-size: var(--fs-aux);
+  color: var(--c-text-muted);
 }
 
 .ob-steps {
@@ -201,10 +202,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  background: #1a1a2e;
-  border: 1px solid #2a2a4a;
-  border-radius: 12px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-card);
   transition: border-color 0.15s;
 }
 
@@ -216,19 +217,19 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #2a2a4a;
-  color: #aaa;
+  background: var(--c-border);
+  color: var(--c-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .ob-step.done .ob-step-dot {
-  background: #30b94e;
-  color: #fff;
+  background: var(--c-ok);
+  color: var(--c-text-bright);
 }
 
 .ob-step-body {
@@ -237,38 +238,38 @@ onUnmounted(() => {
 }
 
 .ob-step-title {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--c-text);
 }
 
 .ob-step-desc {
-  font-size: 12px;
-  color: #888;
+  font-size: var(--fs-aux);
+  color: var(--c-text-muted);
   margin-top: 2px;
 }
 
 .ob-step-btn {
-  padding: 7px 14px;
-  font-size: 12px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-aux);
   font-weight: 500;
-  border: 1px solid #4a7aff;
-  background: rgba(74, 122, 255, 0.12);
-  color: #9bb4ff;
-  border-radius: 16px;
+  border: 1px solid var(--c-brand);
+  background: var(--c-brand-soft);
+  color: var(--c-brand-text);
+  border-radius: var(--radius-control);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
 }
 
 .ob-step-btn:hover {
-  background: rgba(74, 122, 255, 0.25);
-  color: #fff;
+  background: var(--c-brand-soft-strong);
+  color: var(--c-text-bright);
 }
 
 .ob-ready {
-  font-size: 12px;
-  color: #30b94e;
+  font-size: var(--fs-aux);
+  color: var(--c-ok);
   white-space: nowrap;
 }
 
@@ -277,22 +278,22 @@ onUnmounted(() => {
   margin: 10px auto 0;
   border: 0;
   background: none;
-  color: #9bb4ff;
-  font-size: 12px;
+  color: var(--c-brand-text);
+  font-size: var(--fs-aux);
   cursor: pointer;
 }
 
 .ob-voice {
-  margin: 16px 0 0;
-  font-size: 12px;
-  color: #888;
+  margin: var(--space-4) 0 0;
+  font-size: var(--fs-aux);
+  color: var(--c-text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .ob-voice i {
-  color: #ffa726;
+  color: var(--c-warn);
 }
 
 .ob-actions {
@@ -304,48 +305,30 @@ onUnmounted(() => {
 }
 
 .ob-primary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 26px;
-  font-size: 14px;
+  padding: 10px 28px;
   font-weight: 600;
-  border: none;
-  background: #4a7aff;
-  color: #fff;
-  border-radius: 22px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.ob-primary:hover {
-  opacity: 0.88;
-}
-
-.ob-primary.soft {
-  background: rgba(74, 122, 255, 0.35);
 }
 
 .ob-later {
-  padding: 8px 16px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-body);
   border: none;
   background: none;
-  color: #888;
+  color: var(--c-text-muted);
   cursor: pointer;
-  border-radius: 16px;
+  border-radius: var(--radius-control);
   transition: color 0.15s;
 }
 
 .ob-later:hover {
-  color: #ccc;
+  color: var(--c-text-secondary);
 }
 
 .ob-hint {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   text-align: center;
-  font-size: 12px;
-  color: #ffa726;
+  font-size: var(--fs-aux);
+  color: var(--c-warn);
 }
 
 .ob-fade-enter-active,

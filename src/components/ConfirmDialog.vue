@@ -58,14 +58,14 @@ onUnmounted(() => document.removeEventListener('keydown', keydown, true))
 </template>
 
 <style scoped>
-.safety-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: #0c0c1899; }
-.safety-dialog { box-sizing: border-box; width: 460px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 24px; border: 1px solid #3a3a5a; border-radius: 16px; background: #1a1a2e; color: #e0e0e0; font: 14px/1.6 'Segoe UI', sans-serif; box-shadow: 0 12px 40px #0008; }
-h2 { font-size: 18px; margin: 0 0 12px; }
-p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 24px; }
-.safety-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-button { padding: 8px 12px; border: 1px solid #3a3a5a; border-radius: 8px; background: #252540; color: #e0e0e0; cursor: pointer; font: inherit; }
-button.primary { background: #4a7aff; color: white; }
-button.danger { background: #b83245; }
+.safety-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: var(--c-scrim-overlay); }
+.safety-dialog { box-sizing: border-box; width: 460px; max-width: 100%; max-height: 90vh; overflow: auto; padding: var(--space-6); border: 1px solid var(--c-border-strong); border-radius: var(--radius-overlay); background: var(--c-panel); color: var(--c-text); font: var(--fs-body)/1.6 'Segoe UI', sans-serif; box-shadow: var(--shadow-overlay); }
+h2 { font-size: var(--fs-title); margin: 0 0 var(--space-3); }
+p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 var(--space-6); }
+.safety-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+button { padding: var(--space-2) var(--space-3); border: 1px solid var(--c-border-strong); border-radius: var(--radius-control); background: var(--c-control); color: var(--c-text); cursor: pointer; font: inherit; }
+button.primary { background: var(--c-brand); color: var(--c-text-bright); }
+button.danger { background: var(--c-error); }
 button:disabled { opacity: .6; cursor: wait; }
-button:focus-visible { outline: 2px solid #9bb4ff; outline-offset: 3px; }
+button:focus-visible { outline: 2px solid var(--c-brand-text); outline-offset: 3px; }
 </style>

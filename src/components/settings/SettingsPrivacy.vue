@@ -155,8 +155,8 @@ const SECTIONS = [
 
 <style scoped>
 .privacy-section {
-  background: #16162a;
-  border: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 12px;
@@ -166,14 +166,14 @@ const SECTIONS = [
   margin: 0 0 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--c-text);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .privacy-title i {
-  color: #4a7aff;
+  color: var(--c-brand);
   width: 16px;
   text-align: center;
 }
@@ -182,7 +182,7 @@ const SECTIONS = [
   margin: 0;
   font-size: 13px;
   line-height: 1.7;
-  color: #aaa;
+  color: var(--c-text-secondary);
 }
 
 .privacy-note {
@@ -192,7 +192,7 @@ const SECTIONS = [
   margin-top: 16px;
   padding: 12px 16px;
   font-size: 13px;
-  color: #30b94e;
+  color: var(--c-ok);
   background: rgba(48, 185, 78, 0.08);
   border: 1px solid rgba(48, 185, 78, 0.2);
   border-radius: 10px;
@@ -210,13 +210,13 @@ const SECTIONS = [
   border: 1px solid #3a3a58;
   border-radius: 9px;
   background: #202038;
-  color: #ddd;
+  color: var(--c-text);
   cursor: pointer;
 }
 
 .privacy-btn:disabled { opacity: 0.55; cursor: wait; }
 .privacy-btn.danger { border-color: #7a3540; color: #ff9ba8; }
-.privacy-action-hint { color: #888; font-size: 12px; line-height: 1.6; }
-.privacy-status { color: #30b94e; font-size: 13px; }
-.privacy-error { color: #ff7c8b; font-size: 13px; word-break: break-word; }
+.privacy-action-hint { color: var(--c-text-muted); font-size: 12px; line-height: 1.6; }
+.privacy-status { color: var(--c-ok); font-size: 13px; }
+.privacy-error { color: var(--c-error-text); font-size: 13px; word-break: break-word; }
 </style>

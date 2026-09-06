@@ -29,7 +29,7 @@ describe('SettingsApi saved/connection status', () => {
     expect(wrapper.text()).not.toContain('settings.api.testOk')
     expect(wrapper.find('.status-ok').exists()).toBe(false)
 
-    await wrapper.get('.btn-save').trigger('click')
+    await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
     expect(ai.save).toHaveBeenCalledOnce()
     // 已保存 ≠ 连接成功

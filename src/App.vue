@@ -528,7 +528,7 @@ async function handleSelectCharacter(charId: string) {
 .no-char-title {
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: var(--c-text-bright);
   margin: 0;
 }
 
@@ -542,12 +542,12 @@ async function handleSelectCharacter(charId: string) {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 18px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--fs-body);
   border: none;
-  border-radius: 18px;
-  background: #4a7aff;
-  color: #fff;
+  border-radius: var(--radius-control);
+  background: var(--c-brand);
+  color: var(--c-text-bright);
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -586,7 +586,7 @@ async function handleSelectCharacter(charId: string) {
     content: ' ';
     width: 150px;
     height: 1px;
-    background: #999;
+    background: var(--c-text-muted);
   }
 }
 
@@ -720,7 +720,7 @@ async function handleSelectCharacter(charId: string) {
   gap: 6px;
   margin-bottom: 8px;
   background: rgba(210, 60, 60, 0.88);
-  color: #fff;
+  color: var(--c-text-bright);
   border: none;
   border-radius: 20px;
   font-size: 14px;

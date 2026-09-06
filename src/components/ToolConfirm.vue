@@ -189,7 +189,7 @@ watch(
 .tc-title {
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: var(--c-text-bright);
 }
 
 .tc-sub {
@@ -209,7 +209,7 @@ watch(
 .tc-path {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
-  font-family: monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,7 +232,7 @@ watch(
   display: flex;
   gap: 10px;
   font-size: 11px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   margin-bottom: 4px;
 }
 
@@ -305,8 +305,8 @@ watch(
 .tc-auto:hover { color: rgba(255, 255, 255, 0.85); }
 
 .tc-allow {
-  background: #4a7aff;
-  color: #fff;
+  background: var(--c-brand);
+  color: var(--c-text-bright);
 }
 .tc-allow:hover { opacity: 0.88; }
 

@@ -10,6 +10,8 @@ import {
   DEFAULT_SEARCH_CONFIG, SEARCH_PROVIDERS,
 } from '../../agent/tools/searchConfig'
 import type { SearchConfig } from '../../agent/tools/searchConfig'
+import SaveBar from '../ui/SaveBar.vue'
+import ToggleRow from '../ui/ToggleRow.vue'
 
 const { t } = useI18n()
 
@@ -37,18 +39,8 @@ async function handleSearchSave() { return form.save() }
     <p class="section-desc">{{ t('settings.search.desc') }}</p>
 
     <!-- 联网搜索总开关 -->
-    <div class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.search.enable') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.search.enableDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: searchConfig.enabled }]"
-          @click="searchConfig.enabled = !searchConfig.enabled" role="switch" :aria-checked="searchConfig.enabled">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
+    <ToggleRow v-model:checked="searchConfig.enabled" :title="t('settings.search.enable')"
+      :desc="t('settings.search.enableDesc')" />
 
     <template v-if="searchConfig.enabled">
       <hr class="section-divider" />
@@ -80,12 +72,10 @@ async function handleSearchSave() { return form.save() }
     </template>
 
     <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
-    <p v-if="error" class="status-error" role="alert">{{ t('safety.saveFailed', { message: error }) }}</p>
-    <div class="form-actions">
-      <button class="btn-save" :disabled="saving" @click="handleSearchSave">
-        {{ saving ? t('safety.saving') : searchSaved && !dirty ? t('common.saved') : t('common.save') }}
-      </button>
-      <span v-if="searchSaved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.search.savedOk') }}</span>
-    </div>
+    <SaveBar :saving="saving" :saved="searchSaved" :dirty="dirty" :error="error" @save="handleSearchSave">
+      <template #status>
+        <span v-if="searchSaved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.search.savedOk') }}</span>
+      </template>
+    </SaveBar>
   </div>
 </template>

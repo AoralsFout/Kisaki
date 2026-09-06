@@ -37,7 +37,7 @@ useLive2DScene(canvasRef, containerRef, {
   position: relative;
   width: 100%;
   height: 100%;
-  background: #1a1a2e;
+  background: var(--c-panel);
   overflow: hidden;
 }
 .l2d-preview-canvas {

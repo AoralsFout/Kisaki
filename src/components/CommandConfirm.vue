@@ -149,7 +149,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 .cc-title {
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: var(--c-text-bright);
 }
 
 .cc-sub {
@@ -296,7 +296,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
 .cc-allow {
   background: #f0b85c;
-  color: #1a1a2e;
+  color: var(--c-panel);
   font-weight: 600;
 }
 .cc-allow:hover { opacity: 0.88; }

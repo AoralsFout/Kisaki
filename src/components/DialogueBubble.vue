@@ -18,11 +18,14 @@ const props = withDefaults(defineProps<{
   thinking?: string
   typing?: boolean
   visible?: boolean
+  /** 气泡配色变体：light 浅色（默认，复杂壁纸上可读）；dark 稳定深底 */
+  variant?: 'light' | 'dark'
 }>(), {
   text: '',
   thinking: '',
   typing: false,
   visible: false,
+  variant: 'light',
 })
 
 const emit = defineEmits<{
@@ -100,7 +103,7 @@ defineExpose({ skipTyping })
 
 <template>
   <div v-show="visible" class="bubble-wrapper" data-pet-solid>
-    <div class="bubble-body" @click="skipTyping">
+    <div :class="['bubble-body', variant]" @click="skipTyping">
       <!-- 思考内容（灰色斜体，折叠样式） -->
       <details v-if="thinking" class="thinking-block" @click.stop>
         <summary class="thinking-summary">{{ t('chat.bubble.thinking') }}</summary>
@@ -125,8 +128,8 @@ defineExpose({ skipTyping })
 }
 
 .bubble-body {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
+  background: var(--c-bubble-light);
+  border-radius: var(--radius-card);
   padding: 12px 16px;
   color: #333;
   font-size: 14px;
@@ -174,6 +177,24 @@ defineExpose({ skipTyping })
   overflow-y: scroll;
 }
 
+/* 深色变体：稳定底色，供长文本/深色场景使用 */
+.bubble-body.dark {
+  background: var(--c-bubble-dark);
+  color: var(--c-text);
+}
+
+.bubble-body.dark .thinking-summary {
+  color: var(--c-text-muted);
+}
+
+.bubble-body.dark .thinking-summary::-webkit-details-marker {
+  color: var(--c-text-muted);
+}
+
+.bubble-body.dark .thinking-text {
+  color: var(--c-text-secondary);
+}
+
 /* 深色滚动条 */
 .thinking-text::-webkit-scrollbar {
   width: 6px;
@@ -184,19 +205,19 @@ defineExpose({ skipTyping })
 }
 
 .thinking-text::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: var(--c-border);
   border-radius: 3px;
 }
 
 .thinking-text::-webkit-scrollbar-thumb:hover {
-  background: #3a3a5a;
+  background: var(--c-border-strong);
 }
 
 /* ---- 光标 ---- */
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #666;
+  color: var(--c-text-muted);
   font-weight: bold;
 }
 

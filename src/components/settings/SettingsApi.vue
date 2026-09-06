@@ -9,6 +9,8 @@ import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid, test
 import type { AIConfig } from '../../ai'
 import { emit } from '@tauri-apps/api/event'
 import { EVENT_AI_CONFIG_CHANGED } from '../../constants'
+import SaveBar from '../ui/SaveBar.vue'
+import BaseButton from '../ui/BaseButton.vue'
 
 const { t } = useI18n()
 
@@ -92,17 +94,15 @@ async function handleTest() {
     </div>
 
     <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
-    <p v-if="error" class="status-error" role="alert">{{ t('safety.saveFailed', { message: error }) }}</p>
-    <div class="form-actions">
-      <button class="btn-save" :disabled="saving" @click="handleSave">
-        {{ saving ? t('safety.saving') : saved && !dirty ? t('common.saved') : t('common.save') }}
-      </button>
-      <button class="btn-secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">
+    <SaveBar :saving="saving" :saved="saved" :dirty="dirty" :error="error" @save="handleSave">
+      <BaseButton variant="secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">
         {{ testing ? t('settings.api.testing') : t('settings.api.test') }}
-      </button>
+      </BaseButton>
       <!-- 字段有效只代表「已保存」，连接是否可用以测试结果为准 -->
-      <span v-if="saved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.savedOk') }}</span>
-    </div>
+      <template #status>
+        <span v-if="saved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.savedOk') }}</span>
+      </template>
+    </SaveBar>
     <p v-if="testMessage" :class="testResult === 'ok' ? 'status-ok' : 'status-error'">{{ testMessage }}</p>
   </div>
 </template>

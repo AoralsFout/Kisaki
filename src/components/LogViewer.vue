@@ -46,11 +46,11 @@ const LEVEL_LABELS: Record<LogLevel, string> = {
 }
 
 const LEVEL_BG: Record<LogLevel, string> = {
-  trace: '#888',
+  trace: 'var(--c-text-muted)',
   debug: '#4fc3f7',
   info: '#81c784',
   warn: '#ffb74d',
-  error: '#ef5350',
+  error: 'var(--c-error)',
 }
 
 const entries = ref<DisplayEntry[]>([])
@@ -669,8 +669,8 @@ function onWheel() {
   flex-direction: column;
   height: 100vh;
   position: relative;
-  background: #1a1a2e;
-  color: #e0e0e0;
+  background: var(--c-panel);
+  color: var(--c-text);
   font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
   font-size: 12px;
   overflow: hidden;
@@ -687,8 +687,8 @@ function onWheel() {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #16162a;
-  border-bottom: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
   flex-shrink: 0;
   -webkit-app-region: drag;
   user-select: none;
@@ -697,7 +697,7 @@ function onWheel() {
 .topbar-title {
   font-size: 13px;
   font-weight: 600;
-  color: #aaa;
+  color: var(--c-text-secondary);
 }
 
 .window-controls {
@@ -711,19 +711,19 @@ function onWheel() {
   border: none;
   font-size: 14px;
   cursor: pointer;
-  color: #666;
+  color: var(--c-text-muted);
   padding: 4px 10px;
   border-radius: 6px;
   transition: background 0.1s, color 0.1s;
 }
 
 .win-btn:hover {
-  background: #2a2a4a;
-  color: #ddd;
+  background: var(--c-border);
+  color: var(--c-text);
 }
 
 .win-close:hover {
-  background: #ef5350;
+  background: var(--c-error);
   color: white;
 }
 
@@ -735,8 +735,8 @@ function onWheel() {
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
-  background: #16162a;
-  border-bottom: 1px solid #2a2a4a;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
   flex-shrink: 0;
 }
 
@@ -757,7 +757,7 @@ function onWheel() {
 /* 模式切换 */
 .mode-tabs {
   display: flex;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -767,18 +767,18 @@ function onWheel() {
   font-size: 11px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--c-text-muted);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .mode-tab.active {
-  background: #3a3a5a;
-  color: #fff;
+  background: var(--c-border-strong);
+  color: var(--c-text-bright);
 }
 
 .mode-tab:hover:not(.active) {
-  color: #ccc;
+  color: var(--c-text-secondary);
 }
 
 /* 级别过滤 */
@@ -794,7 +794,7 @@ function onWheel() {
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  color: #666;
+  color: var(--c-text-muted);
   cursor: pointer;
   transition: all 0.15s;
   font-family: inherit;
@@ -807,8 +807,8 @@ function onWheel() {
 }
 
 .level-btn.trace.active {
-  color: #888;
-  border-color: #888;
+  color: var(--c-text-muted);
+  border-color: var(--c-text-muted);
 }
 
 .level-btn.debug.active {
@@ -827,14 +827,14 @@ function onWheel() {
 }
 
 .level-btn.error.active {
-  color: #ef5350;
-  border-color: #ef5350;
+  color: var(--c-error);
+  border-color: var(--c-error);
 }
 
 .level-btn.all.active {
-  border-color: #aaa;
-  color: #aaa;
-  background: color-mix(in srgb, #aaa 15%, transparent);
+  border-color: var(--c-text-secondary);
+  color: var(--c-text-secondary);
+  background: color-mix(in srgb, var(--c-text-secondary) 15%, transparent);
 }
 
 /* 统计 */
@@ -864,10 +864,10 @@ function onWheel() {
   width: 100px;
   padding: 4px 6px 4px 22px;
   font-size: 11px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: #1e1e38;
-  color: #ccc;
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   outline: none;
   font-family: inherit;
   transition: border-color 0.15s;
@@ -885,27 +885,27 @@ function onWheel() {
 .toolbar-btn {
   padding: 4px 8px;
   font-size: 13px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   background: transparent;
-  color: #888;
+  color: var(--c-text-muted);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .toolbar-btn:hover {
-  background: #2a2a4a;
-  color: #ddd;
+  background: var(--c-border);
+  color: var(--c-text);
 }
 
 /* 历史文件选择 */
 .file-select {
   padding: 4px 8px;
   font-size: 11px;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: #1e1e38;
-  color: #ccc;
+  background: var(--c-control);
+  color: var(--c-text-secondary);
   outline: none;
   font-family: inherit;
   cursor: pointer;
@@ -929,7 +929,7 @@ function onWheel() {
 }
 
 .log-list::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: var(--c-border);
   border-radius: 3px;
 }
 
@@ -966,7 +966,7 @@ function onWheel() {
   justify-content: center;
   gap: 8px;
   height: 100px;
-  color: #888;
+  color: var(--c-text-muted);
 }
 
 .loading-older {
@@ -975,7 +975,7 @@ function onWheel() {
   justify-content: center;
   gap: 8px;
   padding: 8px;
-  color: #777;
+  color: var(--c-text-muted);
   font-size: 11px;
 }
 
@@ -1000,23 +1000,23 @@ function onWheel() {
   justify-content: center;
   gap: 8px;
   padding: 20px;
-  color: #ef5350;
+  color: var(--c-error);
   font-size: 12px;
 }
 
 .retry-btn {
   padding: 4px 12px;
   font-size: 11px;
-  border: 1px solid #ef5350;
+  border: 1px solid var(--c-error);
   border-radius: 6px;
   background: transparent;
-  color: #ef5350;
+  color: var(--c-error);
   cursor: pointer;
   font-family: inherit;
 }
 
 .retry-btn:hover {
-  background: color-mix(in srgb, #ef5350 15%, transparent);
+  background: color-mix(in srgb, var(--c-error) 15%, transparent);
 }
 
 /* ─── 日志行 ─────────────────────────────────────────── */
@@ -1054,7 +1054,7 @@ function onWheel() {
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 3px;
-  color: #fff;
+  color: var(--c-text-bright);
   flex-shrink: 0;
   min-width: 24px;
   text-align: center;
@@ -1076,7 +1076,7 @@ function onWheel() {
   padding: 1px 6px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.08);
-  color: #888;
+  color: var(--c-text-muted);
   flex-shrink: 0;
   font-weight: 400;
 }
@@ -1104,7 +1104,7 @@ function onWheel() {
 .log-detail-pre {
   margin: 0;
   font-size: 11px;
-  color: #aaa;
+  color: var(--c-text-secondary);
   background: rgba(0, 0, 0, 0.3);
   padding: 8px 12px;
   border-radius: 6px;
@@ -1122,7 +1122,7 @@ function onWheel() {
   transform: translateX(-50%);
   padding: 6px 16px;
   background: #3a3a7a;
-  color: #ccc;
+  color: var(--c-text-secondary);
   border-radius: 20px;
   font-size: 11px;
   cursor: pointer;
