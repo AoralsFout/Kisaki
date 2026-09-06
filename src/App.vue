@@ -23,7 +23,7 @@ import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
 import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
-import { loadConfigSecure } from './ai'
+import { loadConfigSecure, isConfigValid } from './ai'
 import type { ChatInputPayload } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
@@ -40,11 +40,13 @@ import {
   DEFAULT_VOICE_LANGUAGE,
   EVENT_CHARACTERS_CHANGED,
   EVENT_AI_CONFIG_CHANGED,
+  EVENT_SETTINGS_NAVIGATE,
   STORAGE_ONBOARDING_DONE,
+  STORAGE_ONBOARDING_DISMISSED,
 } from './constants'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
-import { listen } from '@tauri-apps/api/event'
+import { listen, emitTo } from '@tauri-apps/api/event'
 import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled, isIgnoring } from './passthrough'
 import { initWindowState } from './utils/windowState'
 
@@ -116,15 +118,51 @@ watch(() => charStore.currentId, () => applyCharacterPersona())
 
 // ── 首次运行引导 ──
 const showOnboarding = ref(false)
+// 引导完成/搁置状态：稍后 ≠ 完成；被搁置且配置仍未完成时，主窗口保留可恢复的配置待办入口
+const onboardingDone = ref(false)
+const onboardingDismissed = ref(false)
+// API 配置是否已保存（仅代表字段完整，不代表连接测试通过）
+const apiConfigured = ref(false)
 
 function isOnboardingDone(): boolean {
   try { return localStorage.getItem(STORAGE_ONBOARDING_DONE) === '1' } catch { return true }
 }
 
+function isOnboardingDismissed(): boolean {
+  try { return localStorage.getItem(STORAGE_ONBOARDING_DISMISSED) === '1' } catch { return false }
+}
+
+async function refreshApiConfigured() {
+  try {
+    apiConfigured.value = isConfigValid(await loadConfigSecure())
+  } catch {
+    apiConfigured.value = false
+  }
+}
+
+/** 两步配置齐全，用户点击「开始使用」：写入完成标记并清除搁置标记 */
 function finishOnboarding() {
-  try { localStorage.setItem(STORAGE_ONBOARDING_DONE, '1') } catch { /* ignore */ }
+  try {
+    localStorage.setItem(STORAGE_ONBOARDING_DONE, '1')
+    localStorage.removeItem(STORAGE_ONBOARDING_DISMISSED)
+  } catch { /* ignore */ }
+  onboardingDone.value = true
+  onboardingDismissed.value = false
   showOnboarding.value = false
 }
+
+/** 「稍后再说」：仅搁置引导，不写完成标记；配置待办保留在主窗口 */
+function laterOnboarding() {
+  try { localStorage.setItem(STORAGE_ONBOARDING_DISMISSED, '1') } catch { /* ignore */ }
+  onboardingDismissed.value = true
+  showOnboarding.value = false
+}
+
+/** 配置待办：引导被搁置、配置仍未完成时显示，点击重新打开引导 */
+const showConfigTodo = computed(() =>
+  onboardingDismissed.value && !onboardingDone.value && !showOnboarding.value
+  && !apiConfigured.value && !noCharacter.value,
+)
 
 let welcomeShown = false
 
@@ -145,15 +183,19 @@ onMounted(async () => {
     loadConfigSecure(),
     loadCosyVoiceConfigSecure(),
   ])
+  void refreshApiConfigured()
   // 初始化 data_dir 路径（供 imageUrl / loadCharacterJson 使用），
   // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
   await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
   chat.init()
   await charStore.init().catch((e) => log.error('角色初始化失败', e))
   charReady.value = true
-  // 首次运行：无完成标记时显示引导（仅主窗口）
+  // 首次运行：无完成标记时显示引导；已被「稍后」搁置则不再整层弹出，
+  // 改以主窗口的配置待办入口恢复（仅主窗口）。
   if (!isSettings) {
-    showOnboarding.value = !isOnboardingDone()
+    onboardingDone.value = isOnboardingDone()
+    onboardingDismissed.value = isOnboardingDismissed()
+    showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
   }
   // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
   setAvailableCharacters(charStore.availableList)
@@ -216,7 +258,10 @@ onMounted(async () => {
     .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
   // 只让主窗口重建并保存会话；设置窗口持有的会话副本可能已过期，不能回写覆盖。
   if (!isSettings) {
-    await listen(EVENT_AI_CONFIG_CHANGED, () => { chat.refreshModelContext() })
+    await listen(EVENT_AI_CONFIG_CHANGED, () => {
+      chat.refreshModelContext()
+      void refreshApiConfigured()
+    })
       .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
   }
 
@@ -257,6 +302,11 @@ async function openSettingsWindow(tab?: string) {
       await existing.unminimize()
       await existing.show()
       await existing.setFocus()
+      // 已有窗口时通过事件定位到目标标签（设置窗口侧会先经过未保存更改确认）
+      if (tab) {
+        await emitTo(WINDOW_SETTINGS, EVENT_SETTINGS_NAVIGATE, { tab })
+          .catch((e) => log.warn('定位设置标签失败', e))
+      }
       return
     }
 
@@ -418,6 +468,13 @@ async function handleSelectCharacter(charId: string) {
         </button>
       </div>
 
+      <!-- 配置待办（引导被搁置且配置未完成时可恢复） -->
+      <button v-if="showConfigTodo" class="stop-btn config-todo" data-pet-solid @click="showOnboarding = true"
+        :aria-label="t('app.aria.configTodo')">
+        <i class="fas fa-clipboard-check"></i>
+        <span>{{ t('app.configTodo') }}</span>
+      </button>
+
       <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
       <div class="input-wrapper" :class="{ open: chat.showInput }">
         <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId" :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
@@ -432,7 +489,8 @@ async function handleSelectCharacter(charId: string) {
       @select="handleSelectCharacter" />
 
     <!-- 首次运行引导（覆盖层） -->
-    <Onboarding :visible="showOnboarding" @open-settings="openSettingsWindow" @finish="finishOnboarding" />
+    <Onboarding :visible="showOnboarding" @open-settings="openSettingsWindow" @finish="finishOnboarding"
+      @later="laterOnboarding" />
   </main>
 </template>
 
@@ -673,5 +731,14 @@ async function handleSelectCharacter(charId: string) {
 
 .stop-btn:hover {
   background: rgba(210, 60, 60, 1);
+}
+
+/* ---- 配置待办入口（复用停止按钮的胶囊形态，语义色为品牌蓝） ---- */
+.config-todo {
+  background: rgba(74, 122, 255, 0.88);
+}
+
+.config-todo:hover {
+  background: rgba(74, 122, 255, 1);
 }
 </style>

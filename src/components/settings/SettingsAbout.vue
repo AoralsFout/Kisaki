@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /**
  * 关于 - 版本信息、链接、退出
+ *
+ * 日志查看入口在「维护与帮助 → 诊断」。
  */
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { WINDOW_LOGS, QUERY_LOGS } from '../../constants'
 
 const { t } = useI18n()
 const appVersion = __APP_VERSION__
@@ -75,31 +75,6 @@ async function exitApp() {
   } catch { }
 }
 
-async function openLogWindow() {
-  try {
-    const all = await getAllWindows()
-    const existing = all.find(w => w.label === WINDOW_LOGS)
-    if (existing) {
-      await existing.unminimize()
-      await existing.show()
-      await existing.setFocus()
-      return
-    }
-
-    new WebviewWindow(WINDOW_LOGS, {
-      url: `/?${QUERY_LOGS}=1`,
-      title: t('window.logs'),
-      width: 800,
-      height: 500,
-      decorations: false,
-      resizable: true,
-      visible: false,
-    })
-  } catch (e) {
-    console.error('无法打开日志窗口', e)
-  }
-}
-
 </script>
 
 <template>
@@ -153,9 +128,6 @@ async function openLogWindow() {
       <hr class="section-divider" />
       <button class="btn-open-logs" @click="openCharacterFolder">
         <i class="fas fa-folder-open"></i> {{ t('settings.about.openCharFolder') }}
-      </button>
-      <button class="btn-open-logs" @click="openLogWindow">
-        <i class="fas fa-receipt"></i> {{ t('settings.about.openLogs') }}
       </button>
       <hr class="section-divider" />
       <button class="btn-exit-app" @click="exitApp">

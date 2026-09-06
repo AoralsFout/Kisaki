@@ -93,6 +93,9 @@ export const EVENT_CHARACTERS_CHANGED = 'characters-changed'
 /** AI 服务或模型配置保存后广播：主窗口据此重建上下文预算。 */
 export const EVENT_AI_CONFIG_CHANGED = 'ai-config-changed'
 
+/** 设置窗口标签定位（主窗口/引导 → 设置窗口）：payload 为 { tab } */
+export const EVENT_SETTINGS_NAVIGATE = 'settings-navigate'
+
 /** Rust 端轮询的全局光标位置（物理屏幕坐标），主窗口据此做鼠标穿透命中测试 */
 export const EVENT_CURSOR_POS = 'cursor-pos'
 
@@ -116,6 +119,9 @@ export const DEFAULT_TYPING_SPEED = 50
 
 /** 首次运行引导是否已完成 */
 export const STORAGE_ONBOARDING_DONE = 'deskpet-onboarding-done'
+
+/** 首次运行引导被「稍后再说」搁置：不等于完成，配置待办仍可从主窗口恢复 */
+export const STORAGE_ONBOARDING_DISMISSED = 'deskpet-onboarding-dismissed'
 
 /** 会话列表存储键 */
 export const STORAGE_SESSIONS = 'deskpet-sessions'

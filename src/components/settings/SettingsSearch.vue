@@ -6,7 +6,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useEditableForm } from '../../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import {
-  loadSearchConfigSecure, saveSearchConfigSecure, isSearchConfigValid,
+  loadSearchConfigSecure, saveSearchConfigSecure,
   DEFAULT_SEARCH_CONFIG, SEARCH_PROVIDERS,
 } from '../../agent/tools/searchConfig'
 import type { SearchConfig } from '../../agent/tools/searchConfig'
@@ -85,7 +85,7 @@ async function handleSearchSave() { return form.save() }
       <button class="btn-save" :disabled="saving" @click="handleSearchSave">
         {{ saving ? t('safety.saving') : searchSaved && !dirty ? t('common.saved') : t('common.save') }}
       </button>
-      <span v-if="isSearchConfigValid(searchConfig)" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.search.configOk') }}</span>
+      <span v-if="searchSaved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.search.savedOk') }}</span>
     </div>
   </div>
 </template>

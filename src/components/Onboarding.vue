@@ -5,11 +5,17 @@
  * 主窗口首启动时覆盖显示，引导用户完成两步核心配置：
  *   ① 配置 AI 接口（API Key / 模型）
  *   ② 添加一个角色（导入角色包 / 新建）
- * 语音为可选项，仅作提示。完成后写入 STORAGE_ONBOARDING_DONE，之后不再出现。
+ * 语音为可选项，仅作提示。
+ *
+ * 完成语义：
+ *   - 两步齐全后点击「开始使用」才 emit('finish')，由父组件写入 STORAGE_ONBOARDING_DONE。
+ *   - 配置未完成时主按钮为「继续配置」，定位到第一个未完成步骤；不产生完成标记。
+ *   - 「稍后再说」emit('later') 仅收起引导，父组件记录搁置状态并保留可恢复的配置待办。
  *
  * 就绪状态检测：
  *   - API：loadConfigSecure()（含密钥链/本地解密），跨窗口 storage 事件触发刷新
- *     （设置窗口保存配置后，主窗口同源收到 storage 事件自动重查）。
+ *     （设置窗口保存配置后，主窗口同源收到 storage 事件自动重查）。就绪仅表示配置已保存，
+ *     不代表连接测试通过。
  *   - 角色：charStore.availableList 为响应式，App.vue 收到 characters-changed
  *     事件刷新列表后此处自动联动。
  */
@@ -26,6 +32,7 @@ const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
   (e: 'open-settings', tab: string): void
   (e: 'finish'): void
+  (e: 'later'): void
 }>()
 
 const { t } = useI18n()
@@ -34,6 +41,9 @@ const charStore = useCharacterStore()
 const apiReady = ref(false)
 const charReady = computed(() => charStore.availableList.length > 0)
 const allReady = computed(() => apiReady.value && charReady.value)
+
+/** 第一个未完成的步骤：API 未配置先去配置，否则去添加角色 */
+const pendingTab = computed(() => (apiReady.value ? 'character' : 'api'))
 
 /** 重新检测 API 是否已配置（异步解密） */
 async function refreshApi() {
@@ -117,10 +127,13 @@ onUnmounted(() => {
         <p class="ob-voice"><i class="fas fa-volume-high"></i> {{ t('onboarding.voice') }}</p>
 
         <div class="ob-actions">
-          <button class="ob-primary" :class="{ soft: !allReady }" @click="emit('finish')">
+          <button v-if="allReady" class="ob-primary" @click="emit('finish')">
             <i class="fas fa-paw"></i> {{ t('onboarding.start') }}
           </button>
-          <button class="ob-later" @click="emit('finish')">{{ t('onboarding.later') }}</button>
+          <button v-else class="ob-primary soft" @click="emit('open-settings', pendingTab)">
+            <i class="fas fa-arrow-right"></i> {{ t('onboarding.continue') }}
+          </button>
+          <button v-if="!allReady" class="ob-later" @click="emit('later')">{{ t('onboarding.later') }}</button>
         </div>
         <p v-if="!allReady" class="ob-hint">{{ t('onboarding.notReady') }}</p>
       </div>

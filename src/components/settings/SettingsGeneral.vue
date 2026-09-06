@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * 通用设置 - 语言、自动执行
+ * 通用设置 - 界面语言、外观与系统集成
+ *
+ * AI 工具授权（自动执行文件修改、本地任务执行）已迁移至「连接与能力 → 权限」。
  */
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage } from '../../i18n'
-import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
 import { createLogger } from '../../utils/logger'
-import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../../constants'
 import {
   isCharacterOpacityWheelEnabled,
   setCharacterOpacityWheelEnabled,
@@ -18,8 +18,6 @@ const log = createLogger('SettingsGeneral')
 const { t } = useI18n()
 
 const uiLang = ref(getUiLanguage())
-const autoExec = ref(getAutoExecFiles())
-const commandEnabled = ref(getCommandEnabled())
 const opacityWheelEnabled = ref(isCharacterOpacityWheelEnabled())
 
 // ── 开机自启 ──
@@ -28,16 +26,6 @@ const autoStartSupported = ref(false)
 
 function onUiLangChange() {
   setUiLanguage(uiLang.value)
-}
-
-function onAutoExecChange() {
-  autoExec.value = !autoExec.value
-  setAutoExecFiles(autoExec.value)
-}
-
-function onCommandEnabledChange() {
-  commandEnabled.value = !commandEnabled.value
-  setCommandEnabled(commandEnabled.value)
 }
 
 function onOpacityWheelEnabledChange() {
@@ -90,32 +78,6 @@ onMounted(() => { void refreshAutoStart() })
         </label>
         <button :class="['toggle-switch', { active: opacityWheelEnabled }]"
           @click="onOpacityWheelEnabledChange" role="switch" :aria-checked="opacityWheelEnabled">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.general.autoExecTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.general.autoExecDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: autoExec }]"
-          @click="onAutoExecChange" role="switch" :aria-checked="autoExec">
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-    </div>
-
-    <div v-if="EXPERIMENTAL_COMMAND_AVAILABLE" class="form-group">
-      <div class="toggle-row">
-        <label class="toggle-label">
-          <span class="toggle-label-text">{{ t('settings.general.commandTitle') }}</span>
-          <span class="toggle-label-desc">{{ t('settings.general.commandDesc') }}</span>
-        </label>
-        <button :class="['toggle-switch', { active: commandEnabled }]"
-          @click="onCommandEnabledChange" role="switch" :aria-checked="commandEnabled">
           <span class="toggle-knob"></span>
         </button>
       </div>

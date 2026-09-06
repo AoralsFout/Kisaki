@@ -2,7 +2,7 @@
 /**
  * API 配置 - 预设、baseURL、apiKey、model
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useEditableForm } from '../../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid, testAIConnection } from '../../ai'
@@ -22,6 +22,12 @@ defineExpose({ dirty, saving, save: form.save })
 const testing = ref(false)
 const testResult = ref<'ok' | 'error' | ''>('')
 const testMessage = ref('')
+
+// 配置变更后，此前的连接测试结果不再代表当前配置，清空以免误导
+watch(config, () => {
+  testResult.value = ''
+  testMessage.value = ''
+}, { deep: true })
 
 const PRESETS = [
   { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -94,7 +100,8 @@ async function handleTest() {
       <button class="btn-secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">
         {{ testing ? t('settings.api.testing') : t('settings.api.test') }}
       </button>
-      <span v-if="isConfigValid(config)" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.configOk') }}</span>
+      <!-- 字段有效只代表「已保存」，连接是否可用以测试结果为准 -->
+      <span v-if="saved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.savedOk') }}</span>
     </div>
     <p v-if="testMessage" :class="testResult === 'ok' ? 'status-ok' : 'status-error'">{{ testMessage }}</p>
   </div>

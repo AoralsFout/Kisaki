@@ -5,13 +5,14 @@
  * 左侧导航 + 右侧内容，各标签页内容由 settings/ 下子组件实现。
  * 作为独立 Tauri 窗口打开（?settings=1）。
  */
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import UnsavedDialog from './UnsavedDialog.vue'
 import type { EditablePage } from '../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { QUERY_SETTINGS } from '../constants'
+import { listen } from '@tauri-apps/api/event'
+import { QUERY_SETTINGS, EVENT_SETTINGS_NAVIGATE } from '../constants'
 import { initWindowState } from '../utils/windowState'
 import DevPanel from './settings/DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
@@ -21,6 +22,8 @@ import SettingsSearch from './settings/SettingsSearch.vue'
 import SettingsTts from './settings/SettingsTts.vue'
 import SettingsAbout from './settings/SettingsAbout.vue'
 import SettingsPrivacy from './settings/SettingsPrivacy.vue'
+import SettingsPermissions from './settings/SettingsPermissions.vue'
+import SettingsDiagnostics from './settings/SettingsDiagnostics.vue'
 
 const { t } = useI18n()
 
@@ -29,11 +32,39 @@ const isDevelopment = import.meta.env.DEV
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 导航 ----
-type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about' | 'privacy'
+type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'permissions' | 'dev' | 'about' | 'privacy' | 'diagnostics'
+const TAB_GROUPS: Array<{ key: 'experience' | 'connection' | 'maintenance'; tabs: Tab[] }> = [
+  { key: 'experience', tabs: ['general', 'character', 'tts'] },
+  { key: 'connection', tabs: ['api', 'search', 'permissions'] },
+  { key: 'maintenance', tabs: ['privacy', 'diagnostics', 'about'] },
+]
+const VALID_TABS: Tab[] = [
+  ...TAB_GROUPS.flatMap(g => g.tabs),
+  'dev', // 仅开发构建
+]
+const TAB_META: Record<Tab, { icon: string; label: string }> = {
+  general: { icon: 'fa-sliders', label: 'settings.nav.general' },
+  character: { icon: 'fa-masks-theater', label: 'settings.nav.character' },
+  tts: { icon: 'fa-microphone', label: 'settings.nav.tts' },
+  api: { icon: 'fa-plug', label: 'settings.nav.api' },
+  search: { icon: 'fa-globe', label: 'settings.nav.search' },
+  permissions: { icon: 'fa-user-shield', label: 'settings.nav.permissions' },
+  privacy: { icon: 'fa-shield-halved', label: 'settings.nav.privacy' },
+  diagnostics: { icon: 'fa-clipboard-list', label: 'settings.nav.diagnostics' },
+  about: { icon: 'fa-circle-info', label: 'settings.nav.about' },
+  dev: { icon: 'fa-screwdriver-wrench', label: 'settings.nav.dev' },
+}
+/** 维护与帮助组在开发构建下追加 Dev 标签 */
+const visibleGroups = computed(() => {
+  const groups = TAB_GROUPS.map(g => ({ ...g, tabs: [...g.tabs] }))
+  if (isDevelopment) groups[2].tabs.push('dev')
+  return groups
+})
 const activeTab = ref<Tab>('general')
 const editor = ref<EditablePage | null>(null)
 const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
 let unlistenClose: (() => void) | undefined
+let unlistenNavigate: (() => void) | undefined
 const closeError = ref(false)
 async function installCloseGuard() {
   unlistenClose = await selfWindow.value?.onCloseRequested(async event => {
@@ -62,18 +93,29 @@ function beforeUnload(event: BeforeUnloadEvent) {
   if (editor.value?.dirty || editor.value?.saving) { event.preventDefault(); event.returnValue = '' }
 }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
-onUnmounted(() => { unlistenClose?.(); window.removeEventListener('beforeunload', beforeUnload) })
+onUnmounted(() => {
+  unlistenClose?.()
+  unlistenNavigate?.()
+  window.removeEventListener('beforeunload', beforeUnload)
+})
 
 onMounted(async () => {
   // 支持通过 URL ?tab=character 定位标签页；在窗口显示前完成，避免先闪过默认页。
   const tabParam = new URLSearchParams(window.location.search).get('tab')
-  const validTabs: Tab[] = ['general', 'api', 'search', 'character', 'tts', 'dev', 'about', 'privacy']
-  if (tabParam && (validTabs as string[]).includes(tabParam)) {
+  if (tabParam && (VALID_TABS as string[]).includes(tabParam)) {
     activeTab.value = tabParam as Tab
   }
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
     await installCloseGuard().catch(() => {})
+    // 已有设置窗口时，主窗口通过事件请求定位标签（如引导的「去配置」）。
+    // 走 selectTab 以复用未保存更改确认。
+    try {
+      unlistenNavigate = await listen<{ tab?: string }>(EVENT_SETTINGS_NAVIGATE, (e) => {
+        const tab = e.payload?.tab
+        if (tab && (VALID_TABS as string[]).includes(tab)) void selectTab(tab as Tab)
+      })
+    } catch { /* 浏览器预览环境无 Tauri 事件总线 */ }
     // 隐藏创建，恢复位置/大小后再显示，避免白窗闪现和瞬移。
     await initWindowState('settings', { showAfterRestore: true }).catch(() => {})
   }
@@ -112,40 +154,16 @@ function closeWindow() {
     </header>
 
     <div class="layout">
-      <!-- 左侧导航 -->
+      <!-- 左侧导航（按使用体验 / 连接与能力 / 维护与帮助分组） -->
       <nav class="sidebar">
-        <button :class="['nav-item', { active: activeTab === 'general' }]" @click="selectTab('general')">
-          <i class="fas fa-sliders nav-icon"></i>
-          <span>{{ t('settings.nav.general') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'api' }]" @click="selectTab('api')">
-          <i class="fas fa-plug nav-icon"></i>
-          <span>{{ t('settings.nav.api') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'search' }]" @click="selectTab('search')">
-          <i class="fas fa-globe nav-icon"></i>
-          <span>{{ t('settings.nav.search') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'character' }]" @click="selectTab('character')">
-          <i class="fas fa-masks-theater nav-icon"></i>
-          <span>{{ t('settings.nav.character') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'tts' }]" @click="selectTab('tts')">
-          <i class="fas fa-microphone nav-icon"></i>
-          <span>{{ t('settings.nav.tts') }}</span>
-        </button>
-        <button v-if="isDevelopment" :class="['nav-item', { active: activeTab === 'dev' }]" @click="selectTab('dev')">
-          <i class="fas fa-screwdriver-wrench nav-icon"></i>
-          <span>{{ t('settings.nav.dev') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'about' }]" @click="selectTab('about')">
-          <i class="fas fa-circle-info nav-icon"></i>
-          <span>{{ t('settings.nav.about') }}</span>
-        </button>
-        <button :class="['nav-item', { active: activeTab === 'privacy' }]" @click="selectTab('privacy')">
-          <i class="fas fa-shield-halved nav-icon"></i>
-          <span>{{ t('settings.nav.privacy') }}</span>
-        </button>
+        <template v-for="group in visibleGroups" :key="group.key">
+          <div class="nav-group-title">{{ t(`settings.nav.groups.${group.key}`) }}</div>
+          <button v-for="tab in group.tabs" :key="tab" :class="['nav-item', { active: activeTab === tab }]"
+            @click="selectTab(tab)">
+            <i class="fas" :class="TAB_META[tab].icon"></i>
+            <span>{{ t(TAB_META[tab].label) }}</span>
+          </button>
+        </template>
       </nav>
 
       <!-- 右侧内容 -->
@@ -154,6 +172,7 @@ function closeWindow() {
         <SettingsApi ref="editor" v-if="activeTab === 'api'" />
         <SettingsSearch ref="editor" v-if="activeTab === 'search'" />
         <SettingsTts ref="editor" v-if="activeTab === 'tts'" />
+        <SettingsPermissions v-if="activeTab === 'permissions'" />
 
         <div v-if="activeTab === 'character'" class="content-section content-wide">
           <CharacterManager ref="editor" />
@@ -165,6 +184,7 @@ function closeWindow() {
           <DevPanel />
         </div>
 
+        <SettingsDiagnostics v-if="activeTab === 'diagnostics'" />
         <SettingsAbout v-if="activeTab === 'about'" />
         <SettingsPrivacy v-if="activeTab === 'privacy'" />
       </main>
@@ -242,6 +262,20 @@ function closeWindow() {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+}
+
+.nav-group-title {
+  margin: 10px 4px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.nav-group-title:first-child {
+  margin-top: 2px;
 }
 
 .nav-item {

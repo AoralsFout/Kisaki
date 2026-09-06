@@ -32,12 +32,12 @@ vi.mock('../../../constants', () => ({
 describe('SettingsGeneral release mode', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('keeps normal settings and hides the experimental command switch', async () => {
+  it('keeps normal settings and moves the permission switches to the permissions page', async () => {
     const { default: SettingsGeneral } = await import('../SettingsGeneral.vue')
     const wrapper = mount(SettingsGeneral)
 
     expect(wrapper.text()).toContain('settings.general.uiLang')
-    expect(wrapper.text()).toContain('settings.general.autoExecTitle')
+    expect(wrapper.text()).not.toContain('settings.general.autoExecTitle')
     expect(wrapper.text()).not.toContain('settings.general.commandTitle')
   })
 })
