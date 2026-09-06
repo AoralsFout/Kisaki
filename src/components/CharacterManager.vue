@@ -2,8 +2,9 @@
 /**
  * 角色管理 - 角色列表 + 编辑器
  */
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, useId } from 'vue'
 import UnsavedDialog from './UnsavedDialog.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
@@ -27,6 +28,7 @@ import Live2DPreview from './Live2DPreview.vue'
 import { loadLive2DManifest } from '../character'
 import type { Live2DManifest, Live2DConfig } from '../character'
 import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
+import { useModalFocus } from '../utils/modalFocus'
 
 const charStore = useCharacterStore()
 const ttsProvider = ref(getTtsProvider())
@@ -72,6 +74,9 @@ const newCharDesc = ref('')
 const newCharRender = ref<'illustration' | 'live2d'>('illustration')
 const newCharModelDir = ref('') // Live2D：选中的模型文件夹绝对路径
 const createError = ref('')
+const createDialogRef = ref<HTMLElement | null>(null)
+const createInputRef = ref<HTMLInputElement | null>(null)
+const createTitleId = useId()
 
 function resetCreateForm() {
   newCharId.value = ''
@@ -255,6 +260,12 @@ async function enterEditor(id: string) {
 const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
 const saving = ref(false)
 const dirty = computed(() => hasChanges.value || Boolean(newPoseName.value.trim() || newCostumeName.value.trim()) || (showCreateForm.value && Boolean(newCharId.value || newCharName.value || newCharDesc.value || newCharModelDir.value)))
+useModalFocus(
+  () => showCreateForm.value,
+  createDialogRef,
+  () => { if (!saving.value) void closeCreateForm() },
+  createInputRef,
+)
 async function savePage() {
   if (showCreateForm.value) { await submitCreateForm(); return !showCreateForm.value }
   commitNewPose()
@@ -658,6 +669,11 @@ async function importPack() {
 
 <template>
   <UnsavedDialog ref="leaveDialog" />
+  <ConfirmDialog :visible="showDeleteConfirm" :busy="isDeleting"
+    :title="t('character.mgr.deleteConfirmTitle')"
+    :message="t('character.mgr.deleteConfirmText', { id: editingId })"
+    :confirm-label="t('character.mgr.confirmDelete')" danger
+    @cancel="showDeleteConfirm = false" @confirm="deleteCharacter" />
   <div class="char-mgr">
     <!-- ===== 角色卡片列表 ===== -->
     <div v-if="view === 'list'">
@@ -669,7 +685,7 @@ async function importPack() {
       </div>
       <div class="list-status">
         <span v-if="saveMsg" class="save-msg"><i class="fas fa-check-circle"></i> {{ saveMsg }}</span>
-        <span v-if="saveError" class="save-err"><i class="fas fa-xmark-circle"></i> {{ saveError }}</span>
+        <span v-if="saveError" class="save-err" role="alert" data-selectable><i class="fas fa-xmark-circle"></i> {{ saveError }}</span>
       </div>
 
       <!-- 零角色空状态引导 -->
@@ -700,26 +716,29 @@ async function importPack() {
       <!-- 创建角色模态框 -->
       <Transition name="modal-fade">
         <div v-if="showCreateForm" class="modal-overlay" @click.self="closeCreateForm">
-          <div class="modal-card" :inert="saving">
+          <section ref="createDialogRef" class="modal-card" role="dialog" aria-modal="true"
+            :aria-labelledby="createTitleId" :aria-busy="saving" tabindex="-1">
             <div class="modal-header">
-              <h3 class="modal-title"><i class="fas fa-masks-theater"></i> {{ t('character.mgr.createTitle') }}</h3>
-              <button class="modal-close" @click="closeCreateForm">✕</button>
+              <h3 :id="createTitleId" class="modal-title"><i class="fas fa-masks-theater"></i> {{ t('character.mgr.createTitle') }}</h3>
+              <button class="modal-close" :disabled="saving" :aria-label="t('common.close')" @click="closeCreateForm">✕</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" :inert="saving">
               <div class="form-group">
-                <label class="form-label">{{ t('character.mgr.idLabel') }} <span class="label-note">{{ t('character.mgr.idNote') }}</span></label>
+                <label class="form-label" for="new-character-id">{{ t('character.mgr.idLabel') }} <span class="label-note">{{ t('character.mgr.idNote') }}</span></label>
                 <input
+                  ref="createInputRef"
+                  id="new-character-id"
                   v-model="newCharId"
                   class="form-input"
                   :placeholder="t('character.mgr.idPlaceholder')"
-                  autofocus
                   @keydown.enter="submitCreateForm"
                   @keydown.esc="closeCreateForm"
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">{{ t('character.mgr.nameLabel') }}</label>
+                <label class="form-label" for="new-character-name">{{ t('character.mgr.nameLabel') }}</label>
                 <input
+                  id="new-character-name"
                   v-model="newCharName"
                   class="form-input"
                   :placeholder="t('character.mgr.namePlaceholder')"
@@ -727,8 +746,9 @@ async function importPack() {
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">{{ t('character.mgr.descLabel') }} <span class="label-note">{{ t('character.mgr.descNote') }}</span></label>
+                <label class="form-label" for="new-character-desc">{{ t('character.mgr.descLabel') }} <span class="label-note">{{ t('character.mgr.descNote') }}</span></label>
                 <input
+                  id="new-character-desc"
                   v-model="newCharDesc"
                   class="form-input"
                   :placeholder="t('character.mgr.descPlaceholder')"
@@ -747,16 +767,16 @@ async function importPack() {
                   <button type="button" class="btn-pick" @click="pickModelFolder">
                     <i class="fas fa-folder-open"></i> {{ t('character.mgr.live2d.pickModel') }}
                   </button>
-                  <span class="model-path">{{ newCharModelDir || t('character.mgr.live2d.noFolder') }}</span>
+                  <span class="model-path" data-selectable>{{ newCharModelDir || t('character.mgr.live2d.noFolder') }}</span>
                 </div>
               </div>
-              <p v-if="createError" class="form-error">{{ createError }}</p>
+              <p v-if="createError" class="form-error" role="alert" data-selectable>{{ createError }}</p>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer" :inert="saving">
               <button class="btn-cancel" @click="closeCreateForm">{{ t('common.cancel') }}</button>
               <button class="btn-create" @click="submitCreateForm">{{ t('character.mgr.confirmCreate') }}</button>
             </div>
-          </div>
+          </section>
         </div>
       </Transition>
     </div>
@@ -773,14 +793,17 @@ async function importPack() {
               :aria-label="t('character.mgr.nameLabel')" @input="markChanged" />
             <div class="editor-actions">
               <button class="btn-icon-btn" :class="{ active: !previewCollapsed }" :aria-pressed="!previewCollapsed"
-                :title="t('character.mgr.previewToggle')" @click="previewCollapsed = !previewCollapsed">
+                :title="t('character.mgr.previewToggle')" :aria-label="t('character.mgr.previewToggle')"
+                @click="previewCollapsed = !previewCollapsed">
                 <i class="fas" :class="previewCollapsed ? 'fa-eye' : 'fa-eye-slash'"></i>
               </button>
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
                 <i v-if="hasChanges" class="fas fa-floppy-disk"></i> {{ saving ? t('safety.saving') : t('character.mgr.saveBtn') }}
               </button>
-              <button class="btn-export" :disabled="packBusy" @click="exportPack" :title="t('character.mgr.exportTitle')"><i class="fas fa-file-export"></i></button>
-              <button class="btn-delete" @click="showDeleteConfirm = true" :title="t('character.mgr.deleteTitle')"><i class="fas fa-trash-can"></i></button>
+              <button class="btn-export" :disabled="packBusy" @click="exportPack" :title="t('character.mgr.exportTitle')"
+                :aria-label="t('character.mgr.exportTitle')"><i class="fas fa-file-export"></i></button>
+              <button class="btn-delete" @click="showDeleteConfirm = true" :title="t('character.mgr.deleteTitle')"
+                :aria-label="t('character.mgr.deleteTitle')"><i class="fas fa-trash-can"></i></button>
             </div>
           </div>
           <div class="editor-status">
@@ -788,7 +811,7 @@ async function importPack() {
               <i class="fas fa-check-circle"></i>
               {{ saveMsg }}
             </span>
-            <span v-if="saveError" class="save-err">
+            <span v-if="saveError" class="save-err" role="alert" data-selectable>
               <i class="fas fa-xmark-circle"></i>
               {{ saveError }}
             </span>
@@ -822,7 +845,8 @@ async function importPack() {
             <div class="mgr-field">
               <div class="mgr-sublabel">{{ t('character.mgr.poses') }}</div>
               <div class="tag-list">
-                <span v-for="(p, i) in editablePoses" :key="i" class="tag-item" @click="removePose(i)" :title="t('character.mgr.clickToRemove')">{{ p }} ✕</span>
+                <button v-for="(p, i) in editablePoses" :key="i" type="button" class="tag-item"
+                  @click="removePose(i)" :aria-label="`${t('character.mgr.clickToRemove')}: ${p}`">{{ p }} ✕</button>
                 <template v-if="addingPose">
                   <input
                     ref="poseInputRef"
@@ -842,7 +866,8 @@ async function importPack() {
             <div class="mgr-field">
               <div class="mgr-sublabel">{{ t('character.mgr.costumes') }}</div>
               <div class="tag-list">
-                <span v-for="(c, i) in editableCostumes" :key="i" class="tag-item" @click="removeCostume(i)" :title="t('character.mgr.clickToRemove')">{{ c }} ✕</span>
+                <button v-for="(c, i) in editableCostumes" :key="i" type="button" class="tag-item"
+                  @click="removeCostume(i)" :aria-label="`${t('character.mgr.clickToRemove')}: ${c}`">{{ c }} ✕</button>
                 <template v-if="addingCostume">
                   <input
                     ref="costumeInputRef"
@@ -862,10 +887,12 @@ async function importPack() {
             <div class="mgr-field">
               <div class="mgr-sublabel">{{ t('character.mgr.imagesTitle') }}</div>
               <div class="img-grid">
-                <div
+                <button
                   v-for="img in editableImages"
                   :key="img.file"
+                  type="button"
                   :class="['img-card', { selected: editFile === img.file }]"
+                  :aria-pressed="editFile === img.file"
                   @click="editFile = img.file"
                 >
                   <div class="img-wrap">
@@ -875,13 +902,13 @@ async function importPack() {
                     <div class="img-grid-name">{{ img.file }}</div>
                     <div class="img-grid-tags">{{ img.pose }} · {{ img.costume }} · {{ img.emotions.join('、') }}</div>
                   </div>
-                </div>
-                <div class="img-card img-card-add" @click="triggerAddImage">
+                </button>
+                <button type="button" class="img-card img-card-add" @click="triggerAddImage">
                   <div class="img-add-icon">+</div>
                   <div class="img-grid-info">
                     <div class="img-grid-name">{{ t('character.mgr.addImage') }}</div>
                   </div>
-                </div>
+                </button>
               </div>
               <input ref="fileInput" type="file" accept="image/*" multiple style="display:none" @change="onFilePicked" />
             </div>
@@ -913,6 +940,7 @@ async function importPack() {
                   </option>
                 </select>
                 <button class="voice-refresh-btn" :disabled="loadingVoices" @click="loadVoices" :title="t('character.mgr.voiceRefresh')">
+                  <span class="sr-only">{{ t('character.mgr.voiceRefresh') }}</span>
                   <i class="fas fa-sync" :class="{ spinning: loadingVoices }"></i>
                 </button>
               </div>
@@ -928,7 +956,7 @@ async function importPack() {
                 </button>
                 <span class="voice-preview-hint">{{ voicePreviewText }}</span>
               </div>
-              <p v-if="voiceError" class="voice-hint-error">{{ voiceError }}</p>
+              <p v-if="voiceError" class="voice-hint-error" role="alert" data-selectable>{{ voiceError }}</p>
               <p v-else-if="availableVoices.length === 0" class="voice-hint">
                 {{ t('character.mgr.voiceNoneHint') }}
               </p>
@@ -949,6 +977,7 @@ async function importPack() {
                   <input v-model="gsRefAudio" class="form-input file-picker-input" type="text" readonly
                     :placeholder="t('character.mgr.gptsovitsRefAudioPlaceholder')" @click="pickRefAudio" />
                   <button class="btn-browse" @click="pickRefAudio" :title="t('character.mgr.gptsovitsPickAudio')">
+                    <span class="sr-only">{{ t('character.mgr.gptsovitsPickAudio') }}</span>
                     <i class="fas fa-folder-open"></i>
                   </button>
                 </div>
@@ -1013,27 +1042,6 @@ async function importPack() {
     </div>
 
     <!-- 删除角色确认弹窗 -->
-    <Transition name="modal-fade">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-card modal-warn">
-          <div class="modal-header">
-            <h3 class="modal-title"><i class="fas fa-triangle-exclamation"></i> {{ t('character.mgr.deleteConfirmTitle') }}</h3>
-            <button class="modal-close" @click="showDeleteConfirm = false">✕</button>
-          </div>
-          <div class="modal-body">
-            <p class="delete-warn-text">
-              {{ t('character.mgr.deleteConfirmText', { id: editingId }) }}
-            </p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-cancel" @click="showDeleteConfirm = false">{{ t('common.cancel') }}</button>
-            <button class="btn-delete-confirm" :disabled="isDeleting" @click="deleteCharacter">
-              {{ isDeleting ? t('character.mgr.deleting') : t('character.mgr.confirmDelete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -1236,8 +1244,14 @@ async function importPack() {
 }
 
 .img-card {
+  width: 100%;
+  padding: 0;
   border: 1px solid var(--c-border);
   border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.12s;
@@ -1272,7 +1286,7 @@ async function importPack() {
 }
 
 .img-grid-name {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   font-family: var(--font-mono);
   color: var(--c-text-secondary);
   overflow: hidden;
@@ -1304,7 +1318,7 @@ async function importPack() {
 }
 
 .img-grid-tags {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   color: var(--c-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1394,6 +1408,7 @@ async function importPack() {
   color: var(--c-text-secondary);
   cursor: pointer;
   transition: all 0.12s;
+  font-family: inherit;
 }
 
 .tag-item:hover {
@@ -1455,6 +1470,9 @@ async function importPack() {
   max-width: 90vw;
   box-shadow: 0 16px 64px rgba(0, 0, 0, 0.4);
   overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
@@ -1462,6 +1480,7 @@ async function importPack() {
   justify-content: space-between;
   align-items: center;
   padding: 18px 20px 0;
+  flex-shrink: 0;
 }
 
 .modal-title {
@@ -1488,6 +1507,7 @@ async function importPack() {
 
 .modal-body {
   padding: 16px 20px;
+  overflow-y: auto;
 }
 
 .modal-body .form-group {
@@ -1567,7 +1587,7 @@ async function importPack() {
 }
 .btn-pick:hover { background: var(--c-border); border-color: var(--c-brand); color: var(--c-text-bright); }
 .model-path {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-family: var(--font-mono);
   color: var(--c-text-muted);
   word-break: break-all;
@@ -1587,6 +1607,7 @@ async function importPack() {
   justify-content: flex-end;
   gap: 8px;
   padding: 0 20px 18px;
+  flex-shrink: 0;
 }
 
 .btn-cancel {
@@ -1765,42 +1786,6 @@ async function importPack() {
   background: rgba(239, 83, 80, 0.15);
 }
 
-.btn-delete-confirm {
-  padding: 8px 20px;
-  font-size: 13px;
-  font-weight: 500;
-  border: none;
-  background: var(--c-error);
-  color: white;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.btn-delete-confirm:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.btn-delete-confirm:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.delete-warn-text {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--c-text-secondary);
-  margin: 0;
-}
-
-.delete-warn-text strong {
-  color: var(--c-text);
-}
-
-.modal-warn {
-  border-top: 3px solid var(--c-error);
-}
-
 /* ---- 语音音色选择 ---- */
 .voice-select-row {
   display: flex;
@@ -1853,19 +1838,19 @@ async function importPack() {
 }
 
 .voice-hint {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-text-muted);
   margin: 6px 0 0;
 }
 
 .voice-hint-ok {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-ok);
   margin: 6px 0 0;
 }
 
 .voice-hint-error {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: #d00;
   margin: 6px 0 0;
 }
@@ -1884,7 +1869,7 @@ async function importPack() {
 
 .lang-label {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   color: var(--c-text-muted);
   margin-bottom: 4px;
@@ -1928,7 +1913,7 @@ async function importPack() {
 }
 
 .voice-preview-hint {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-text-secondary);
   font-style: italic;
   overflow: hidden;
@@ -1978,5 +1963,18 @@ async function importPack() {
   border-color: #7c5cfc;
   color: #b8a8ff;
   background: #2a2050;
+}
+
+@media (max-width: 760px) {
+  .editor-left { padding: var(--space-2); }
+  .editor-topbar { flex-wrap: wrap; gap: var(--space-2); }
+  .editor-name-input { order: 3; flex-basis: 100%; }
+  .editor-actions { margin-left: auto; }
+  .l2d-preview-panel { width: min(38vw, 240px); }
+}
+
+@media (max-height: 520px) {
+  .modal-card { max-height: 96vh; }
+  .editor-sticky { padding-block: var(--space-1) var(--space-2); }
 }
 </style>

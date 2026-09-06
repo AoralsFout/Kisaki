@@ -181,7 +181,7 @@ async function handleGsSave() { return gsForm.save() }
           {{ loadingVoices ? t('settings.tts.fetching') : t('settings.tts.fetchVoices') }}
         </BaseButton>
 
-        <div v-if="voiceError" class="voice-error">{{ voiceError }}</div>
+        <div v-if="voiceError" class="voice-error" role="alert" data-selectable>{{ voiceError }}</div>
 
         <div v-if="voices.length > 0" class="voice-list">
           <div v-for="v in voices" :key="v.voiceId" class="voice-item">

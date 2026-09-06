@@ -9,6 +9,8 @@ describe('ToggleRow', () => {
     expect(wrapper.text()).toContain('说明文字')
     expect(wrapper.get('[role="switch"]').classes()).toContain('active')
     expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[role="switch"]').attributes('aria-labelledby')).toBe(wrapper.get('.toggle-label-text').attributes('id'))
+    expect(wrapper.get('[role="switch"]').attributes('aria-describedby')).toBe(wrapper.get('.toggle-label-desc').attributes('id'))
   })
 
   it('emits update:checked with the next value', async () => {

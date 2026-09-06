@@ -5,7 +5,7 @@
  * - 支持 Shift+Enter 换行
  * - 支持粘贴或选择图片，发送给图像识别模型
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   createImageAttachment,
@@ -53,6 +53,8 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const containerRef = ref<HTMLElement | null>(null)
+let previousFocus: HTMLElement | null = null
 type Draft = { text: string; images: ImageAttachment[]; error: string; adding: boolean; sending: boolean }
 const drafts = reactive(new Map<string, Draft>())
 drafts.set(props.draftKey, { text: props.modelValue, images: [], error: '', adding: false, sending: false })
@@ -85,7 +87,19 @@ watch(inputText, (v) => {
 // 关闭只隐藏，文字和附件随会话保留。
 watch(() => props.visible, (v) => {
   if (v) {
-    setTimeout(() => inputRef.value?.focus(), 100)
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    void nextTick(() => inputRef.value?.focus())
+  } else {
+    const active = document.activeElement
+    const focusStayedInInput = !active || active === document.body || containerRef.value?.contains(active)
+    if (focusStayedInInput && previousFocus?.isConnected) previousFocus.focus()
+    previousFocus = null
+  }
+})
+onUnmounted(() => {
+  const active = document.activeElement
+  if ((!active || active === document.body || containerRef.value?.contains(active)) && previousFocus?.isConnected) {
+    previousFocus.focus()
   }
 })
 
@@ -175,8 +189,8 @@ function handleClose() {
 </script>
 
 <template>
-  <div class="input-overlay" @click.self="handleClose">
-    <div class="input-container" @click.stop data-pet-solid>
+  <div class="input-overlay" :inert="!visible" :aria-hidden="!visible" @click.self="handleClose">
+    <div ref="containerRef" class="input-container" @click.stop data-pet-solid>
       <div class="input-header">
         <span class="input-title"><i class="fas fa-comment"></i> {{ title || t('chat.input.title') }}</span>
         <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
@@ -206,7 +220,7 @@ function handleClose() {
         <div class="footer-right">
           <!-- 上下文用量圆环：悬浮展示详细预算信息 -->
           <svg v-if="contextUtilization !== null" class="context-ring" viewBox="0 0 22 22" width="22" height="22"
-            role="img" :aria-label="contextDetail" :title="contextDetail">
+            role="img" tabindex="0" focusable="true" :aria-label="contextDetail" :title="contextDetail">
             <circle class="ring-track" cx="11" cy="11" r="9" fill="none" stroke-width="3" />
             <circle class="ring-value" cx="11" cy="11" r="9" fill="none" stroke-width="3"
               :stroke-dasharray="`${2 * Math.PI * 9}`"
@@ -240,6 +254,9 @@ function handleClose() {
   padding: 12px;
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.15);
+  box-sizing: border-box;
+  max-height: min(380px, calc(100vh - 24px));
+  overflow-y: auto;
 }
 
 .input-header {
@@ -290,7 +307,7 @@ function handleClose() {
 }
 
 .input-field::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .image-list {
@@ -335,7 +352,7 @@ function handleClose() {
 .image-error {
   margin: 6px 2px 0;
   color: #ff9f9f;
-  font-size: 11px;
+  font-size: var(--fs-aux);
 }
 
 .input-footer {
@@ -374,7 +391,7 @@ function handleClose() {
 }
 
 .context-ring .ring-label {
-  fill: rgba(255, 255, 255, 0.75);
+  fill: rgba(255, 255, 255, 0.86);
   font-size: 7px;
   font-weight: 600;
 }
@@ -393,7 +410,7 @@ function handleClose() {
   color: rgba(255, 255, 255, 0.72);
   background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--fs-aux);
 }
 
 .btn-image:hover:not(:disabled) {
@@ -424,5 +441,12 @@ function handleClose() {
 .btn-send:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+@media (max-width: 420px) {
+  .input-overlay { padding-inline: var(--space-2); }
+  .input-container { padding: var(--space-2); }
+  .input-footer { align-items: flex-end; gap: var(--space-2); }
+  .btn-send { padding-inline: var(--space-3); }
 }
 </style>

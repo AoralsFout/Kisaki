@@ -2,9 +2,10 @@
 /**
  * 角色切换面板
  */
-import { ref, watch } from 'vue'
+import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
+import { useModalFocus } from '../utils/modalFocus'
 
 const { t } = useI18n()
 
@@ -19,20 +20,9 @@ const emit = defineEmits<{
 
 const charStore = useCharacterStore()
 const listRef = ref<HTMLElement | null>(null)
-
-// 按 Escape 关闭面板
-let keyHandler: ((e: KeyboardEvent) => void) | null = null
-watch(() => props.visible, (v) => {
-  if (v) {
-    keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') emit('close')
-    }
-    document.addEventListener('keydown', keyHandler)
-  } else if (keyHandler) {
-    document.removeEventListener('keydown', keyHandler)
-    keyHandler = null
-  }
-})
+const panelRef = ref<HTMLElement | null>(null)
+const titleId = useId()
+useModalFocus(() => Boolean(props.visible), panelRef, () => emit('close'))
 
 function handleSelect(id: string) {
   if (id !== charStore.currentId) {
@@ -45,9 +35,10 @@ function handleSelect(id: string) {
 <template>
   <Transition name="panel-slide">
     <div v-if="visible" class="overlay" data-pet-solid>
-      <div class="panel">
+      <section ref="panelRef" class="panel" role="dialog" aria-modal="true"
+        :aria-labelledby="titleId" tabindex="-1">
         <div class="panel-header">
-          <span class="panel-title"><i class="fas fa-masks-theater"></i> {{ t('character.select.title') }}</span>
+          <h2 :id="titleId" class="panel-title"><i class="fas fa-masks-theater"></i> {{ t('character.select.title') }}</h2>
           <div class="header-actions">
             <span class="count">{{ t('character.select.count', { n: charStore.availableList.length }) }}</span>
             <button class="btn-close" @click="emit('close')" :aria-label="t('character.select.aria')">✕</button>
@@ -55,10 +46,11 @@ function handleSelect(id: string) {
         </div>
 
         <div ref="listRef" class="char-list">
-          <div
+          <button
             v-for="id in charStore.availableList"
             :key="id"
             :class="['char-item', { active: id === charStore.currentId }]"
+            :aria-current="id === charStore.currentId ? 'true' : undefined"
             @click="handleSelect(id)"
           >
             <div class="char-avatar">
@@ -72,11 +64,11 @@ function handleSelect(id: string) {
               <div class="char-id">{{ id }}</div>
             </div>
             <div v-if="id === charStore.currentId" class="char-check"><i class="fas fa-check"></i></div>
-          </div>
+          </button>
 
           <div class="list-end"></div>
         </div>
-      </div>
+      </section>
     </div>
   </Transition>
 </template>
@@ -115,6 +107,7 @@ function handleSelect(id: string) {
 }
 
 .panel-title {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: white;
@@ -127,14 +120,14 @@ function handleSelect(id: string) {
 }
 
 .count {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .btn-close {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 16px;
   cursor: pointer;
   padding: 2px 6px;
@@ -163,11 +156,17 @@ function handleSelect(id: string) {
 }
 
 .char-item {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
+  border: 0;
   border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -204,8 +203,8 @@ function handleSelect(id: string) {
 }
 
 .char-id {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.58);
   margin-top: 2px;
 }
 
@@ -227,5 +226,9 @@ function handleSelect(id: string) {
 .panel-slide-leave-to {
   transform: translateY(30px);
   opacity: 0;
+}
+
+@media (max-height: 520px) {
+  .panel { max-height: 88vh; }
 }
 </style>

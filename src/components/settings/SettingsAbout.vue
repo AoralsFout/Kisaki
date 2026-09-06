@@ -105,7 +105,8 @@ async function exitApp() {
         </button>
       </div>
 
-      <p v-if="updateState !== 'idle'" class="update-status" :class="updateState">
+      <p v-if="updateState !== 'idle'" class="update-status" :class="updateState"
+        :role="updateState === 'error' ? 'alert' : 'status'" data-selectable>
         <template v-if="updateState === 'checking'">{{ t('settings.about.updateChecking') }}</template>
         <template v-else-if="updateState === 'up-to-date'">{{ t('settings.about.updateUpToDate') }}</template>
         <template v-else-if="updateState === 'available'">{{ t('settings.about.updateFound', { version: updateVersion }) }}</template>

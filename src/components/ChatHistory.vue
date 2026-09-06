@@ -11,11 +11,13 @@
  * - 助手消息展示角色身份快照名，旧数据回退当前角色名；
  * - 回档控件位于用户气泡头部右侧，生成中锁定。
  */
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { useSessionStore } from '../stores/session'
 import { useCharacterStore } from '../character'
+import { shouldReduceMotion } from '../utils/motionPreference'
+import ImageLightbox from './ImageLightbox.vue'
 
 const { t } = useI18n()
 
@@ -30,6 +32,8 @@ const sessionStore = useSessionStore()
 const charStore = useCharacterStore()
 const historyRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
+const previewImage = ref<{ dataUrl: string; name: string } | null>(null)
+const sessionSwitching = ref(false)
 
 /** 展开态由对话框驱动；折叠/展开在同一元素上过渡 */
 const expanded = computed(() => chat.showInput)
@@ -82,24 +86,79 @@ function measureCollapsed() {
   collapsedHeight.value = Math.min(Math.ceil(h), 220)
 }
 watch(
-  () => [chat.messages.length, hasPending.value, expanded.value] as const,
+  () => [sessionStore.currentSessionId, chat.messages.length, hasPending.value, expanded.value] as const,
   () => { nextTick(measureCollapsed) },
   { immediate: true },
 )
 
 // 滚到底部：新消息与流式增量平滑滚动；展开/收起与首启首次载入瞬时定位
 function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+  const resolvedBehavior = behavior === 'smooth' && shouldReduceMotion() ? 'auto' : behavior
   nextTick(() => {
-    listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior })
+    listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior: resolvedBehavior })
   })
 }
-// 会话初次载入（0 → N）不播滚动动画，之后的新消息才平滑滚动
+
+function jumpToBottomNow() {
+  const list = listRef.value
+  if (!list) return
+  list.scrollTo({ top: list.scrollHeight, behavior: 'auto' })
+}
+
+let sessionSettleVersion = 0
+let collapseRaf = 0
+
+function cancelCollapseScroll() {
+  if (collapseRaf) cancelAnimationFrame(collapseRaf)
+  collapseRaf = 0
+}
+
+/**
+ * 会话替换会同时改变末条消息高度和列表 scrollHeight。先禁用行高过渡并重测折叠高度，
+ * 再在新高度提交后及下一绘制帧各校准一次，避免布局钳制把位置留在底部上方。
+ */
+async function settleSessionAtBottom() {
+  const version = ++sessionSettleVersion
+  cancelCollapseScroll()
+  sessionSwitching.value = true
+  await nextTick()
+  if (version !== sessionSettleVersion) return
+  measureCollapsed()
+  await nextTick()
+  if (version !== sessionSettleVersion) return
+  jumpToBottomNow()
+  requestAnimationFrame(() => {
+    if (version !== sessionSettleVersion) return
+    jumpToBottomNow()
+    sessionSwitching.value = false
+  })
+}
+
+function onHistoryImageLoad() {
+  if (expanded.value && !sessionSwitching.value) return
+  void nextTick(async () => {
+    measureCollapsed()
+    await nextTick()
+    jumpToBottomNow()
+  })
+}
+
+onUnmounted(() => {
+  sessionSettleVersion++
+  cancelCollapseScroll()
+})
+
+// 首次载入与每次切换会话都瞬时定位；仅同一会话内的新消息使用平滑滚动。
 let initialMessagesSettled = false
+let lastSessionId = sessionStore.currentSessionId
 watch(
-  () => [chat.messages.length, hasPending.value] as const,
-  () => {
+  () => [sessionStore.currentSessionId, chat.messages.length, hasPending.value] as const,
+  ([sessionId]) => {
+    const sessionChanged = sessionId !== lastSessionId
+    lastSessionId = sessionId
     if (!props.visible) return
-    scrollToBottom(initialMessagesSettled ? 'smooth' : 'auto')
+    if (sessionChanged) void settleSessionAtBottom()
+    else scrollToBottom(!initialMessagesSettled ? 'auto' : 'smooth')
     initialMessagesSettled = true
   },
 )
@@ -119,7 +178,7 @@ function pinToBottomDuringTransition() {
   const container = historyRef.value
   const list = listRef.value
   if (!container || !list) return
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (shouldReduceMotion()) return
   const box: HTMLElement = container
   const scroller: HTMLElement = list
   let raf = 0
@@ -149,21 +208,23 @@ function collapseToBottomAnimated() {
   const startScroll = list.scrollTop
   const endScroll = Math.max(contentH - collapsedHeight.value, startScroll)
   if (endScroll - startScroll <= 1) return // 已在底部，无需补偿动画
+  cancelCollapseScroll()
   const duration = 350
   const startTime = performance.now()
   const tick = (now: number) => {
     const p = Math.min((now - startTime) / duration, 1)
     list.scrollTop = startScroll + (endScroll - startScroll) * p
-    if (p < 1) requestAnimationFrame(tick)
+    if (p < 1) collapseRaf = requestAnimationFrame(tick)
+    else collapseRaf = 0
   }
-  requestAnimationFrame(tick)
+  collapseRaf = requestAnimationFrame(tick)
 }
 
 watch(expanded, (v) => {
   const list = listRef.value
   if (!list) return
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    list.scrollTop = list.scrollHeight // 无过渡：直接定位
+  if (sessionSwitching.value || shouldReduceMotion()) {
+    jumpToBottomNow() // 会话切换/无过渡：直接定位
     return
   }
   if (v) pinToBottomDuringTransition()
@@ -175,7 +236,9 @@ watch(expanded, (v) => {
 </script>
 
 <template>
-  <div v-if="visible" ref="historyRef" :class="['chat-history', { expanded, entered }]"
+  <ImageLightbox :visible="Boolean(previewImage)" :src="previewImage?.dataUrl"
+    :alt="previewImage?.name" @close="previewImage = null" />
+  <div v-if="visible" ref="historyRef" :class="['chat-history', { expanded, entered, 'session-switching': sessionSwitching }]"
     :style="{ '--collapsed-h': `${collapsedHeight}px` }" data-pet-solid @wheel="onWheel">
     <div ref="listRef" class="message-list">
       <div v-for="msg in chat.messages" :key="msg.id" class="history-item">
@@ -192,6 +255,7 @@ watch(expanded, (v) => {
               <button class="rb-no" @click="confirmRollbackId = null">{{ t('common.cancel') }}</button>
             </template>
             <button v-else class="rb-btn" :disabled="chat.isProcessing" :title="t('chat.history.rollbackTitle')"
+              :aria-label="t('chat.history.rollbackTitle')"
               @click="confirmRollbackId = msg.id">
               <i class="fas fa-clock-rotate-left"></i> {{ t('chat.history.rollback') }}
             </button>
@@ -200,12 +264,16 @@ watch(expanded, (v) => {
         <!-- 思考内容（仅 assistant 消息可能有） -->
         <details v-if="msg.thinking" class="thinking-block">
           <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
-          <div class="thinking-text">{{ msg.thinking }}</div>
+          <div class="thinking-text" data-selectable>{{ msg.thinking }}</div>
         </details>
         <div v-if="msg.images?.length" class="msg-images">
-          <img v-for="image in msg.images" :key="image.id" :src="image.dataUrl" :alt="image.name" />
+          <button v-for="image in msg.images" :key="image.id" type="button" class="msg-image-button"
+            :aria-label="t('chat.history.openImage', { name: image.name })"
+            @click="previewImage = image">
+            <img :src="image.dataUrl" :alt="image.name" @load="onHistoryImageLoad" />
+          </button>
         </div>
-        <div class="msg-text">{{ msg.text }}</div>
+        <div class="msg-text" data-selectable>{{ msg.text }}</div>
       </div>
 
       <!-- 流式回复的待完成项：生成中实时显示，完成后并入正式历史 -->
@@ -215,9 +283,9 @@ watch(expanded, (v) => {
         </div>
         <details v-if="chat.currentThinking" class="thinking-block">
           <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
-          <div class="thinking-text">{{ chat.currentThinking }}</div>
+          <div class="thinking-text" data-selectable>{{ chat.currentThinking }}</div>
         </details>
-        <div class="msg-text">{{ chat.currentBubbleText }}<span v-if="chat.isTyping" class="pending-cursor">▌</span></div>
+        <div class="msg-text" data-selectable>{{ chat.currentBubbleText }}<span v-if="chat.isTyping" class="pending-cursor">▌</span></div>
       </div>
     </div>
   </div>
@@ -246,6 +314,10 @@ watch(expanded, (v) => {
 /* 展开态：对话框弹出时生长到全高 */
 .chat-history.expanded {
   grid-template-rows: 45vh;
+}
+
+.chat-history.session-switching {
+  transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -334,7 +406,7 @@ watch(expanded, (v) => {
 
 .msg-role-label {
   font-size: var(--fs-aux);
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(0, 0, 0, 0.68);
   display: flex;
   gap: 6px;
   align-items: center;
@@ -342,8 +414,8 @@ watch(expanded, (v) => {
 }
 
 .msg-time {
-  font-size: 10px;
-  color: rgba(0, 0, 0, 0.3);
+  font-size: var(--fs-aux);
+  color: rgba(0, 0, 0, 0.58);
 }
 
 .msg-images {
@@ -355,12 +427,21 @@ watch(expanded, (v) => {
   max-width: 280px;
 }
 
-.msg-images img {
+.msg-image-button {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.04);
+  cursor: zoom-in;
+}
+
+.msg-image-button img {
+  display: block;
   width: 100%;
   max-height: 120px;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .msg-text {
@@ -385,15 +466,16 @@ watch(expanded, (v) => {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 10px;
-  color: rgba(0, 0, 0, 0.3);
+  font-size: var(--fs-aux);
+  color: rgba(0, 0, 0, 0.58);
   padding: 2px 4px;
   border-radius: 6px;
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
-.history-item:hover .rb-btn {
+.history-item:hover .rb-btn,
+.history-item:focus-within .rb-btn {
   opacity: 1;
 }
 
@@ -407,13 +489,13 @@ watch(expanded, (v) => {
 }
 
 .rb-q {
-  font-size: 10px;
-  color: rgba(0, 0, 0, 0.55);
+  font-size: var(--fs-aux);
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .rb-yes,
 .rb-no {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   border: none;
   border-radius: 6px;
   padding: 3px 8px;
@@ -446,12 +528,11 @@ watch(expanded, (v) => {
 }
 
 .thinking-summary {
-  color: rgba(0, 0, 0, 0.4);
+  color: rgba(0, 0, 0, 0.62);
   font-style: italic;
   cursor: pointer;
   user-select: none;
-  outline: none;
-  font-size: 10px;
+  font-size: var(--fs-aux);
 }
 
 .thinking-summary::-webkit-details-marker {
@@ -460,10 +541,14 @@ watch(expanded, (v) => {
 
 .thinking-text {
   margin-top: 3px;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(0, 0, 0, 0.68);
   font-style: italic;
   line-height: 1.5;
   white-space: pre-wrap;
-  font-size: 10px;
+  font-size: var(--fs-aux);
+}
+
+@media (max-height: 520px) {
+  .chat-history.expanded { grid-template-rows: 32vh; }
 }
 </style>

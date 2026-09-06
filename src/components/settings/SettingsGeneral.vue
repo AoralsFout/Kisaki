@@ -13,6 +13,7 @@ import {
   isCharacterOpacityWheelEnabled,
   setCharacterOpacityWheelEnabled,
 } from '../../character/opacity'
+import { isReducedMotionEnabled, setReducedMotionEnabled } from '../../utils/motionPreference'
 import ToggleRow from '../ui/ToggleRow.vue'
 
 const log = createLogger('SettingsGeneral')
@@ -20,6 +21,7 @@ const { t } = useI18n()
 
 const uiLang = ref(getUiLanguage())
 const opacityWheelEnabled = ref(isCharacterOpacityWheelEnabled())
+const reducedMotionEnabled = ref(isReducedMotionEnabled())
 
 // ── 开机自启 ──
 const autoStart = ref(false)
@@ -29,9 +31,12 @@ function onUiLangChange() {
   setUiLanguage(uiLang.value)
 }
 
-function onOpacityWheelEnabledChange() {
-  opacityWheelEnabled.value = !opacityWheelEnabled.value
-  setCharacterOpacityWheelEnabled(opacityWheelEnabled.value)
+function onOpacityWheelEnabledChange(enabled: boolean) {
+  setCharacterOpacityWheelEnabled(enabled)
+}
+
+function onReducedMotionEnabledChange(enabled: boolean) {
+  setReducedMotionEnabled(enabled)
 }
 
 async function refreshAutoStart() {
@@ -73,6 +78,11 @@ onMounted(() => { void refreshAutoStart() })
 
     <ToggleRow v-model:checked="opacityWheelEnabled" :title="t('settings.general.opacityWheelTitle')"
       :desc="t('settings.general.opacityWheelDesc')" @update:checked="onOpacityWheelEnabledChange" />
+
+    <hr class="section-divider" />
+
+    <ToggleRow v-model:checked="reducedMotionEnabled" :title="t('settings.general.reducedMotionTitle')"
+      :desc="t('settings.general.reducedMotionDesc')" @update:checked="onReducedMotionEnabledChange" />
 
     <hr class="section-divider" />
 

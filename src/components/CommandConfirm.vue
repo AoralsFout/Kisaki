@@ -7,7 +7,7 @@
  * 两个动作：允许 / 拒绝（无「本会话自动允许」选项）。
  * 数据来自 chat store 的 pendingCommandConfirm（非空即显示）。
  */
-import { computed } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { toolIcon } from '../agent/toolMeta'
@@ -18,6 +18,9 @@ const chat = useChatStore()
 const pc = computed(() => chat.pendingCommandConfirm)
 const plan = computed(() => pc.value?.executionPlan)
 const workspaceRoot = computed(() => plan.value?.cwd ?? '')
+const rejectRef = ref<HTMLButtonElement | null>(null)
+const titleId = useId()
+watch(pc, value => { if (value) void nextTick(() => rejectRef.value?.focus()) })
 
 /** 工具可读名：有 i18n 文案用文案，否则兜底原始工具名 */
 function toolLabel(name: string): string {
@@ -39,12 +42,13 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
 <template>
   <Transition name="confirm-fade">
-    <div v-if="pc" class="command-confirm" data-pet-solid>
+    <section v-if="pc" class="command-confirm" data-pet-solid role="alertdialog"
+      :aria-labelledby="titleId" tabindex="-1">
       <!-- 头部：警告图标 + 标题 -->
       <div class="cc-head">
         <i class="cc-icon fas fa-triangle-exclamation"></i>
         <div class="cc-headtext">
-          <div class="cc-title">{{ t('app.confirm.command.title') }}</div>
+          <div :id="titleId" class="cc-title">{{ t('app.confirm.command.title') }}</div>
           <div class="cc-sub">
             <i class="fas" :class="toolIcon(pc.toolName)"></i>
             <span class="cc-tool">{{ toolLabel(pc.toolName) }}</span>
@@ -60,14 +64,14 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
       <!-- 命令代码块 -->
       <div class="cc-command-wrap">
-        <pre class="cc-command"><code>{{ commandText }}</code></pre>
+        <pre class="cc-command" data-selectable><code>{{ commandText }}</code></pre>
       </div>
 
       <!-- 元信息 -->
       <div class="cc-meta">
         <div class="cc-meta-item">
           <i class="fas fa-folder-open"></i>
-          <span :title="workspaceRoot">{{ workspaceRoot ? workspaceRoot.split(/[/\\]+/).filter(Boolean).pop() : t('app.confirm.command.noWorkspace') }}</span>
+          <span :title="workspaceRoot" data-selectable>{{ workspaceRoot ? workspaceRoot : t('app.confirm.command.noWorkspace') }}</span>
         </div>
         <div class="cc-meta-item">
           <i class="fas fa-hourglass-half"></i>
@@ -101,14 +105,14 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
       <!-- 动作：仅拒绝和允许，无自动允许 -->
       <div class="cc-actions">
-        <button class="cc-btn cc-reject" @click="chat.resolveCommandConfirm('reject')">
+        <button ref="rejectRef" class="cc-btn cc-reject" @click="chat.resolveCommandConfirm('reject')">
           <i class="fas fa-xmark"></i> {{ t('app.confirm.reject') }}
         </button>
         <button class="cc-btn cc-allow" @click="chat.resolveCommandConfirm('allow')">
           <i class="fas fa-terminal"></i> {{ t('app.confirm.command.execute') }}
         </button>
       </div>
-    </div>
+    </section>
   </Transition>
 </template>
 
@@ -157,7 +161,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
   align-items: center;
   gap: 6px;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: #b9a0ff;
 }
 
@@ -177,7 +181,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 }
 
 .cc-desc-label {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   color: #f0b85c;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -210,16 +214,27 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 /* 元信息 */
 .cc-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin: 6px 0 10px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .cc-meta-item {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.cc-meta-item:first-child {
+  min-width: 0;
+  flex: 1 1 100%;
+}
+
+.cc-meta-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .cc-meta-item .fas {
@@ -230,14 +245,14 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
 .cc-facts {
   margin: 6px 0;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: rgba(255, 255, 255, 0.62);
 }
 
 .cc-plan-warnings {
   margin: 6px 0 10px;
   padding-left: 18px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   color: #f0b85c;
 }
@@ -252,7 +267,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
   background: rgba(240, 184, 92, 0.1);
   border: 1px solid rgba(240, 184, 92, 0.2);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: #f0b85c;
   line-height: 1.4;
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useModalFocus } from '../utils/modalFocus'
 const props = defineProps<{
   visible: boolean; title: string; message: string; confirmLabel: string
   cancelLabel?: string; alternativeLabel?: string; busy?: boolean; danger?: boolean
@@ -9,44 +10,23 @@ const emit = defineEmits<{ confirm: []; cancel: []; alternative: [] }>()
 const { t } = useI18n()
 const panel = ref<HTMLElement | null>(null)
 const cancel = ref<HTMLButtonElement | null>(null)
-let previous: HTMLElement | null = null
-function keydown(event: KeyboardEvent) {
-  if (!props.visible) return
-  if (event.key === 'Escape') {
-    event.preventDefault(); event.stopImmediatePropagation()
-    if (!props.busy) emit('cancel')
-  }
-  if (event.key === 'Tab') {
-    const buttons = [...(panel.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
-    if (!buttons.length) { event.preventDefault(); return }
-    const first = buttons[0], last = buttons[buttons.length - 1]
-    if (event.shiftKey && (document.activeElement === first || !panel.value?.contains(document.activeElement))) {
-      event.preventDefault(); last.focus()
-    } else if (!event.shiftKey && (document.activeElement === last || !panel.value?.contains(document.activeElement))) {
-      event.preventDefault(); first.focus()
-    }
-  }
-}
-watch(() => props.visible, async value => {
-  if (value) {
-    previous = document.activeElement as HTMLElement | null
-    document.addEventListener('keydown', keydown, true)
-    await nextTick()
-    cancel.value?.focus()
-  } else {
-    document.removeEventListener('keydown', keydown, true)
-    if (previous?.isConnected) previous.focus()
-  }
-}, { immediate: true })
-onUnmounted(() => document.removeEventListener('keydown', keydown, true))
+const titleId = useId()
+const messageId = useId()
+useModalFocus(
+  () => props.visible,
+  panel,
+  () => { if (!props.busy) emit('cancel') },
+  cancel,
+)
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="visible" class="safety-overlay" data-pet-solid>
-      <section ref="panel" class="safety-dialog" role="dialog" aria-modal="true" :aria-label="title" :aria-busy="busy">
-        <h2>{{ title }}</h2>
-        <p role="status">{{ message }}</p>
+      <section ref="panel" class="safety-dialog" role="dialog" aria-modal="true" tabindex="-1"
+        :aria-labelledby="titleId" :aria-describedby="messageId" :aria-busy="busy">
+        <h2 :id="titleId">{{ title }}</h2>
+        <p :id="messageId" role="status" data-selectable>{{ message }}</p>
         <div class="safety-actions">
           <button ref="cancel" :disabled="busy" @click="emit('cancel')">{{ cancelLabel || t('common.cancel') }}</button>
           <button v-if="alternativeLabel" :disabled="busy" @click="emit('alternative')">{{ alternativeLabel }}</button>

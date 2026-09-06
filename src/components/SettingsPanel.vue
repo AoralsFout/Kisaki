@@ -139,7 +139,7 @@ function closeWindow() {
 <template>
   <UnsavedDialog ref="leaveDialog" />
   <div class="settings-window" :class="{ standalone: isSettingsWindow }">
-    <p v-if="closeError" role="alert">{{ t('safety.leaveFailed') }}</p>
+    <p v-if="closeError" role="alert" data-selectable>{{ t('safety.leaveFailed') }}</p>
     <!-- 标题栏 -->
     <header class="topbar" data-tauri-drag-region>
       <span class="topbar-title"><i class="fas fa-gear"></i> {{ t('settings.title') }}</span>
@@ -155,11 +155,11 @@ function closeWindow() {
 
     <div class="layout">
       <!-- 左侧导航（按使用体验 / 连接与能力 / 维护与帮助分组） -->
-      <nav class="sidebar">
+      <nav class="sidebar" :aria-label="t('settings.title')">
         <template v-for="group in visibleGroups" :key="group.key">
           <div class="nav-group-title">{{ t(`settings.nav.groups.${group.key}`) }}</div>
           <button v-for="tab in group.tabs" :key="tab" :class="['nav-item', { active: activeTab === tab }]"
-            @click="selectTab(tab)">
+            :aria-current="activeTab === tab ? 'page' : undefined" @click="selectTab(tab)">
             <i class="fas" :class="TAB_META[tab].icon"></i>
             <span>{{ t(TAB_META[tab].label) }}</span>
           </button>
@@ -267,7 +267,7 @@ function closeWindow() {
 
 .nav-group-title {
   margin: 10px 4px 4px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   color: var(--c-text-muted);
   text-transform: uppercase;
@@ -337,6 +337,20 @@ function closeWindow() {
 .content::-webkit-scrollbar-thumb:hover,
 .sidebar::-webkit-scrollbar-thumb:hover {
   background: var(--c-border-strong);
+}
+
+@media (max-width: 720px) {
+  .topbar { padding: var(--space-2) var(--space-3); }
+  .sidebar { width: 144px; padding-inline: var(--space-1); }
+  .nav-group-title { font-size: var(--fs-aux); }
+  .nav-item { padding: var(--space-2); }
+  .content { padding: var(--space-4); border-radius: var(--radius-card) 0 0; }
+}
+
+@media (max-height: 480px) {
+  .topbar { padding-block: var(--space-1); }
+  .sidebar { padding-block: var(--space-1); }
+  .content { padding-block: var(--space-3); }
 }
 
 .content-flush {

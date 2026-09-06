@@ -25,10 +25,12 @@ const emit = defineEmits<{
 
 <template>
   <div class="char-grid">
-    <div
+    <button
       v-for="id in availableList"
       :key="id"
+      type="button"
       class="char-card"
+      :aria-current="id === currentId ? 'true' : undefined"
       @click="emit('select', id)"
     >
       <div v-if="getCharacterRender?.(id) === 'live2d'" class="card-badge">{{ t('character.mgr.live2d.badge') }}</div>
@@ -37,11 +39,11 @@ const emit = defineEmits<{
       </div>
       <div class="card-name">{{ getCharacterName?.(id) ?? id.charAt(0).toUpperCase() + id.slice(1) }}</div>
       <div class="card-id">{{ id }}</div>
-    </div>
-    <div class="char-card char-card-add" @click="emit('create')">
+    </button>
+    <button type="button" class="char-card char-card-add" @click="emit('create')">
       <div class="card-icon" style="font-size:32px;color:var(--c-text-secondary);">+</div>
       <div class="card-name" style="color:var(--c-text-muted);">{{ t('character.list.add') }}</div>
-    </div>
+    </button>
   </div>
 </template>
 
@@ -62,6 +64,8 @@ const emit = defineEmits<{
   cursor: pointer;
   transition: all 0.15s;
   position: relative;
+  font: inherit;
+  width: 100%;
 }
 
 .char-card:hover {
@@ -97,7 +101,7 @@ const emit = defineEmits<{
 }
 
 .card-id {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-text-muted);
   margin-top: 2px;
 }
@@ -106,7 +110,7 @@ const emit = defineEmits<{
   position: absolute;
   top: 6px;
   right: 6px;
-  font-size: 9px;
+  font-size: var(--fs-aux);
   font-weight: 700;
   letter-spacing: 0.3px;
   color: #7c8cff;

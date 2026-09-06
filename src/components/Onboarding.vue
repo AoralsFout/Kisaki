@@ -19,13 +19,14 @@
  *   - 角色：charStore.availableList 为响应式，App.vue 收到 characters-changed
  *     事件刷新列表后此处自动联动。
  */
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import { loadConfigSecure, isConfigValid } from '../ai'
 import { createLogger } from '../utils/logger'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import BaseButton from './ui/BaseButton.vue'
+import { useModalFocus } from '../utils/modalFocus'
 
 const log = createLogger('Onboarding')
 
@@ -38,10 +39,17 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const charStore = useCharacterStore()
+const cardRef = ref<HTMLElement | null>(null)
+const titleId = useId()
 
 const apiReady = ref(false)
 const charReady = computed(() => charStore.availableList.length > 0)
 const allReady = computed(() => apiReady.value && charReady.value)
+useModalFocus(
+  () => props.visible,
+  cardRef,
+  () => { if (!allReady.value) emit('later') },
+)
 
 /** 第一个未完成的步骤：API 未配置先去配置，否则去添加角色 */
 const pendingTab = computed(() => (apiReady.value ? 'character' : 'api'))
@@ -82,10 +90,11 @@ onUnmounted(() => {
 <template>
   <Transition name="ob-fade">
     <div v-if="visible" class="ob-overlay" data-pet-solid>
-      <div class="ob-card">
+      <section ref="cardRef" class="ob-card" role="dialog" aria-modal="true"
+        :aria-labelledby="titleId" tabindex="-1">
         <div class="ob-head">
           <i class="fas fa-sparkles ob-spark"></i>
-          <h2 class="ob-title">{{ t('onboarding.title') }}</h2>
+          <h2 :id="titleId" class="ob-title">{{ t('onboarding.title') }}</h2>
           <p class="ob-subtitle">{{ t('onboarding.subtitle') }}</p>
         </div>
 
@@ -137,7 +146,7 @@ onUnmounted(() => {
           <button v-if="!allReady" class="ob-later" @click="emit('later')">{{ t('onboarding.later') }}</button>
         </div>
         <p v-if="!allReady" class="ob-hint">{{ t('onboarding.notReady') }}</p>
-      </div>
+      </section>
     </div>
   </Transition>
 </template>
@@ -152,6 +161,8 @@ onUnmounted(() => {
   justify-content: center;
   background: rgba(12, 12, 24, 0.6);
   backdrop-filter: blur(4px);
+  box-sizing: border-box;
+  padding: var(--space-3);
 }
 
 .ob-card {
@@ -163,6 +174,9 @@ onUnmounted(() => {
   padding: var(--space-6) 28px;
   box-shadow: var(--shadow-overlay);
   color: var(--c-text);
+  box-sizing: border-box;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
 }
 
 .ob-head {

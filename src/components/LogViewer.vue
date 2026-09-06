@@ -539,9 +539,9 @@ function onWheel() {
     <header v-if="isStandalone" class="topbar" data-tauri-drag-region>
       <span class="topbar-title"><i class="fas fa-receipt"></i> {{ t('logs.title') }}</span>
       <div class="window-controls">
-        <button class="win-btn" @click="minimizeWindow" :title="t('logs.win.minimize')">─</button>
-        <button class="win-btn" @click="maximizeWindow" :title="t('logs.win.maximize')">□</button>
-        <button class="win-btn win-close" @click="closeWindow" :title="t('logs.win.close')">✕</button>
+        <button class="win-btn" @click="minimizeWindow" :title="t('logs.win.minimize')" :aria-label="t('logs.win.minimize')">─</button>
+        <button class="win-btn" @click="maximizeWindow" :title="t('logs.win.maximize')" :aria-label="t('logs.win.maximize')">□</button>
+        <button class="win-btn win-close" @click="closeWindow" :title="t('logs.win.close')" :aria-label="t('logs.win.close')">✕</button>
       </div>
     </header>
 
@@ -570,7 +570,7 @@ function onWheel() {
         </div>
 
         <!-- 统计 -->
-        <span class="stats-text" :title="t('logs.statsTitle', { shown: filteredStats.total, total: stats.total })">
+        <span class="stats-text" tabindex="0" :title="t('logs.statsTitle', { shown: filteredStats.total, total: stats.total })">
           {{ filteredStats.total }}/{{ stats.total }}
         </span>
       </div>
@@ -592,15 +592,16 @@ function onWheel() {
           <input v-model="searchFilter" class="search-input" :placeholder="t('logs.searchPlaceholder')" :title="t('logs.searchTitle')" />
         </div>
 
-        <button class="toolbar-btn" :title="t('logs.refreshTitle')" @click="refreshHistory">
-          <i class="fas fa-rotate"></i>
+        <button class="toolbar-btn" :title="t('logs.refreshTitle')" :aria-label="t('logs.refreshTitle')" @click="refreshHistory">
+          <i class="fas fa-rotate" aria-hidden="true"></i>
         </button>
-        <button class="toolbar-btn" :title="t('logs.exportTitle')" @click="exportLog">
-          <i class="fas fa-download"></i>
+        <button class="toolbar-btn" :title="t('logs.exportTitle')" :aria-label="t('logs.exportTitle')" @click="exportLog">
+          <i class="fas fa-download" aria-hidden="true"></i>
         </button>
 
-        <button v-if="mode === 'realtime'" class="toolbar-btn" :title="t('logs.clearTitle')" @click="handleClear">
-          <i class="fas fa-trash-can"></i>
+        <button v-if="mode === 'realtime'" class="toolbar-btn" :title="t('logs.clearTitle')"
+          :aria-label="t('logs.clearTitle')" @click="handleClear">
+          <i class="fas fa-trash-can" aria-hidden="true"></i>
         </button>
       </div>
     </div>
@@ -627,7 +628,7 @@ function onWheel() {
       </div>
 
       <!-- 错误 -->
-      <div v-if="historyError" class="error-state">
+      <div v-if="historyError" class="error-state" role="alert" data-selectable>
         <i class="fas fa-triangle-exclamation"></i>
         <span>{{ t('logs.loadError', { msg: historyError }) }}</span>
         <button class="retry-btn" @click="loadHistory">{{ t('common.retry') }}</button>
@@ -635,7 +636,9 @@ function onWheel() {
 
       <!-- 日志行 -->
       <div v-for="entry in filteredEntries" :key="entry.id" :class="['log-row', { expanded: entry.expanded }]"
-        @click="toggleExpand(entry)">
+        :tabindex="entry.args?.length ? 0 : undefined" :role="entry.args?.length ? 'button' : undefined"
+        :aria-expanded="entry.args?.length ? entry.expanded : undefined"
+        @click="toggleExpand(entry)" @keydown.enter="toggleExpand(entry)" @keydown.space.prevent="toggleExpand(entry)">
         <div class="log-line">
           <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
           <span class="log-level" :style="{ background: LEVEL_BG[entry.level] }">
@@ -656,9 +659,9 @@ function onWheel() {
     </div>
 
     <!-- ===== 底部新日志提示 ===== -->
-    <div v-if="hasNewLogs && !autoScroll" class="new-logs-bar" @click="scrollToBottom">
+    <button v-if="hasNewLogs && !autoScroll" type="button" class="new-logs-bar" @click="scrollToBottom">
       <i class="fas fa-arrow-down"></i> {{ t('logs.newLogs') }}
-    </div>
+    </button>
   </div>
 </template>
 
@@ -764,7 +767,7 @@ function onWheel() {
 
 .mode-tab {
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   border: none;
   background: transparent;
   color: var(--c-text-muted);
@@ -789,7 +792,7 @@ function onWheel() {
 
 .level-btn {
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -839,8 +842,8 @@ function onWheel() {
 
 /* 统计 */
 .stats-text {
-  font-size: 10px;
-  color: #555;
+  font-size: var(--fs-aux);
+  color: var(--c-text-muted);
   font-family: 'Consolas', monospace;
   padding: 0 4px;
 }
@@ -855,15 +858,15 @@ function onWheel() {
 .search-icon {
   position: absolute;
   left: 7px;
-  font-size: 10px;
-  color: #555;
+  font-size: var(--fs-aux);
+  color: var(--c-text-muted);
   pointer-events: none;
 }
 
 .search-input {
   width: 100px;
   padding: 4px 6px 4px 22px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   border: 1px solid var(--c-border);
   border-radius: 6px;
   background: var(--c-control);
@@ -878,7 +881,7 @@ function onWheel() {
 }
 
 .search-input::placeholder {
-  color: #555;
+  color: var(--c-text-muted);
 }
 
 /* 工具栏按钮 */
@@ -901,7 +904,7 @@ function onWheel() {
 /* 历史文件选择 */
 .file-select {
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   border: 1px solid var(--c-border);
   border-radius: 6px;
   background: var(--c-control);
@@ -940,7 +943,7 @@ function onWheel() {
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #555;
+  color: var(--c-text-muted);
 }
 
 .empty-icon {
@@ -954,9 +957,9 @@ function onWheel() {
 }
 
 .empty-hint {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   margin: 0;
-  color: #444;
+  color: var(--c-text-muted);
 }
 
 /* 加载中 */
@@ -976,7 +979,7 @@ function onWheel() {
   gap: 8px;
   padding: 8px;
   color: var(--c-text-muted);
-  font-size: 11px;
+  font-size: var(--fs-aux);
 }
 
 .spinning {
@@ -1006,7 +1009,7 @@ function onWheel() {
 
 .retry-btn {
   padding: 4px 12px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   border: 1px solid var(--c-error);
   border-radius: 6px;
   background: transparent;
@@ -1043,14 +1046,14 @@ function onWheel() {
 }
 
 .log-time {
-  color: #555;
-  font-size: 10px;
+  color: var(--c-text-muted);
+  font-size: var(--fs-aux);
   flex-shrink: 0;
   min-width: 78px;
 }
 
 .log-level {
-  font-size: 9px;
+  font-size: var(--fs-aux);
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 3px;
@@ -1062,7 +1065,7 @@ function onWheel() {
 
 .log-namespace {
   color: #7c7cba;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   flex-shrink: 0;
   max-width: 120px;
@@ -1072,7 +1075,7 @@ function onWheel() {
 }
 
 .log-source {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   padding: 1px 6px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.08);
@@ -1092,8 +1095,8 @@ function onWheel() {
 
 .log-expand-icon {
   flex-shrink: 0;
-  color: #555;
-  font-size: 9px;
+  color: var(--c-text-muted);
+  font-size: var(--fs-aux);
 }
 
 /* ─── 展开详情 ───────────────────────────────────────── */
@@ -1103,7 +1106,7 @@ function onWheel() {
 
 .log-detail-pre {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-text-secondary);
   background: rgba(0, 0, 0, 0.3);
   padding: 8px 12px;
@@ -1124,7 +1127,7 @@ function onWheel() {
   background: #3a3a7a;
   color: var(--c-text-secondary);
   border-radius: 20px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: background 0.15s;
@@ -1132,6 +1135,7 @@ function onWheel() {
   display: flex;
   align-items: center;
   gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .new-logs-bar:hover {

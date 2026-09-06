@@ -2,7 +2,7 @@
 /**
  * 桌宠 - 主应用组件
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
 import InputBox from './components/InputBox.vue'
@@ -79,10 +79,13 @@ function openChat() {
   chat.openInput()
   showSession.value = false
   showCharacterSelect.value = false
+  closeMoreMenu()
 }
 
 // ── 「更多」菜单：语音、穿透、会话、设置收敛于此（日志入口在 设置 → 诊断） ──
 const showMoreMenu = ref(false)
+const moreButtonRef = ref<HTMLButtonElement | null>(null)
+const moreMenuRef = ref<HTMLElement | null>(null)
 
 function toggleMoreMenu() {
   showMoreMenu.value = !showMoreMenu.value
@@ -92,10 +95,50 @@ function closeMoreMenu() {
   showMoreMenu.value = false
 }
 
-/** 「更多」菜单项动作：先收起菜单再执行 */
-function menuAct(action: () => void) {
+/** 「更多」菜单项动作：先把焦点交还触发按钮，再打开后续面板 */
+async function menuAct(action: () => void) {
   closeMoreMenu()
+  await nextTick()
   action()
+}
+
+watch(showMoreMenu, async visible => {
+  if (visible) {
+    await nextTick()
+    moreMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus()
+  } else {
+    const shouldRestore = Boolean(moreMenuRef.value?.contains(document.activeElement))
+    await nextTick()
+    if (shouldRestore) moreButtonRef.value?.focus()
+  }
+})
+
+function onMoreMenuKeydown(event: KeyboardEvent) {
+  const items = [...(moreMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMoreMenu()
+    void nextTick(() => moreButtonRef.value?.focus())
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
+  event.preventDefault()
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? items.length - 1
+      : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+        : (current - 1 + items.length) % items.length
+  items[next].focus()
+}
+
+function toggleSessionPanel() {
+  const opening = !showSession.value
+  showSession.value = opening
+  if (opening) {
+    chat.closeInput()
+    showCharacterSelect.value = false
+    closeMoreMenu()
+  }
 }
 
 function toggleTts() {
@@ -425,28 +468,30 @@ async function handleSelectCharacter(charId: string) {
             <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
           </button>
           <button class="tool-btn" :disabled="chat.isProcessing || noCharacter"
-            @click="showSession = !showSession" :aria-label="t('app.toolbar.session')">
+            @click="toggleSessionPanel" :aria-label="t('app.toolbar.session')">
             <i class="fas fa-comments btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.session') }}</span>
           </button>
           <div class="more-wrap">
-            <button class="tool-btn" :class="{ active: showMoreMenu }" @click="toggleMoreMenu"
-              :aria-expanded="showMoreMenu" aria-haspopup="menu" :aria-label="t('app.aria.more')">
+            <button ref="moreButtonRef" class="tool-btn" :class="{ active: showMoreMenu }" @click="toggleMoreMenu"
+              :aria-expanded="showMoreMenu" aria-haspopup="menu" aria-controls="more-menu"
+              :aria-label="t('app.aria.more')">
               <i class="fas fa-ellipsis btn-icon"></i>
               <span class="btn-label">{{ t('app.toolbar.more') }}</span>
             </button>
             <Transition name="menu-fade">
-              <div v-if="showMoreMenu" class="more-menu" role="menu" data-pet-solid>
+              <div v-if="showMoreMenu" id="more-menu" ref="moreMenuRef" class="more-menu" role="menu"
+                data-pet-solid @keydown="onMoreMenuKeydown">
                 <button class="menu-item" role="menuitem" :disabled="chat.isProcessing || noCharacter"
                   @click="menuAct(() => { showCharacterSelect = true })">
                   <i class="fas fa-rotate menu-icon"></i>
                   <span>{{ t('app.toolbar.character') }}</span>
                 </button>
-                <button class="menu-item" role="menuitem" @click="menuAct(toggleTts)">
+                <button class="menu-item" role="menuitem" :aria-pressed="ttsEnabled" @click="menuAct(toggleTts)">
                   <i class="fas fa-volume-high menu-icon" :class="{ 'is-off': !ttsEnabled }"></i>
                   <span>{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
                 </button>
-                <button class="menu-item" role="menuitem" @click="menuAct(togglePassthrough)">
+                <button class="menu-item" role="menuitem" :aria-pressed="passthroughOn" @click="menuAct(togglePassthrough)">
                   <i class="fas fa-arrow-pointer menu-icon" :class="{ 'is-off': !passthroughOn }"></i>
                   <span>{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
                 </button>
@@ -697,7 +742,8 @@ async function handleSelectCharacter(charId: string) {
   transition: opacity 0.1s ease 0.1s;
 }
 
-.tool-btn:hover .btn-label {
+.tool-btn:hover .btn-label,
+.tool-btn:focus-visible .btn-label {
   opacity: 1;
 }
 
@@ -813,5 +859,10 @@ async function handleSelectCharacter(charId: string) {
 
 .config-todo:hover {
   background: rgba(74, 122, 255, 1);
+}
+
+@media (max-height: 520px) {
+  .input-wrapper.open { max-height: 55vh; }
+  .bars { margin-block: var(--space-1); }
 }
 </style>

@@ -253,6 +253,8 @@ export default {
       uiLangHint: 'The display language of the app interface (independent of the AI reply translation language).',
       opacityWheelTitle: 'Mouse-wheel character opacity',
       opacityWheelDesc: 'Scroll while hovering over the character to adjust opacity without changing mouse passthrough behavior.',
+      reducedMotionTitle: 'Reduce motion',
+      reducedMotionDesc: 'Reduce interface expand, collapse, and scrolling animations. The system motion preference also applies.',
       autostartTitle: 'Launch at startup',
       autostartDesc: 'Start the pet automatically when you log in',
       shortcutTitle: 'Global shortcut',
@@ -484,6 +486,8 @@ export default {
       rollbackConfirm: 'Roll back to here? This deletes later messages and restores files',
       rollbackYes: 'Roll back',
       switchSession: 'Switch session',
+      openImage: 'View image: {name}',
+      imageViewerTitle: 'Image viewer',
     },
     input: {
       title: 'Chat',

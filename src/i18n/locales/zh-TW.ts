@@ -253,6 +253,8 @@ export default {
       uiLangHint: '應用程式介面文字的顯示語言（與 AI 回覆的翻譯語言相互獨立）。',
       opacityWheelTitle: '使用滾輪調整角色透明度',
       opacityWheelDesc: '滑鼠停留在角色上時，以滾輪調整透明度；不會改變滑鼠穿透規則。',
+      reducedMotionTitle: '減少動畫效果',
+      reducedMotionDesc: '減少介面展開、收合與捲動動畫；系統啟用「減少動態效果」時也會自動生效。',
       autostartTitle: '開機自啟',
       autostartDesc: '登入系統後自動啟動桌寵',
       shortcutTitle: '全域快捷鍵',
@@ -484,6 +486,8 @@ export default {
       rollbackConfirm: '回檔到此處？將刪除此後對話並還原檔案',
       rollbackYes: '回檔',
       switchSession: '切換會話',
+      openImage: '查看圖片：{name}',
+      imageViewerTitle: '查看圖片',
     },
     input: {
       title: '對話',

@@ -31,6 +31,7 @@
   --c-text: #e0e0e0;                  /* 正文 */
   --c-text-secondary: #aaa;           /* 次要说明 */
   --c-text-muted: #888;               /* 辅助/占位提示 */
+  --c-focus: #4a7aff;                 /* 白色与深靛背景均达到可见对比 */
 
   /* ── 桌宠浮层 ── */
   --c-scrim-overlay: rgba(12, 12, 24, 0.6);   /* 全屏遮罩（引导/弹窗） */

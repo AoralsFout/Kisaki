@@ -58,4 +58,10 @@ describe('shared ui stylesheet', () => {
     expect(css).toContain('.status-ok')
     expect(css).toContain('.status-error')
   })
+
+  it('reduces motion for both the system preference and the in-app override', () => {
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(css).toContain(":root[data-reduced-motion='true']")
+    expect(css).toContain('scroll-behavior: auto !important')
+  })
 })

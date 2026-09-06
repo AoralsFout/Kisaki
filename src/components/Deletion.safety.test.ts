@@ -19,6 +19,8 @@ afterEach(() => { document.body.innerHTML = ''; vi.clearAllMocks(); stores.curre
 describe('destructive operation confirmation', () => {
   it('names the session, cancel does nothing, confirm deletes exactly the selected session', async () => {
     const wrapper = mount(SessionList, { props: { visible: true } })
+    expect(wrapper.get('.session-panel').attributes('role')).toBe('dialog')
+    expect(wrapper.findAll('button.session-select')).toHaveLength(2)
     await wrapper.get('.btn-danger').trigger('click')
     await flushPromises()
     expect(stores.remove).not.toHaveBeenCalled()

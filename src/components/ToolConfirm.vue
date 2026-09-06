@@ -6,7 +6,7 @@
  * 三个动作：允许 / 拒绝 / 本会话自动允许（→ chat.resolveConfirm）。
  * 数据来自 chat store 的 pendingConfirm（非空即显示）。
  */
-import { ref, computed, watch } from 'vue'
+import { ref, computed, nextTick, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { useChatStore } from '../stores/chat'
@@ -26,6 +26,8 @@ const diff = ref<DiffPreview | null>(null)
 const loadingDiff = ref(false)
 /** 原文件无法读取（按新建处理） */
 const unreadable = ref(false)
+const rejectRef = ref<HTMLButtonElement | null>(null)
+const titleId = useId()
 
 /** 工具可读名：有 i18n 文案用文案，否则兜底原始工具名 */
 function toolLabel(name: string): string {
@@ -93,6 +95,7 @@ watch(
   () => chat.pendingConfirm,
   (p) => {
     if (!p) { diff.value = null; return }
+    void nextTick(() => rejectRef.value?.focus())
     loadingDiff.value = true
     loadPreview(p)
       .catch(e => log.warn('生成 diff 预览失败: %s', (e as Error).message))
@@ -104,15 +107,16 @@ watch(
 
 <template>
   <Transition name="confirm-fade">
-    <div v-if="pc" class="tool-confirm" data-pet-solid>
+    <section v-if="pc" class="tool-confirm" data-pet-solid role="alertdialog"
+      :aria-labelledby="titleId" tabindex="-1">
       <!-- 头部：图标 + 工具名 + 路径 -->
       <div class="tc-head">
         <i class="tc-icon fas" :class="toolIcon(pc.toolName)"></i>
         <div class="tc-headtext">
-          <div class="tc-title">{{ t('app.confirm.title') }}</div>
+          <div :id="titleId" class="tc-title">{{ t('app.confirm.title') }}</div>
           <div class="tc-sub">
             <span class="tc-tool">{{ toolLabel(pc.toolName) }}</span>
-            <span class="tc-path" :title="pc.path">{{ pc.path }}</span>
+            <span class="tc-path" :title="pc.path" data-selectable>{{ pc.path }}</span>
           </div>
         </div>
       </div>
@@ -130,7 +134,7 @@ watch(
             <span class="tc-add">+{{ diff.added }}</span>
             <span class="tc-del">-{{ diff.removed }}</span>
           </div>
-          <pre class="tc-diff"><code v-for="(r, i) in diff.rows" :key="i" :class="['tc-row', r.type]">{{ (r.type === 'add' ? '+ ' : r.type === 'del' ? '- ' : '  ') + r.text }}</code></pre>
+          <pre class="tc-diff" data-selectable><code v-for="(r, i) in diff.rows" :key="i" :class="['tc-row', r.type]">{{ (r.type === 'add' ? '+ ' : r.type === 'del' ? '- ' : '  ') + r.text }}</code></pre>
           <div v-if="diff.truncated" class="tc-diff-hint">{{ t('app.confirm.truncated') }}</div>
         </template>
         <div v-else class="tc-diff-hint">{{ t('app.confirm.noDiff') }}</div>
@@ -138,7 +142,7 @@ watch(
 
       <!-- 动作 -->
       <div class="tc-actions">
-        <button class="tc-btn tc-reject" @click="chat.resolveConfirm('reject')">
+        <button ref="rejectRef" class="tc-btn tc-reject" @click="chat.resolveConfirm('reject')">
           <i class="fas fa-xmark"></i> {{ t('app.confirm.reject') }}
         </button>
         <button class="tc-btn tc-auto" @click="chat.resolveConfirm('allow-session')">
@@ -148,7 +152,7 @@ watch(
           <i class="fas fa-check"></i> {{ t('app.confirm.allow') }}
         </button>
       </div>
-    </div>
+    </section>
   </Transition>
 </template>
 
@@ -201,14 +205,14 @@ watch(
 }
 
 .tc-tool {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: #b9a0ff;
   flex-shrink: 0;
 }
 
 .tc-path {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.72);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
@@ -231,7 +235,7 @@ watch(
 .tc-diff-meta {
   display: flex;
   gap: 10px;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-family: var(--font-mono);
   margin-bottom: 4px;
 }
@@ -243,7 +247,7 @@ watch(
   margin: 0;
   max-height: 180px;
   overflow: auto;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   font-family: 'Consolas', 'Courier New', monospace;
   white-space: pre;
@@ -260,11 +264,11 @@ watch(
 
 .tc-row.add { background: rgba(95, 191, 127, 0.16); color: #b7e6c4; }
 .tc-row.del { background: rgba(224, 100, 100, 0.16); color: #f0bcbc; }
-.tc-row.ctx { color: rgba(255, 255, 255, 0.45); }
+.tc-row.ctx { color: rgba(255, 255, 255, 0.65); }
 
 .tc-diff-hint {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.68);
   padding: 4px 0;
 }
 

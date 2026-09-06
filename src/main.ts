@@ -8,6 +8,7 @@ import App from "./App.vue";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
+import "./utils/motionPreference";
 import { createLogger } from "./utils/logger";
 import i18n from "./i18n";
 

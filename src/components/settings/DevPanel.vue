@@ -383,7 +383,7 @@ function hasImage(pose?: string, emotion?: string, costume?: string): boolean {
 }
 
 .tag-btn .cnt {
-  font-size: 10px;
+  font-size: var(--fs-aux);
   color: #7c8cff;
   margin-left: 2px;
   font-weight: 400;

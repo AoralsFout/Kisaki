@@ -256,6 +256,8 @@ export default {
       uiLangHint: '应用界面文案的显示语言（与 AI 回复的翻译语言相互独立）。',
       opacityWheelTitle: '滚轮调整角色透明度',
       opacityWheelDesc: '鼠标悬浮在角色上时，滚动滚轮调整透明度；不会改变鼠标穿透规则。',
+      reducedMotionTitle: '降低动画效果',
+      reducedMotionDesc: '减少界面展开、收起和滚动动画；系统开启“减少动态效果”时也会自动生效。',
       autostartTitle: '开机自启',
       autostartDesc: '登录系统后自动启动桌宠',
       shortcutTitle: '全局快捷键',
@@ -487,6 +489,8 @@ export default {
       rollbackConfirm: '回档到此处？将删除此后对话并还原文件',
       rollbackYes: '回档',
       switchSession: '切换会话',
+      openImage: '查看图片：{name}',
+      imageViewerTitle: '查看图片',
     },
     input: {
       title: '对话',

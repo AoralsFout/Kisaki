@@ -8,10 +8,11 @@
  * - 删除会话（至少保留一个）
  * - 重命名会话（双击或点击编辑按钮）
  */
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, useId } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/session'
+import { useModalFocus } from '../utils/modalFocus'
 
 const { t } = useI18n()
 
@@ -32,20 +33,9 @@ const editingId = ref<string | null>(null)
 const editName = ref('')
 const deleteTarget = ref<{ id: string; name: string } | null>(null)
 const editInputRef = ref<HTMLInputElement | null>(null)
-
-// 按 Escape 关闭面板
-let keyHandler: ((e: KeyboardEvent) => void) | null = null
-watch(() => props.visible, (v) => {
-  if (v) {
-    keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') emit('close')
-    }
-    document.addEventListener('keydown', keyHandler)
-  } else if (keyHandler) {
-    document.removeEventListener('keydown', keyHandler)
-    keyHandler = null
-  }
-})
+const panelRef = ref<HTMLElement | null>(null)
+const titleId = useId()
+useModalFocus(() => props.visible, panelRef, () => emit('close'))
 
 // 关闭面板时取消编辑状态
 watch(() => props.visible, (v) => {
@@ -113,12 +103,13 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
     @cancel="deleteTarget = null" @confirm="confirmDelete" />
   <Transition name="panel-slide">
     <div v-if="visible" class="session-overlay" data-pet-solid>
-      <div class="session-panel">
+      <section ref="panelRef" class="session-panel" role="dialog" aria-modal="true"
+        :aria-labelledby="titleId" tabindex="-1">
         <!-- 头部 -->
         <div class="session-header">
-          <span class="session-title">
+          <h2 :id="titleId" class="session-title">
             <i class="fas fa-comments"></i> {{ t('session.title') }}
-          </span>
+          </h2>
           <div class="header-actions">
             <button class="btn-new" @click="handleCreate" :title="t('session.newTitle')">
               <i class="fas fa-plus"></i> {{ t('session.new') }}
@@ -129,7 +120,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
         </div>
 
         <!-- 存储告警：配额满时提示用户，避免历史静默丢失 -->
-        <div v-if="sessionStore.persistError" class="session-storage-warning" data-pet-solid>
+        <div v-if="sessionStore.persistError" class="session-storage-warning" role="alert" data-pet-solid data-selectable>
           <i class="fas fa-triangle-exclamation"></i>
           <span>{{ t('session.storageFullWarning') }}</span>
         </div>
@@ -140,39 +131,31 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
             {{ t('session.empty') }}
           </div>
 
-          <div
-            v-for="s in sessionStore.sessionList"
-            :key="s.id"
-            :class="['session-item', { active: s.id === sessionStore.currentSessionId }]"
-            @click="editingId !== s.id && handleSelect(s.id)"
-          >
-            <!-- 图标 -->
-            <div class="session-icon">
-              <i v-if="s.id === sessionStore.currentSessionId" class="fas fa-message"></i>
-              <i v-else class="far fa-message"></i>
+          <div v-for="s in sessionStore.sessionList" :key="s.id"
+            :class="['session-item', { active: s.id === sessionStore.currentSessionId }]">
+            <div v-if="editingId === s.id" class="session-select session-select-editing">
+              <div class="session-icon"><i class="fas fa-message"></i></div>
+              <div class="session-info">
+                <input ref="editInputRef" v-model="editName" class="session-rename-input"
+                  :aria-label="t('session.rename')" @keydown="handleEditKeydown($event, s.id)"
+                  @blur="confirmRename(s.id)" />
+              </div>
             </div>
-
-            <!-- 会话信息 -->
-            <div class="session-info">
-              <!-- 编辑模式 -->
-              <input
-                v-if="editingId === s.id"
-                ref="editInputRef"
-                v-model="editName"
-                class="session-rename-input"
-                @keydown="handleEditKeydown($event, s.id)"
-                @blur="confirmRename(s.id)"
-                @click.stop
-              />
-              <!-- 显示模式 -->
-              <template v-else>
+            <button v-else class="session-select" type="button"
+              :aria-current="s.id === sessionStore.currentSessionId ? 'true' : undefined"
+              @click="handleSelect(s.id)">
+              <div class="session-icon">
+                <i v-if="s.id === sessionStore.currentSessionId" class="fas fa-message"></i>
+                <i v-else class="far fa-message"></i>
+              </div>
+              <div class="session-info">
                 <div class="session-name">{{ s.name }}</div>
                 <div class="session-meta">
                   <span class="session-msg-count">{{ t('session.msgCount', { n: s.messages.length }) }}</span>
                   <span class="session-time">{{ new Date(s.updatedAt).toLocaleString() }}</span>
                 </div>
-              </template>
-            </div>
+              </div>
+            </button>
 
             <!-- 操作按钮 -->
             <div class="session-actions" @click.stop>
@@ -181,6 +164,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
                 <button
                   class="btn-icon-only"
                   :title="t('session.rename')"
+                  :aria-label="t('session.rename')"
                   @click="startRename(s.id)"
                 >
                   <i class="fas fa-pen"></i>
@@ -189,6 +173,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
                   v-if="sessionStore.sessionList.length > 1"
                   class="btn-icon-only btn-danger"
                   :title="t('session.delete')"
+                  :aria-label="t('session.delete')"
                   @click="handleDelete(s.id)"
                 >
                   <i class="fas fa-trash-can"></i>
@@ -199,7 +184,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 
           <div class="list-end"></div>
         </div>
-      </div>
+      </section>
     </div>
   </Transition>
 </template>
@@ -255,6 +240,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 }
 
 .session-title {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: white;
@@ -274,8 +260,8 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 }
 
 .session-count {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .btn-new {
@@ -300,7 +286,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 .btn-close {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 18px;
   cursor: pointer;
   padding: 2px 6px;
@@ -334,7 +320,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 
 .empty-hint {
   text-align: center;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.62);
   font-size: 13px;
   padding: 40px 0;
 }
@@ -343,10 +329,8 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 .session-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 4px;
   border-radius: 10px;
-  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -357,6 +341,26 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 .session-item.active {
   background: rgba(102, 126, 234, 0.15);
   border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.session-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.session-select-editing {
+  cursor: default;
 }
 
 .session-icon {
@@ -399,13 +403,13 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 }
 
 .session-msg-count {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.68);
 }
 
 .session-time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.25);
+  font-size: var(--fs-aux);
+  color: rgba(255, 255, 255, 0.58);
 }
 
 /* ---- 重命名输入框 ---- */
@@ -435,7 +439,8 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
   transition: opacity 0.15s;
 }
 
-.session-item:hover .session-actions {
+.session-item:hover .session-actions,
+.session-item:focus-within .session-actions {
   opacity: 1;
 }
 
@@ -446,7 +451,7 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
   padding: 4px 6px;
   border-radius: 6px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.68);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -474,5 +479,9 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 .panel-slide-leave-to {
   transform: translateY(30px);
   opacity: 0;
+}
+
+@media (max-height: 520px) {
+  .session-panel { max-height: 88vh; }
 }
 </style>

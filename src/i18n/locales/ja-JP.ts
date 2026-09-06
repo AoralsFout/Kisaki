@@ -253,6 +253,8 @@ export default {
       uiLangHint: 'アプリ画面の表示言語（AI の返信翻訳言語とは独立しています）。',
       opacityWheelTitle: 'ホイールでキャラクターの透明度を調整',
       opacityWheelDesc: 'キャラクター上でホイールを回すと、マウス透過の判定を変えずに透明度を調整できます。',
+      reducedMotionTitle: '視覚効果を減らす',
+      reducedMotionDesc: '画面の展開・折りたたみ・スクロールのアニメーションを減らします。システム設定にも従います。',
       autostartTitle: 'ログイン時に起動',
       autostartDesc: 'ログイン時にマスコットを自動起動します',
       shortcutTitle: 'グローバルショートカット',
@@ -484,6 +486,8 @@ export default {
       rollbackConfirm: 'ここまで戻す？以降の会話を削除しファイルを復元します',
       rollbackYes: '復元',
       switchSession: 'セッションを切り替え',
+      openImage: '画像を表示：{name}',
+      imageViewerTitle: '画像を表示',
     },
     input: {
       title: '会話',

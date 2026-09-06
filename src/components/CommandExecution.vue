@@ -23,8 +23,8 @@ const statusText = computed(() => t(`app.execution.status.${executionState.statu
         {{ executionState.cancelling ? t('app.execution.stopping') : t('app.execution.stop') }}
       </button>
     </div>
-    <code v-if="executionState.command" class="execution-command">{{ executionState.command }}</code>
-    <pre v-if="executionState.output" class="execution-output">{{ executionState.output }}</pre>
+    <code v-if="executionState.command" class="execution-command" data-selectable>{{ executionState.command }}</code>
+    <pre v-if="executionState.output" class="execution-output" data-selectable>{{ executionState.output }}</pre>
     <div v-else class="execution-wait">{{ t('app.execution.waitingOutput') }}</div>
   </div>
 </template>
@@ -74,7 +74,7 @@ const statusText = computed(() => t(`app.execution.status.${executionState.statu
   margin-top: 7px;
   overflow-wrap: anywhere;
   color: #b9d6ff;
-  font-size: 11px;
+  font-size: var(--fs-aux);
 }
 
 .execution-output {
@@ -85,10 +85,10 @@ const statusText = computed(() => t(`app.execution.status.${executionState.statu
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.36);
   color: #c7e6ce;
-  font: 11px/1.45 Consolas, monospace;
+  font: var(--fs-aux)/1.45 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.execution-wait { margin-top: 7px; font-size: 11px; opacity: 0.58; }
+.execution-wait { margin-top: 7px; font-size: var(--fs-aux); color: rgba(255, 255, 255, 0.72); }
 </style>

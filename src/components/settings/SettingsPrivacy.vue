@@ -149,7 +149,7 @@ const SECTIONS = [
     </div>
     <p class="privacy-action-hint">{{ t('settings.privacy.actions.hint') }}</p>
     <p v-if="status" class="privacy-status">{{ status }}</p>
-    <p v-if="error" class="privacy-error">{{ error }}</p>
+    <p v-if="error" class="privacy-error" role="alert" data-selectable>{{ error }}</p>
   </div>
 </template>
 

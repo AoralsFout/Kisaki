@@ -8,6 +8,53 @@
  * 依赖 tokens.css 的 :root 变量，需在其后引入。
  */
 
+/* ===== 可访问性基线 ===== */
+:where(button, a[href], input, select, textarea, summary, [role='button'], [role='switch'], [tabindex]):focus-visible {
+  outline: 2px solid var(--c-focus) !important;
+  outline-offset: 2px;
+}
+
+/* 窗口外壳仍禁止误选；正文、路径和错误信息显式恢复复制能力。 */
+:where([data-selectable], [role='alert'], .status-error, .save-err, .form-error, .voice-error, .voice-hint-error, .error-state) {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+:root[data-reduced-motion='true'] *,
+:root[data-reduced-motion='true'] *::before,
+:root[data-reduced-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+}
+
 /* ===== 分区 ===== */
 .section-title {
   font-size: var(--fs-title);

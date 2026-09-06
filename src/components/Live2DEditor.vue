@@ -36,7 +36,7 @@ function setMotion(group: string, v: string) {
     <section class="mgr-section">
       <h3 class="mgr-label"><i class="fas fa-cube"></i> {{ t('character.mgr.live2d.model') }}</h3>
       <div class="l2d-model-row">
-        <code class="l2d-model-path">{{ config.model || t('character.mgr.live2d.modelNone') }}</code>
+        <code class="l2d-model-path" data-selectable>{{ config.model || t('character.mgr.live2d.modelNone') }}</code>
         <button class="l2d-btn" @click="emit('import-model')">
           <i class="fas fa-folder-open"></i> {{ t('character.mgr.live2d.reimport') }}
         </button>
@@ -109,7 +109,7 @@ function setMotion(group: string, v: string) {
 .l2d-model-row { display: flex; align-items: center; gap: 8px; }
 .l2d-model-path {
   flex: 1;
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-family: var(--font-mono);
   color: #9fb3c8;
   word-break: break-all;
@@ -175,7 +175,7 @@ function setMotion(group: string, v: string) {
 
 .l2d-anno { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .l2d-anno code {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   font-family: var(--font-mono);
   color: #7c8cff;
   min-width: 110px;

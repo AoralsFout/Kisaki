@@ -103,6 +103,7 @@ async function handleTest() {
         <span v-if="saved && !dirty" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.api.savedOk') }}</span>
       </template>
     </SaveBar>
-    <p v-if="testMessage" :class="testResult === 'ok' ? 'status-ok' : 'status-error'">{{ testMessage }}</p>
+    <p v-if="testMessage" :class="testResult === 'ok' ? 'status-ok' : 'status-error'"
+      :role="testResult === 'error' ? 'alert' : 'status'" data-selectable>{{ testMessage }}</p>
   </div>
 </template>

@@ -19,11 +19,19 @@ describe('InputBox 头部与上下文圆环', () => {
     })
     const ring = withRing.get('.context-ring')
     expect(ring.attributes('aria-label')).toBe('详情文本')
+    expect(ring.attributes('tabindex')).toBe('0')
     expect(ring.text()).toContain('39%')
     // 快捷键提示已移除，为底栏腾出空间
     expect(withRing.find('.hint').exists()).toBe(false)
 
     const noRing = mount(InputBox, { props: { visible: true } })
     expect(noRing.find('.context-ring').exists()).toBe(false)
+  })
+
+  it('折叠后保留草稿 DOM 但从键盘与辅助技术中隐藏', () => {
+    const wrapper = mount(InputBox, { props: { visible: false } })
+    const overlay = wrapper.get('.input-overlay')
+    expect(overlay.attributes('inert')).toBeDefined()
+    expect(overlay.attributes('aria-hidden')).toBe('true')
   })
 })

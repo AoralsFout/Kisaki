@@ -34,6 +34,9 @@ export const STORAGE_PASSTHROUGH_ENABLED = 'deskpet-passthrough-enabled'
 /** 悬浮角色时用滚轮调整透明度（默认开启） */
 export const STORAGE_CHARACTER_OPACITY_WHEEL_ENABLED = 'deskpet-character-opacity-wheel-enabled'
 
+/** 用户主动降低界面动画效果（系统 reduced-motion 偏好始终独立生效） */
+export const STORAGE_REDUCED_MOTION = 'deskpet-reduced-motion'
+
 /** 当前角色显示透明度 */
 export const STORAGE_CHARACTER_OPACITY = 'deskpet-character-opacity'
 
@@ -84,6 +87,9 @@ export const CHANNEL_DESKPET_LOGS = 'deskpet-logs'
 
 /** 界面语言切换广播通道（设置窗口切换后通知其它窗口实时联动） */
 export const CHANNEL_DESKPET_UI_LANG = 'deskpet-ui-lang'
+
+/** 降低动画效果切换广播通道（设置窗口 → 其它窗口） */
+export const CHANNEL_DESKPET_REDUCED_MOTION = 'deskpet-reduced-motion'
 
 // ─── Tauri 事件名（跨窗口，经 Rust 中转） ──────────────
 

@@ -45,8 +45,10 @@ function handleEmotionKeydown(e: KeyboardEvent) {
       <div class="preview-header">
         <span class="preview-filename">{{ image.file }}</span>
         <div class="preview-actions">
-          <button class="preview-btn preview-btn-del" @click="emit('delete', image.file)" :title="t('character.preview.deleteTitle')"><i class="fas fa-trash-can"></i></button>
-          <button class="preview-btn" @click="emit('close')" :title="t('common.close')">✕</button>
+          <button class="preview-btn preview-btn-del" @click="emit('delete', image.file)"
+            :title="t('character.preview.deleteTitle')" :aria-label="t('character.preview.deleteTitle')"><i class="fas fa-trash-can"></i></button>
+          <button class="preview-btn" @click="emit('close')" :title="t('common.close')"
+            :aria-label="t('common.close')">✕</button>
         </div>
       </div>
 
@@ -78,13 +80,13 @@ function handleEmotionKeydown(e: KeyboardEvent) {
         <div class="edit-row">
           <label>{{ t('character.preview.emotion') }}</label>
           <div class="emotion-edit">
-            <code
+            <button type="button"
               v-for="(em, ei) in image.emotions"
               :key="ei"
               class="em-tag"
               @click="emit('remove-emotion', image.file, ei)"
-              :title="t('character.preview.clickToRemove')"
-            >{{ em }} ✕</code>
+              :aria-label="`${t('character.preview.clickToRemove')}: ${em}`"
+            >{{ em }} ✕</button>
             <input
               v-model="emotionInput"
               class="emotion-input"
@@ -199,7 +201,7 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 }
 
 .edit-row label {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   color: var(--c-text-muted);
   width: 40px;
   flex-shrink: 0;
@@ -225,18 +227,23 @@ function handleEmotionKeydown(e: KeyboardEvent) {
 }
 
 .em-tag {
-  font-size: 11px;
+  font-size: var(--fs-aux);
   background: rgba(74, 122, 255, 0.15);
   color: #7c8cff;
   padding: 2px 7px;
   border-radius: 4px;
-  cursor: pointer;
   font-family: var(--font-mono);
+  border: 0;
+  cursor: pointer;
 }
 
 .em-tag:hover {
   background: rgba(239, 83, 80, 0.15);
   color: var(--c-error);
+}
+
+@media (max-width: 760px) {
+  .preview-panel.open { width: min(38vw, 240px); }
 }
 
 .emotion-input {
