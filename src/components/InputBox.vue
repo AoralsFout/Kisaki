@@ -28,12 +28,21 @@ const props = withDefaults(defineProps<{
   submit?: (payload: ChatInputPayload) => Promise<boolean>
   /** 初始文本 */
   modelValue?: string
+  /** 头部标题（当前会话名）；缺省回退通用文案 */
+  title?: string
+  /** 上下文预算占用（0~1）；提供时在底栏显示圆环进度 */
+  contextUtilization?: number | null
+  /** 圆环悬浮提示的详细信息 */
+  contextDetail?: string
 }>(), {
   visible: false,
   placeholder: '',
   disabled: false,
   draftKey: 'default',
   modelValue: '',
+  title: '',
+  contextUtilization: null,
+  contextDetail: '',
 })
 
 const emit = defineEmits<{
@@ -169,7 +178,7 @@ function handleClose() {
   <div class="input-overlay" @click.self="handleClose">
     <div class="input-container" @click.stop data-pet-solid>
       <div class="input-header">
-        <span class="input-title"><i class="fas fa-comment"></i> {{ t('chat.input.title') }}</span>
+        <span class="input-title"><i class="fas fa-comment"></i> {{ title || t('chat.input.title') }}</span>
         <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
       </div>
       <textarea ref="inputRef" v-model="inputText" class="input-field"
@@ -193,10 +202,22 @@ function handleClose() {
             <i class="fas fa-image"></i>
             <span>{{ t('chat.input.chooseImage') }}</span>
           </button>
-          <span class="hint">{{ t('chat.input.hint') }}</span>
         </div>
-        <button class="btn-send" :disabled="!hasContent || disabled || isSending || isAddingImages" @click="sendMessage"
-          :aria-label="t('chat.input.sendAria')">{{ t('chat.input.send') }}</button>
+        <div class="footer-right">
+          <!-- 上下文用量圆环：悬浮展示详细预算信息 -->
+          <svg v-if="contextUtilization !== null" class="context-ring" viewBox="0 0 22 22" width="22" height="22"
+            role="img" :aria-label="contextDetail" :title="contextDetail">
+            <circle class="ring-track" cx="11" cy="11" r="9" fill="none" stroke-width="3" />
+            <circle class="ring-value" cx="11" cy="11" r="9" fill="none" stroke-width="3"
+              :stroke-dasharray="`${2 * Math.PI * 9}`"
+              :stroke-dashoffset="`${2 * Math.PI * 9 * (1 - Math.min(Math.max(contextUtilization, 0), 1))}`"
+              :class="{ near: contextUtilization >= 0.9 }"
+              transform="rotate(-90 11 11)" stroke-linecap="round" />
+            <text class="ring-label" x="11" y="11" text-anchor="middle" dominant-baseline="central">{{ Math.round(contextUtilization * 100) }}%</text>
+          </svg>
+          <button class="btn-send" :disabled="!hasContent || disabled || isSending || isAddingImages" @click="sendMessage"
+            :aria-label="t('chat.input.sendAria')">{{ t('chat.input.send') }}</button>
+        </div>
       </div>
     </div>
   </div>
@@ -331,6 +352,33 @@ function handleClose() {
   gap: 8px;
 }
 
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* 上下文用量圆环 */
+.context-ring .ring-track {
+  stroke: rgba(255, 255, 255, 0.15);
+}
+
+.context-ring .ring-value {
+  stroke: var(--c-brand);
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.context-ring .ring-value.near {
+  stroke: var(--c-warn);
+}
+
+.context-ring .ring-label {
+  fill: rgba(255, 255, 255, 0.75);
+  font-size: 7px;
+  font-weight: 600;
+}
+
 .file-input {
   display: none;
 }
@@ -355,11 +403,6 @@ function handleClose() {
 .btn-image:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.hint {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
 }
 
 .btn-send {

@@ -15,9 +15,6 @@ export default {
   "unsaved": "未保存",
   "deleteTitle": "セッションを削除",
   "deleteBody": "「{name}」の全メッセージとファイル復元チェックポイントを削除します。取り消せません。作業フォルダーのファイルは復元されません。",
-  "clearTitle": "会話を消去",
-  "clearBody": "「{name}」の全メッセージとファイル復元チェックポイントを消去し、会話コンテキストをリセットします。取り消せません。作業フォルダーのファイルは復元されません。",
-  "clearAction": "会話を消去",
   "sendFailed": "送信を完了できませんでした。入力は保持されています。接続や設定を確認して再試行してください。実行済みの操作は元に戻りません。"
 },
   common: {
@@ -47,7 +44,6 @@ export default {
     },
     aria: {
       chatInput: 'チャットパネルを開く',
-      switchCharacter: 'キャラを切り替え',
       settings: '設定ウィンドウを開く',
       stop: '生成を停止',
       configTodo: '初期設定を続けて完了',
@@ -477,7 +473,6 @@ export default {
     history: {
       title: '会話履歴',
       count: '{n} 件',
-      clear: '履歴をクリア',
       empty: '会話記録がありません',
       you: 'あなた',
       thinking: '思考過程',
@@ -494,7 +489,6 @@ export default {
       title: '会話',
       send: '送信',
       placeholder: 'メッセージを入力...',
-      hint: 'Enter で送信 · Shift+Enter で改行',
       closeAria: '入力欄を閉じる',
       sendAria: 'メッセージを送信',
       chooseImage: '画像を選択',

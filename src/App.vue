@@ -5,7 +5,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
-import DialogueBubble from './components/DialogueBubble.vue'
+import InputBox from './components/InputBox.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
@@ -44,7 +44,7 @@ import {
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { listen, emitTo } from '@tauri-apps/api/event'
-import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled, isIgnoring } from './passthrough'
+import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
 import { initWindowState } from './utils/windowState'
 
 const log = createLogger('App')
@@ -64,21 +64,19 @@ const charReady = ref(false)
 const noCharacter = computed(() => charReady.value && charStore.availableList.length === 0)
 
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
-const bubbleRef = ref<InstanceType<typeof DialogueBubble> | null>(null)
 
-// 聊天面板（会话标题 + 消息列表 + 输入框连续面板）与其它浮层
-const showChatPanel = ref(false)
+// 聊天 = 对话框从底部弹出 + 历史对话向上展开到全高（两者由 chat.showInput 驱动）
 const showSession = ref(false)
 const showCharacterSelect = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
 
-/** 打开聊天面板；会话/换角色等其它浮层互斥关闭 */
-function openChatPanel() {
+/** 打开对话框（历史随对话框展开）；会话/换角色等其它浮层互斥关闭 */
+function openChat() {
   if (noCharacter.value) {
     openSettingsWindow('character')
     return
   }
-  showChatPanel.value = true
+  chat.openInput()
   showSession.value = false
   showCharacterSelect.value = false
 }
@@ -98,12 +96,6 @@ function closeMoreMenu() {
 function menuAct(action: () => void) {
   closeMoreMenu()
   action()
-}
-
-/** 从聊天面板头部跳转会话管理 */
-function openSessions() {
-  showChatPanel.value = false
-  showSession.value = true
 }
 
 function toggleTts() {
@@ -196,7 +188,14 @@ const showConfigTodo = computed(() =>
   && !apiConfigured.value && !noCharacter.value,
 )
 
-let welcomeShown = false
+// ── 聊天展示 ──
+/** 上下文预算悬浮详情（输入框底栏圆环用） */
+const contextDetail = computed(() => t('chat.history.contextDetail', {
+  used: chat.contextStats.estimatedTokens,
+  max: chat.contextStats.maxContextTokens,
+  tools: chat.contextStats.toolDefinitionTokens,
+  pruned: chat.contextStats.prunedMessages,
+}))
 
 onMounted(async () => {
   // 日志窗口/Dev 窗口不初始化角色和对话
@@ -244,13 +243,6 @@ onMounted(async () => {
 
   // 初始化会话管理（system prompt 设定后加载历史消息）
   await sessionStore.init()
-
-  setTimeout(() => {
-    if (!showOnboarding.value && !welcomeShown && chat.messages.length === 0) {
-      welcomeShown = true
-      chat.showBubbleText(t('app.bubble.welcome'), true)
-    }
-  }, 1000)
 
   // Dev 面板通信：仅主窗口响应，避免设置窗口/日志窗口的 handler 干扰
   if (!isDev && !isSettings && !isLogs) {
@@ -308,17 +300,19 @@ function handleCharacterClick() {
     openSettingsWindow('character')
     return
   }
-  if (chat.showBubble && chat.isTyping) {
-    bubbleRef.value?.skipTyping()
-    return
-  }
-  openChatPanel()
+  openChat()
 }
 
 async function handleSend(payload: ChatInputPayload): Promise<boolean> {
   if (noCharacter.value || chat.isProcessing) return false
   if (charStore.render === 'illustration' && !getCharacterController()) return false
-  return await chat.sendMessage(payload)
+  // 消息一经接受立即收起对话框（历史折叠回一条消息高度），不等生成完成；
+  // 被拒绝（未配置/断网/处理中）时重新弹出，草稿与错误提示仍保留在输入框内
+  chat.closeInput()
+  const sessionId = sessionStore.currentSessionId
+  const accepted = await chat.sendMessage(payload)
+  if (sessionId === sessionStore.currentSessionId && !accepted) chat.openInput()
+  return accepted
 }
 
 async function openSettingsWindow(tab?: string) {
@@ -368,7 +362,6 @@ async function handleSelectCharacter(charId: string) {
   }
   chat.resetContext()
   applyCharacterPersona()
-  chat.showBubbleText(t('app.bubble.switchTo', { name: charStore.name }), false)
 }
 </script>
 
@@ -382,7 +375,8 @@ async function handleSelectCharacter(charId: string) {
     <div class="drag-region" data-tauri-drag-region data-pet-solid></div>
 
     <!-- 角色区 -->
-    <div class="character-area" :class="{ 'is-passthrough': isIgnoring }">
+    <!-- 边框跟随穿透模式（而非光标瞬时命中）：实体态常显作状态指示，穿透态始终隐藏 -->
+    <div class="character-area" :class="{ 'is-passthrough': passthroughOn }">
       <Character ref="characterRef" @click="handleCharacterClick" />
 
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
@@ -407,18 +401,12 @@ async function handleSelectCharacter(charId: string) {
       <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
       <CommandExecution v-if="!noCharacter" />
 
-      <!-- 对话气泡 -->
-      <DialogueBubble ref="bubbleRef" :text="chat.currentBubbleText" :thinking="chat.currentThinking"
-        :visible="chat.showBubble" :typing="chat.isTyping" @typing-end="chat.isTyping = false" />
+      <!-- 历史对话：常驻底部；折叠时显示最新一条，对话框弹出时展开到全高 -->
+      <ChatHistory visible />
 
-      <!-- 状态行：停止生成 / 配置待办；无内容时不渲染，出现时不推动工具栏位置 -->
-      <div v-if="chat.isProcessing || showConfigTodo" class="status-row" data-pet-solid>
-        <button v-if="chat.isProcessing" class="stop-btn" @click="chat.cancelResponse()"
-          :aria-label="t('app.aria.stop')">
-          <i class="fas fa-stop"></i>
-          <span>{{ t('app.stop') }}</span>
-        </button>
-        <button v-if="showConfigTodo" class="stop-btn config-todo" @click="showOnboarding = true"
+      <!-- 状态行：配置待办；无内容时不渲染，出现时不推动工具栏位置 -->
+      <div v-if="showConfigTodo" class="status-row" data-pet-solid>
+        <button class="stop-btn config-todo" @click="showOnboarding = true"
           :aria-label="t('app.aria.configTodo')">
           <i class="fas fa-clipboard-check"></i>
           <span>{{ t('app.configTodo') }}</span>
@@ -429,17 +417,17 @@ async function handleSelectCharacter(charId: string) {
         <!-- 工作区条（AI 文件读写目录，按会话独立） -->
         <WorkspaceChip v-if="!noCharacter" />
 
-        <!-- 陪伴状态工具栏：聊天 / 换角色 / 更多（语音、穿透、会话、设置收敛进更多；日志入口在 设置 → 诊断） -->
+        <!-- 陪伴状态工具栏：聊天 / 会话 / 更多（换角色、语音、穿透、设置收敛进更多；日志入口在 设置 → 诊断） -->
         <div class="toolbar" data-pet-solid>
-          <button class="tool-btn" :disabled="noCharacter" @click="openChatPanel"
+          <button class="tool-btn" :disabled="noCharacter" @click="openChat"
             :aria-label="t('app.aria.chatInput')">
             <i class="fas fa-comment btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
           </button>
           <button class="tool-btn" :disabled="chat.isProcessing || noCharacter"
-            @click="showCharacterSelect = !showCharacterSelect" :aria-label="t('app.aria.switchCharacter')">
-            <i class="fas fa-rotate btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.character') }}</span>
+            @click="showSession = !showSession" :aria-label="t('app.toolbar.session')">
+            <i class="fas fa-comments btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.session') }}</span>
           </button>
           <div class="more-wrap">
             <button class="tool-btn" :class="{ active: showMoreMenu }" @click="toggleMoreMenu"
@@ -449,6 +437,11 @@ async function handleSelectCharacter(charId: string) {
             </button>
             <Transition name="menu-fade">
               <div v-if="showMoreMenu" class="more-menu" role="menu" data-pet-solid>
+                <button class="menu-item" role="menuitem" :disabled="chat.isProcessing || noCharacter"
+                  @click="menuAct(() => { showCharacterSelect = true })">
+                  <i class="fas fa-rotate menu-icon"></i>
+                  <span>{{ t('app.toolbar.character') }}</span>
+                </button>
                 <button class="menu-item" role="menuitem" @click="menuAct(toggleTts)">
                   <i class="fas fa-volume-high menu-icon" :class="{ 'is-off': !ttsEnabled }"></i>
                   <span>{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
@@ -456,11 +449,6 @@ async function handleSelectCharacter(charId: string) {
                 <button class="menu-item" role="menuitem" @click="menuAct(togglePassthrough)">
                   <i class="fas fa-arrow-pointer menu-icon" :class="{ 'is-off': !passthroughOn }"></i>
                   <span>{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
-                </button>
-                <button class="menu-item" role="menuitem" :disabled="chat.isProcessing || noCharacter"
-                  @click="menuAct(() => { showSession = true })">
-                  <i class="fas fa-comments menu-icon"></i>
-                  <span>{{ t('app.toolbar.session') }}</span>
                 </button>
                 <button class="menu-item" role="menuitem" @click="menuAct(() => { openSettingsWindow() })">
                   <i class="fas fa-gear menu-icon"></i>
@@ -470,15 +458,29 @@ async function handleSelectCharacter(charId: string) {
             </Transition>
           </div>
         </div>
+
+        <!-- 停止生成：与工具栏同一行，出现/消失不改变工具栏位置 -->
+        <button v-if="chat.isProcessing" class="stop-btn" data-pet-solid @click="chat.cancelResponse()"
+          :aria-label="t('app.aria.stop')">
+          <i class="fas fa-stop"></i>
+          <span>{{ t('app.stop') }}</span>
+        </button>
       </div>
 
       <!-- 点击「更多」菜单外的任意位置关闭菜单 -->
       <div v-if="showMoreMenu" class="menu-backdrop" data-pet-solid @click="closeMoreMenu"></div>
+
+      <!-- 输入框：从底部弹出/收起（历史对话随其展开） -->
+      <div class="input-wrapper" :class="{ open: chat.showInput }">
+        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId"
+          :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
+          :title="sessionStore.currentSession?.name" @close="chat.closeInput()"
+          :context-utilization="chat.contextStats.utilization"
+          :context-detail="contextDetail" />
+      </div>
     </div>
 
     <!-- 面板 -->
-    <ChatHistory :visible="showChatPanel" :submit="handleSend" @close="showChatPanel = false"
-      @switch-session="openSessions" />
     <SessionList :visible="showSession" @close="showSession = false" />
     <CharacterSelect :visible="showCharacterSelect" @close="showCharacterSelect = false"
       @select="handleSelectCharacter" />
@@ -592,13 +594,26 @@ async function handleSelectCharacter(charId: string) {
   border: 1px dashed #f00;
 }
 
-/* 穿透态（鼠标在透明区）隐藏调试边框；实体态（可交互）显示红色虚线边框作状态指示。
+/* 实体态（可交互）始终显示红色虚线边框作状态指示；穿透态隐藏。
    用 transparent 而非 none，保留 1px 占位避免布局抖动。 */
 .character-area.is-passthrough {
   border-color: transparent;
 }
 
-/* ---- 底部工具栏 ---- */
+/* ---- 输入框弹出/收起动画（从底部缓慢展开） ---- */
+.input-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.input-wrapper.open {
+  max-height: 380px;
+}
+
+/* ---- 底部交互区 ---- */
 .bottom-area {
   position: absolute;
   bottom: 0;
@@ -621,7 +636,7 @@ async function handleSelectCharacter(charId: string) {
   align-items: stretch; /* 工作区条与工具栏等高，垂直居中对齐 */
   justify-content: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin: 8px 0px;
 }
 
 .toolbar {

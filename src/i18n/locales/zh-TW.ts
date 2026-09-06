@@ -15,9 +15,6 @@ export default {
   "unsaved": "未儲存",
   "deleteTitle": "刪除工作階段",
   "deleteBody": "刪除「{name}」將移除全部訊息及檔案回復檢查點。此操作無法復原；工作區檔案不會被還原。",
-  "clearTitle": "清空目前對話",
-  "clearBody": "將清空「{name}」的全部訊息及檔案回復檢查點，並重設對話上下文。此操作無法復原；工作區檔案不會被還原。",
-  "clearAction": "清空對話",
   "sendFailed": "未能完成傳送，輸入已保留。請檢查連線或設定後重試；已執行的操作不會撤銷。"
 },
   common: {
@@ -47,7 +44,6 @@ export default {
     },
     aria: {
       chatInput: '開啟聊天面板',
-      switchCharacter: '切換角色',
       settings: '開啟設定視窗',
       stop: '停止生成',
       configTodo: '繼續完成初始設定',
@@ -477,7 +473,6 @@ export default {
     history: {
       title: '對話歷史',
       count: '{n} 則',
-      clear: '清空歷史',
       empty: '尚無對話記錄',
       you: '你',
       thinking: '思考過程',
@@ -494,7 +489,6 @@ export default {
       title: '對話',
       send: '傳送',
       placeholder: '輸入訊息...',
-      hint: 'Enter 傳送 · Shift+Enter 換行',
       closeAria: '關閉輸入框',
       sendAria: '傳送訊息',
       chooseImage: '選擇圖片',

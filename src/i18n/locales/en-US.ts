@@ -15,9 +15,6 @@ export default {
   "unsaved": "Unsaved",
   "deleteTitle": "Delete session",
   "deleteBody": "Deleting “{name}” removes all its messages and file rollback checkpoints. This cannot be undone; workspace files will not be restored.",
-  "clearTitle": "Clear conversation",
-  "clearBody": "This clears all messages and file rollback checkpoints in “{name}” and resets its conversation context. This cannot be undone; workspace files will not be restored.",
-  "clearAction": "Clear conversation",
   "sendFailed": "Could not complete sending. Your input is retained. Check your connection or settings before retrying; completed actions are not undone."
 },
   common: {
@@ -47,7 +44,6 @@ export default {
     },
     aria: {
       chatInput: 'Open chat panel',
-      switchCharacter: 'Switch character',
       settings: 'Open settings window',
       stop: 'Stop generating',
       configTodo: 'Resume initial setup',
@@ -477,7 +473,6 @@ export default {
     history: {
       title: 'Conversation history',
       count: '{n}',
-      clear: 'Clear history',
       empty: 'No conversation records',
       you: 'You',
       thinking: 'Thinking process',
@@ -494,7 +489,6 @@ export default {
       title: 'Chat',
       send: 'Send',
       placeholder: 'Type a message...',
-      hint: 'Enter to send · Shift+Enter for newline',
       closeAria: 'Close input box',
       sendAria: 'Send message',
       chooseImage: 'Choose images',
