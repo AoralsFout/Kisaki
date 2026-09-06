@@ -5,6 +5,7 @@
  * 展示所有历史消息，可滚动，最新消息在最下方。
  */
 import { ref, watch, nextTick } from 'vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { useSessionStore } from '../stores/session'
@@ -24,6 +25,15 @@ const emit = defineEmits<{
 const chat = useChatStore()
 const sessionStore = useSessionStore()
 const listRef = ref<HTMLElement | null>(null)
+const clearTarget = ref<{ id: string; name: string } | null>(null)
+function requestClear() {
+  const session = sessionStore.currentSession
+  if (session) clearTarget.value = { id: session.id, name: session.name }
+}
+function confirmClear() {
+  if (clearTarget.value?.id === sessionStore.currentSessionId) chat.clearMessages()
+  clearTarget.value = null
+}
 
 /** 正在二次确认回档的消息 id */
 const confirmRollbackId = ref<string | null>(null)
@@ -42,7 +52,7 @@ async function doRollback(messageId: string) {
 // 按 Escape 关闭面板
 let keyHandler: ((e: KeyboardEvent) => void) | null = null
 watch(() => props.visible, (v) => {
-  if (!v) confirmRollbackId.value = null
+  if (!v) { confirmRollbackId.value = null; clearTarget.value = null }
   if (v) {
     keyHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') emit('close')
@@ -68,6 +78,9 @@ watch(
 </script>
 
 <template>
+  <ConfirmDialog :visible="Boolean(clearTarget)" :title="t('safety.clearTitle')"
+    :message="t('safety.clearBody', { name: clearTarget?.name })" :confirm-label="t('safety.clearAction')" danger
+    @cancel="clearTarget = null" @confirm="confirmClear" />
   <Transition name="panel-slide">
     <div v-if="visible" class="history-overlay" data-pet-solid>
       <div class="history-panel">
@@ -76,7 +89,7 @@ watch(
           <span class="history-title"><i class="fas fa-clipboard-list"></i> {{ t('chat.history.title') }}</span>
           <div class="header-actions">
             <span class="msg-count">{{ t('chat.history.count', { n: chat.messages.length }) }}</span>
-            <button class="btn-clear" @click="chat.clearMessages()" :title="t('chat.history.clear')"><i
+            <button class="btn-clear" @click="requestClear" :title="t('chat.history.clear')"><i
                 class="fas fa-trash-can"></i></button>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>

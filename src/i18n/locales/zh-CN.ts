@@ -5,6 +5,24 @@
  * 其它语言文件须保持相同 key 结构。
  */
 export default {
+  safety: {
+  "unsavedTitle": "有未保存的更改",
+  "unsavedBody": "离开前是否保存当前更改？",
+  "saveLeave": "保存并离开",
+  "keepEditing": "继续编辑",
+  "discard": "放弃更改",
+  "leaveFailed": "未能完成保存，请继续编辑并重试。更改仍保留在当前页面。",
+  "working": "正在处理…",
+  "saving": "保存中…",
+  "saveFailed": "保存失败：{message}",
+  "unsaved": "未保存",
+  "deleteTitle": "删除会话",
+  "deleteBody": "删除“{name}”将移除该会话的全部消息及文件回档检查点。此操作无法撤销；工作区文件不会被还原。",
+  "clearTitle": "清空当前对话",
+  "clearBody": "将清空“{name}”的全部消息及文件回档检查点，并重置对话上下文。此操作无法撤销；工作区文件不会被还原。",
+  "clearAction": "清空对话",
+  "sendFailed": "未能完成发送，输入已保留。请检查连接或配置后重试；已执行的操作不会撤销。"
+},
   common: {
     save: '保存',
     saved: '✓ 已保存',

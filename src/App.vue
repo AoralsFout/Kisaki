@@ -236,12 +236,16 @@ function handleCharacterClick() {
   chat.openInput()
 }
 
-function handleSend(payload: ChatInputPayload) {
-  if (noCharacter.value) return
-  // 立绘角色需控制器就绪；Live2D 角色无立绘控制器，仅由 noCharacter 把关
-  if (charStore.render === 'illustration' && !getCharacterController()) return
-  chat.closeInput()
-  chat.sendMessage(payload)
+async function handleSend(payload: ChatInputPayload): Promise<boolean> {
+  if (noCharacter.value || chat.isProcessing) return false
+  if (charStore.render === 'illustration' && !getCharacterController()) return false
+  const sessionId = sessionStore.currentSessionId
+  const accepted = await chat.sendMessage(payload)
+  if (sessionId === sessionStore.currentSessionId) {
+    if (accepted) chat.closeInput()
+    else chat.openInput()
+  }
+  return accepted
 }
 
 async function openSettingsWindow(tab?: string) {
@@ -416,7 +420,7 @@ async function handleSelectCharacter(charId: string) {
 
       <!-- 输入框（外包装控制高度动画，实现缓慢抬升） -->
       <div class="input-wrapper" :class="{ open: chat.showInput }">
-        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId" @send="handleSend"
+        <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId" :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
           @close="chat.closeInput()" />
       </div>
     </div>

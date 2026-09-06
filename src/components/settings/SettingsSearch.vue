@@ -3,6 +3,7 @@
  * 联网搜索设置 - 启用开关、provider 选择、Key / 自建实例地址
  */
 import { ref, onMounted, computed } from 'vue'
+import { useEditableForm } from '../../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import {
   loadSearchConfigSecure, saveSearchConfigSecure, isSearchConfigValid,
@@ -13,20 +14,21 @@ import type { SearchConfig } from '../../agent/tools/searchConfig'
 const { t } = useI18n()
 
 const searchConfig = ref<SearchConfig>({ ...DEFAULT_SEARCH_CONFIG })
-const searchSaved = ref(false)
+const form = useEditableForm(() => searchConfig.value, async value => {
+  await saveSearchConfigSecure(value)
+})
+const { dirty, saving, error, saved: searchSaved } = form
+defineExpose({ dirty, saving, save: form.save })
 const currentProvider = computed(() =>
   SEARCH_PROVIDERS.find(p => p.value === searchConfig.value.provider) ?? SEARCH_PROVIDERS[0],
 )
 
 onMounted(async () => {
   searchConfig.value = { ...await loadSearchConfigSecure() }
+  form.reset()
 })
 
-async function handleSearchSave() {
-  await saveSearchConfigSecure(searchConfig.value)
-  searchSaved.value = true
-  setTimeout(() => { searchSaved.value = false }, 1500)
-}
+async function handleSearchSave() { return form.save() }
 </script>
 
 <template>
@@ -77,9 +79,11 @@ async function handleSearchSave() {
       </div>
     </template>
 
+    <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
+    <p v-if="error" class="status-error" role="alert">{{ t('safety.saveFailed', { message: error }) }}</p>
     <div class="form-actions">
-      <button class="btn-save" @click="handleSearchSave">
-        {{ searchSaved ? t('common.saved') : t('common.save') }}
+      <button class="btn-save" :disabled="saving" @click="handleSearchSave">
+        {{ saving ? t('safety.saving') : searchSaved && !dirty ? t('common.saved') : t('common.save') }}
       </button>
       <span v-if="isSearchConfigValid(searchConfig)" class="status-ok"><i class="fas fa-check-circle"></i> {{ t('settings.search.configOk') }}</span>
     </div>

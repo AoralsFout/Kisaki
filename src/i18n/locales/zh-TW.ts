@@ -2,6 +2,24 @@
  * 繁體中文
  */
 export default {
+  safety: {
+  "unsavedTitle": "有未儲存的變更",
+  "unsavedBody": "離開前是否儲存目前變更？",
+  "saveLeave": "儲存並離開",
+  "keepEditing": "繼續編輯",
+  "discard": "捨棄變更",
+  "leaveFailed": "未能完成儲存，請繼續編輯並重試。變更仍保留在目前頁面。",
+  "working": "正在處理…",
+  "saving": "儲存中…",
+  "saveFailed": "儲存失敗：{message}",
+  "unsaved": "未儲存",
+  "deleteTitle": "刪除工作階段",
+  "deleteBody": "刪除「{name}」將移除全部訊息及檔案回復檢查點。此操作無法復原；工作區檔案不會被還原。",
+  "clearTitle": "清空目前對話",
+  "clearBody": "將清空「{name}」的全部訊息及檔案回復檢查點，並重設對話上下文。此操作無法復原；工作區檔案不會被還原。",
+  "clearAction": "清空對話",
+  "sendFailed": "未能完成傳送，輸入已保留。請檢查連線或設定後重試；已執行的操作不會撤銷。"
+},
   common: {
     save: '儲存',
     saved: '✓ 已儲存',

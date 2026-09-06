@@ -4,14 +4,14 @@
  * 通过 DashScope HTTP API 管理音色（查询列表等）。
  */
 import { loadCosyVoiceConfig, getHttpUrl } from './config'
-import type { VoiceInfo } from './types'
+import type { VoiceInfo, CosyVoiceConfig } from './types'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('TTSApi')
 
 /** 从服务端查询用户创建的自定义音色列表 */
-export async function fetchVoiceList(overrides?: { apiKey?: string }): Promise<VoiceInfo[]> {
-  const config = loadCosyVoiceConfig()
+export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Promise<VoiceInfo[]> {
+  const config = { ...loadCosyVoiceConfig(), ...overrides }
   // 如果调用方传入了解密后的 apiKey，优先使用
   const apiKey = overrides?.apiKey ?? config.apiKey
   if (!apiKey) {

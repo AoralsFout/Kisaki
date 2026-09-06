@@ -5,7 +5,9 @@
  * 左侧导航 + 右侧内容，各标签页内容由 settings/ 下子组件实现。
  * 作为独立 Tauri 窗口打开（?settings=1）。
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import UnsavedDialog from './UnsavedDialog.vue'
+import type { EditablePage } from '../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { WebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -29,6 +31,38 @@ const selfWindow = ref<WebviewWindow | null>(null)
 // ---- 导航 ----
 type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'dev' | 'about' | 'privacy'
 const activeTab = ref<Tab>('general')
+const editor = ref<EditablePage | null>(null)
+const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
+let unlistenClose: (() => void) | undefined
+const closeError = ref(false)
+async function installCloseGuard() {
+  unlistenClose = await selfWindow.value?.onCloseRequested(async event => {
+    // Always prevent the helper's implicit destroy(), which needs a broader permission.
+    event.preventDefault()
+    if (!await leaveDialog.value?.ask(editor.value)) return
+    closeError.value = false
+    try {
+      // Removing the listener lets the existing close permission take the normal native path.
+      await unlistenClose?.()
+      unlistenClose = undefined
+      window.removeEventListener('beforeunload', beforeUnload)
+      await selfWindow.value?.close()
+    } catch {
+      closeError.value = true
+      window.addEventListener('beforeunload', beforeUnload)
+      await installCloseGuard()
+    }
+  })
+}
+async function selectTab(tab: Tab) {
+  if (tab === activeTab.value) return
+  if (await leaveDialog.value?.ask(editor.value)) activeTab.value = tab
+}
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (editor.value?.dirty || editor.value?.saving) { event.preventDefault(); event.returnValue = '' }
+}
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => { unlistenClose?.(); window.removeEventListener('beforeunload', beforeUnload) })
 
 onMounted(async () => {
   // 支持通过 URL ?tab=character 定位标签页；在窗口显示前完成，避免先闪过默认页。
@@ -39,8 +73,9 @@ onMounted(async () => {
   }
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
+    await installCloseGuard().catch(() => {})
     // 隐藏创建，恢复位置/大小后再显示，避免白窗闪现和瞬移。
-    await initWindowState('settings', { showAfterRestore: true })
+    await initWindowState('settings', { showAfterRestore: true }).catch(() => {})
   }
 })
 
@@ -60,7 +95,9 @@ function closeWindow() {
 </script>
 
 <template>
+  <UnsavedDialog ref="leaveDialog" />
   <div class="settings-window" :class="{ standalone: isSettingsWindow }">
+    <p v-if="closeError" role="alert">{{ t('safety.leaveFailed') }}</p>
     <!-- 标题栏 -->
     <header class="topbar" data-tauri-drag-region>
       <span class="topbar-title"><i class="fas fa-gear"></i> {{ t('settings.title') }}</span>
@@ -77,35 +114,35 @@ function closeWindow() {
     <div class="layout">
       <!-- 左侧导航 -->
       <nav class="sidebar">
-        <button :class="['nav-item', { active: activeTab === 'general' }]" @click="activeTab = 'general'">
+        <button :class="['nav-item', { active: activeTab === 'general' }]" @click="selectTab('general')">
           <i class="fas fa-sliders nav-icon"></i>
           <span>{{ t('settings.nav.general') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'api' }]" @click="activeTab = 'api'">
+        <button :class="['nav-item', { active: activeTab === 'api' }]" @click="selectTab('api')">
           <i class="fas fa-plug nav-icon"></i>
           <span>{{ t('settings.nav.api') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'search' }]" @click="activeTab = 'search'">
+        <button :class="['nav-item', { active: activeTab === 'search' }]" @click="selectTab('search')">
           <i class="fas fa-globe nav-icon"></i>
           <span>{{ t('settings.nav.search') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'character' }]" @click="activeTab = 'character'">
+        <button :class="['nav-item', { active: activeTab === 'character' }]" @click="selectTab('character')">
           <i class="fas fa-masks-theater nav-icon"></i>
           <span>{{ t('settings.nav.character') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'tts' }]" @click="activeTab = 'tts'">
+        <button :class="['nav-item', { active: activeTab === 'tts' }]" @click="selectTab('tts')">
           <i class="fas fa-microphone nav-icon"></i>
           <span>{{ t('settings.nav.tts') }}</span>
         </button>
-        <button v-if="isDevelopment" :class="['nav-item', { active: activeTab === 'dev' }]" @click="activeTab = 'dev'">
+        <button v-if="isDevelopment" :class="['nav-item', { active: activeTab === 'dev' }]" @click="selectTab('dev')">
           <i class="fas fa-screwdriver-wrench nav-icon"></i>
           <span>{{ t('settings.nav.dev') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
+        <button :class="['nav-item', { active: activeTab === 'about' }]" @click="selectTab('about')">
           <i class="fas fa-circle-info nav-icon"></i>
           <span>{{ t('settings.nav.about') }}</span>
         </button>
-        <button :class="['nav-item', { active: activeTab === 'privacy' }]" @click="activeTab = 'privacy'">
+        <button :class="['nav-item', { active: activeTab === 'privacy' }]" @click="selectTab('privacy')">
           <i class="fas fa-shield-halved nav-icon"></i>
           <span>{{ t('settings.nav.privacy') }}</span>
         </button>
@@ -114,12 +151,12 @@ function closeWindow() {
       <!-- 右侧内容 -->
       <main :class="['content', { 'content-flush': activeTab === 'character' }]">
         <SettingsGeneral v-if="activeTab === 'general'" />
-        <SettingsApi v-if="activeTab === 'api'" />
-        <SettingsSearch v-if="activeTab === 'search'" />
-        <SettingsTts v-if="activeTab === 'tts'" />
+        <SettingsApi ref="editor" v-if="activeTab === 'api'" />
+        <SettingsSearch ref="editor" v-if="activeTab === 'search'" />
+        <SettingsTts ref="editor" v-if="activeTab === 'tts'" />
 
         <div v-if="activeTab === 'character'" class="content-section content-wide">
-          <CharacterManager />
+          <CharacterManager ref="editor" />
         </div>
 
         <div v-if="isDevelopment && activeTab === 'dev'" class="content-section">

@@ -9,6 +9,7 @@
  * - 重命名会话（双击或点击编辑按钮）
  */
 import { ref, watch, nextTick } from 'vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/session'
 
@@ -29,6 +30,7 @@ const sessionStore = useSessionStore()
 /** 正在编辑重命名的会话 ID */
 const editingId = ref<string | null>(null)
 const editName = ref('')
+const deleteTarget = ref<{ id: string; name: string } | null>(null)
 const editInputRef = ref<HTMLInputElement | null>(null)
 
 // 按 Escape 关闭面板
@@ -47,7 +49,7 @@ watch(() => props.visible, (v) => {
 
 // 关闭面板时取消编辑状态
 watch(() => props.visible, (v) => {
-  if (!v) editingId.value = null
+  if (!v) { editingId.value = null; deleteTarget.value = null }
 })
 
 function handleSelect(id: string) {
@@ -63,7 +65,14 @@ function handleCreate() {
 }
 
 function handleDelete(id: string) {
-  sessionStore.deleteSession(id)
+  const session = sessionStore.getSessionById(id)
+  if (session) deleteTarget.value = { id, name: session.name }
+}
+
+function confirmDelete() {
+  if (!deleteTarget.value) return
+  sessionStore.deleteSession(deleteTarget.value.id)
+  deleteTarget.value = null
 }
 
 function startRename(id: string) {
@@ -99,6 +108,9 @@ function handleEditKeydown(e: KeyboardEvent, id: string) {
 </script>
 
 <template>
+  <ConfirmDialog :visible="Boolean(deleteTarget)" :title="t('safety.deleteTitle')"
+    :message="t('safety.deleteBody', { name: deleteTarget?.name })" :confirm-label="t('common.delete')" danger
+    @cancel="deleteTarget = null" @confirm="confirmDelete" />
   <Transition name="panel-slide">
     <div v-if="visible" class="session-overlay" data-pet-solid>
       <div class="session-panel">

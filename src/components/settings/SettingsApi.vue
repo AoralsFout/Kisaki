@@ -3,6 +3,7 @@
  * API 配置 - 预设、baseURL、apiKey、model
  */
 import { ref, onMounted } from 'vue'
+import { useEditableForm } from '../../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import { loadConfigSecure, saveConfigSecure, DEFAULT_CONFIG, isConfigValid, testAIConnection } from '../../ai'
 import type { AIConfig } from '../../ai'
@@ -12,7 +13,12 @@ import { EVENT_AI_CONFIG_CHANGED } from '../../constants'
 const { t } = useI18n()
 
 const config = ref<AIConfig>({ ...DEFAULT_CONFIG })
-const saved = ref(false)
+const form = useEditableForm(() => config.value, async value => {
+  await saveConfigSecure(value)
+  await emit(EVENT_AI_CONFIG_CHANGED).catch(() => {})
+})
+const { dirty, saving, error, saved } = form
+defineExpose({ dirty, saving, save: form.save })
 const testing = ref(false)
 const testResult = ref<'ok' | 'error' | ''>('')
 const testMessage = ref('')
@@ -26,6 +32,7 @@ const PRESETS = [
 
 onMounted(async () => {
   config.value = { ...await loadConfigSecure() }
+  form.reset()
 })
 
 function applyPreset(p: typeof PRESETS[0]) {
@@ -33,12 +40,7 @@ function applyPreset(p: typeof PRESETS[0]) {
   config.value.model = p.model
 }
 
-async function handleSave() {
-  await saveConfigSecure(config.value)
-  await emit(EVENT_AI_CONFIG_CHANGED).catch(() => { /* 浏览器预览环境无 Tauri 事件 */ })
-  saved.value = true
-  setTimeout(() => { saved.value = false }, 1500)
-}
+async function handleSave() { return form.save() }
 
 async function handleTest() {
   testing.value = true
@@ -83,9 +85,11 @@ async function handleTest() {
       <p class="form-hint">{{ t('settings.api.visionHint') }}</p>
     </div>
 
+    <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
+    <p v-if="error" class="status-error" role="alert">{{ t('safety.saveFailed', { message: error }) }}</p>
     <div class="form-actions">
-      <button class="btn-save" @click="handleSave">
-        {{ saved ? t('common.saved') : t('common.save') }}
+      <button class="btn-save" :disabled="saving" @click="handleSave">
+        {{ saving ? t('safety.saving') : saved && !dirty ? t('common.saved') : t('common.save') }}
       </button>
       <button class="btn-secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">
         {{ testing ? t('settings.api.testing') : t('settings.api.test') }}

@@ -141,8 +141,8 @@ if (typeof window !== 'undefined') {
 export function getWsUrl(config: CosyVoiceConfig): string {
   const region = REGIONS[config.region]
   if (!region) return REGIONS.beijing.wsUrl
-  if (config.region === 'singapore' && region.workspaceId) {
-    return region.wsUrl.replace('{WorkspaceId}', region.workspaceId)
+  if (config.region === 'singapore' && (config.workspaceId || region.workspaceId)) {
+    return region.wsUrl.replace('{WorkspaceId}', config.workspaceId || region.workspaceId || '')
   }
   return region.wsUrl
 }
@@ -151,8 +151,8 @@ export function getWsUrl(config: CosyVoiceConfig): string {
 export function getHttpUrl(config: CosyVoiceConfig): string {
   const region = REGIONS[config.region]
   if (!region) return REGIONS.beijing.httpUrl
-  if (config.region === 'singapore' && region.workspaceId) {
-    return region.httpUrl.replace('{WorkspaceId}', region.workspaceId)
+  if (config.region === 'singapore' && (config.workspaceId || region.workspaceId)) {
+    return region.httpUrl.replace('{WorkspaceId}', config.workspaceId || region.workspaceId || '')
   }
   return region.httpUrl
 }

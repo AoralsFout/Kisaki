@@ -6,7 +6,8 @@
  *   - 阿里云 CosyVoice（云端 WebSocket）
  *   - 本地 GPT-SoVITS（本地 HTTP API，参考音频在角色管理器中设置）
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useEditableForm } from '../../utils/editableForm'
 import { useI18n } from 'vue-i18n'
 import {
   loadCosyVoiceConfigSecure, saveCosyVoiceConfigSecure,
@@ -26,14 +27,24 @@ const provider = ref<TtsProvider>(getTtsProvider())
 
 // CosyVoice state
 const cvConfig = ref<CosyVoiceConfig>({ ...DEFAULT_COSYVOICE_CONFIG })
-const cvSaved = ref(false)
+const cvForm = useEditableForm(() => cvConfig.value, saveCosyVoiceConfigSecure)
+const { saved: cvSaved, saving: cvSaving, error: cvSaveError } = cvForm
 const voices = ref<VoiceInfo[]>([])
 const loadingVoices = ref(false)
 const voiceError = ref('')
 
 // GPT-SoVITS state
 const gsConfig = ref<GptSoVitsConfig>({ ...DEFAULT_GPTSOVITS_CONFIG })
-const gsSaved = ref(false)
+const gsForm = useEditableForm(() => gsConfig.value, saveGptSoVitsConfig)
+const { saved: gsSaved, saving: gsSaving, error: gsSaveError } = gsForm
+const dirty = computed(() => cvForm.dirty.value || gsForm.dirty.value)
+const saving = computed(() => cvSaving.value || gsSaving.value)
+async function saveAllSettings() {
+  if (cvForm.dirty.value && !await cvForm.save()) return false
+  if (gsForm.dirty.value && !await gsForm.save()) return false
+  return !dirty.value
+}
+defineExpose({ dirty, saving, save: saveAllSettings })
 const showAdvanced = ref(false)
 
 const ttsEnabled = ref(isTtsEnabled())
@@ -43,6 +54,8 @@ const typingSpeed = ref(getTypingSpeed())
 onMounted(async () => {
   cvConfig.value = { ...await loadCosyVoiceConfigSecure() }
   gsConfig.value = { ...loadGptSoVitsConfig() }
+  cvForm.reset()
+  gsForm.reset()
 })
 
 function onTypingSpeedInput(e: Event) {
@@ -60,20 +73,14 @@ function handleProviderChange(newProvider: TtsProvider) {
 
 // ── CosyVoice ──
 
-async function handleCvSave() {
-  await saveCosyVoiceConfigSecure(cvConfig.value)
-  cvSaved.value = true
-  voiceError.value = ''
-  setTimeout(() => { cvSaved.value = false }, 1500)
-}
+async function handleCvSave() { return cvForm.save() }
 
 async function handleFetchVoices() {
   loadingVoices.value = true
   voiceError.value = ''
   voices.value = []
   try {
-    await saveCosyVoiceConfigSecure(cvConfig.value)
-    const list = await fetchVoiceList({ apiKey: cvConfig.value.apiKey })
+    const list = await fetchVoiceList({ ...cvConfig.value })
     voices.value = list
     if (list.length === 0) {
       voiceError.value = t('settings.tts.noVoices')
@@ -87,11 +94,7 @@ async function handleFetchVoices() {
 
 // ── GPT-SoVITS ──
 
-function handleGsSave() {
-  saveGptSoVitsConfig(gsConfig.value)
-  gsSaved.value = true
-  setTimeout(() => { gsSaved.value = false }, 1500)
-}
+async function handleGsSave() { return gsForm.save() }
 </script>
 
 <template>
@@ -99,6 +102,8 @@ function handleGsSave() {
     <h2 class="section-title"><i class="fas fa-microphone"></i> {{ t('settings.tts.title') }}</h2>
     <p class="section-desc">{{ t('settings.tts.desc') }}</p>
 
+    <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
+    <p v-if="cvSaveError || gsSaveError" role="alert" class="status-error">{{ t('safety.saveFailed', { message: cvSaveError || gsSaveError }) }}</p>
     <!-- TTS 总开关 -->
     <div class="form-group">
       <div class="toggle-row">
@@ -168,13 +173,13 @@ function handleGsSave() {
 
       <div v-if="cvConfig.region === 'singapore'" class="form-group">
         <label class="form-label">{{ t('settings.tts.workspaceId') }}</label>
-        <input v-model="REGIONS.singapore.workspaceId" class="form-input" :placeholder="t('settings.tts.workspaceIdPlaceholder')" />
+        <input v-model="cvConfig.workspaceId" class="form-input" :placeholder="t('settings.tts.workspaceIdPlaceholder')" />
         <p class="form-hint">{{ t('settings.tts.workspaceIdHint') }}</p>
       </div>
 
       <div class="form-actions">
-        <button class="btn-save" @click="handleCvSave">
-          {{ cvSaved ? t('common.saved') : t('settings.tts.saveConfig') }}
+        <button class="btn-save" :disabled="cvSaving" @click="handleCvSave">
+          {{ cvSaving ? t('safety.saving') : cvSaved && !cvForm.dirty.value ? t('common.saved') : t('settings.tts.saveConfig') }}
         </button>
       </div>
 
@@ -250,8 +255,8 @@ function handleGsSave() {
       </template>
 
       <div class="form-actions">
-        <button class="btn-save" @click="handleGsSave">
-          {{ gsSaved ? t('common.saved') : t('settings.tts.saveConfig') }}
+        <button class="btn-save" :disabled="gsSaving" @click="handleGsSave">
+          {{ gsSaving ? t('safety.saving') : gsSaved && !gsForm.dirty.value ? t('common.saved') : t('settings.tts.saveConfig') }}
         </button>
       </div>
     </template>

@@ -2,6 +2,24 @@
  * English
  */
 export default {
+  safety: {
+  "unsavedTitle": "Unsaved changes",
+  "unsavedBody": "Save your changes before leaving?",
+  "saveLeave": "Save and leave",
+  "keepEditing": "Keep editing",
+  "discard": "Discard changes",
+  "leaveFailed": "Could not finish saving. Keep editing and try again. Your changes remain on this page.",
+  "working": "Working…",
+  "saving": "Saving…",
+  "saveFailed": "Save failed: {message}",
+  "unsaved": "Unsaved",
+  "deleteTitle": "Delete session",
+  "deleteBody": "Deleting “{name}” removes all its messages and file rollback checkpoints. This cannot be undone; workspace files will not be restored.",
+  "clearTitle": "Clear conversation",
+  "clearBody": "This clears all messages and file rollback checkpoints in “{name}” and resets its conversation context. This cannot be undone; workspace files will not be restored.",
+  "clearAction": "Clear conversation",
+  "sendFailed": "Could not complete sending. Your input is retained. Check your connection or settings before retrying; completed actions are not undone."
+},
   common: {
     save: 'Save',
     saved: '✓ Saved',

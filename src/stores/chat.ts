@@ -524,8 +524,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 发送消息给 AI（支持工具调用循环） */
-  async function sendMessage(input: string | ChatInputPayload) {
+  async function sendMessage(input: string | ChatInputPayload): Promise<boolean> {
     const _fn = 'sendMessage'
+    let failed = false
     const _timer = debugTimer(_fn)
     const rawText = typeof input === 'string' ? input : input.text
     const images = typeof input === 'string' ? [] : input.images
@@ -534,11 +535,11 @@ export const useChatStore = defineStore('chat', () => {
     // ── 守卫条件检查 ────────────────────────────────────
     if (isProcessing.value) {
       log.warn('[%s] ⚠ 正在处理中，忽略重复请求 (text=%s)', _fn, rawText?.slice(0, 30))
-      return
+      return false
     }
     if ((!rawText || !rawText.trim()) && images.length === 0) {
       log.warn('[%s] ⚠ 收到空消息，忽略', _fn)
-      return
+      return false
     }
 
     const userText = rawText.trim() || t('chat.input.imageOnlyPrompt')
@@ -560,7 +561,7 @@ export const useChatStore = defineStore('chat', () => {
       showBubbleText(t('app.bubble.networkOff'), false)
       isProcessing.value = false
       log.trace('[%s] ◀ (网络不可用)', _fn)
-      return
+      return false
     }
 
     const cfgCheck = loadConfig()
@@ -570,7 +571,7 @@ export const useChatStore = defineStore('chat', () => {
       showBubbleText(t('app.bubble.apiNotConfigured'), false)
       isProcessing.value = false
       log.trace('[%s] ◀ (配置无效)', _fn)
-      return
+      return false
     }
 
     log.info('[%s] 用户消息: "%s"', _fn, userText.slice(0, 100))
@@ -939,6 +940,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         log.error('[%s] 第%d轮 ✗ 错误: [%s] %s', _fn, turn, errName, errMsg)
         log.debug('[%s] 第%d轮 ✗ 错误堆栈: %s', _fn, turn, (err as Error).stack || '(无堆栈)')
+        failed = true
         showBubbleText(t('app.bubble.error', { msg: errMsg }), false)
         break
       }
@@ -950,7 +952,7 @@ export const useChatStore = defineStore('chat', () => {
     if (abortController !== myAbort) {
       log.info('[%s] ◀ 本次请求已被取消或被新请求取代，跳过收尾', _fn)
       _timer.stop()
-      return
+      return true
     }
 
     if (wasCancelled) {
@@ -983,6 +985,7 @@ export const useChatStore = defineStore('chat', () => {
 
     _timer.stop()
     log.trace('[%s] ◀ (正常结束)', _fn)
+    return !failed
   }
 
   /** 触发角色 TTS 语音播报 */

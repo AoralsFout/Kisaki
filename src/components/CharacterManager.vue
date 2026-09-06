@@ -3,6 +3,7 @@
  * 角色管理 - 角色列表 + 编辑器
  */
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import UnsavedDialog from './UnsavedDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
@@ -167,6 +168,12 @@ function openCreateForm() {
 
 /** 创建新角色（从表单读取数据） */
 async function submitCreateForm() {
+  if (saving.value) return
+  saving.value = true
+  try { await createCharacterFromForm() }
+  finally { saving.value = false }
+}
+async function createCharacterFromForm() {
   const id = newCharId.value.trim()
   const name = newCharName.value.trim() || id
   createError.value = ''
@@ -223,7 +230,7 @@ async function submitCreateForm() {
     await charStore.refreshList()
     emit(EVENT_CHARACTERS_CHANGED)
     showCreateForm.value = false
-    enterEditor(id)
+    await enterEditor(id)
     saveMsg.value = t('character.msg.createdCharacter', { name })
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
@@ -236,25 +243,32 @@ async function enterEditor(id: string) {
   editingId.value = id
   if (!charStore.availableList.includes(id)) return
   await charStore.loadCharacter(id, true)
-  loadData()
+  await loadData()
   view.value = 'editor'
 }
 
-/** 返回角色列表（有未保存更改时先提醒，再次点击才确认退出） */
-const pendingExit = ref(false)
-
-function backToList() {
-  if (hasChanges.value && !pendingExit.value) {
-    pendingExit.value = true
-    saveMsg.value = t('character.msg.unsavedExit')
-    setTimeout(() => { if (!pendingExit.value) return; pendingExit.value = false; saveMsg.value = '' }, 4000)
-    return
-  }
-  pendingExit.value = false
+const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
+const saving = ref(false)
+const dirty = computed(() => hasChanges.value || Boolean(newPoseName.value.trim() || newCostumeName.value.trim()) || (showCreateForm.value && Boolean(newCharId.value || newCharName.value || newCharDesc.value || newCharModelDir.value)))
+async function savePage() {
+  if (showCreateForm.value) { await submitCreateForm(); return !showCreateForm.value }
+  commitNewPose()
+  commitNewCostume()
+  return saveAll()
+}
+const editablePage = { get dirty() { return dirty.value }, get saving() { return saving.value }, save: savePage }
+defineExpose({ dirty, saving, save: savePage })
+async function closeCreateForm() {
+  if (await leaveDialog.value?.ask(editablePage)) { showCreateForm.value = false; resetCreateForm() }
+}
+async function backToList() {
+  if (!await leaveDialog.value?.ask(editablePage)) return
   view.value = 'list'
   editingId.value = ''
   editFile.value = null
   hasChanges.value = false
+  newPoseName.value = ''
+  newCostumeName.value = ''
 }
 
 async function loadVoices() {
@@ -272,8 +286,8 @@ async function loadVoices() {
   }
 }
 
-function loadData() {
-  loadPrompt()
+async function loadData() {
+  await loadPrompt()
   const data = charStore.data
   if (!data) return
   editableImages.value = JSON.parse(JSON.stringify(data.images))
@@ -291,6 +305,7 @@ function loadData() {
     editableLive2dConfig.value = JSON.parse(JSON.stringify(data.live2d ?? { model: '' }))
     void reloadLive2DManifest()
   }
+  hasChanges.value = false
   // 异步加载音色列表
   loadVoices()
 }
@@ -363,7 +378,8 @@ async function deleteCharacter() {
       }
     }
     showDeleteConfirm.value = false
-    backToList()
+    hasChanges.value = false
+    await backToList()
     saveMsg.value = t('character.msg.deletedCharacter')
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e) {
@@ -504,7 +520,19 @@ function fileToBase64(file: File): Promise<string> {
 
 // ---- 保存 ----
 
-async function saveAll() {
+async function saveAll(): Promise<boolean> {
+  if (saving.value) return false
+  saving.value = true
+  try {
+    await persistAll()
+    return !hasChanges.value && !saveError.value
+  } catch (e) {
+    saveError.value = t('safety.saveFailed', { message: e instanceof Error ? e.message : String(e) })
+    return false
+  } finally { saving.value = false }
+}
+
+async function persistAll() {
   saveMsg.value = ''
   saveError.value = ''
   const data = charStore.data
@@ -553,12 +581,11 @@ async function saveAll() {
   }
 
   await charStore.loadCharacter(editingId.value, true)
-  loadData()
+  await loadData()
   bustImageCache()  // 递增缓存版本，下次图片请求使用新 URL
-  emit(EVENT_CHARACTERS_CHANGED) // 通知主窗口刷新（角色内容已变）
+  await emit(EVENT_CHARACTERS_CHANGED).catch(() => {}) // 通知主窗口刷新
   saveMsg.value = t('character.msg.saveSuccess')
   hasChanges.value = false
-  pendingExit.value = false
   setTimeout(() => { saveMsg.value = '' }, 3000)
 }
 
@@ -620,6 +647,7 @@ async function importPack() {
 </script>
 
 <template>
+  <UnsavedDialog ref="leaveDialog" />
   <div class="char-mgr">
     <!-- ===== 角色卡片列表 ===== -->
     <div v-if="view === 'list'">
@@ -661,11 +689,11 @@ async function importPack() {
 
       <!-- 创建角色模态框 -->
       <Transition name="modal-fade">
-        <div v-if="showCreateForm" class="modal-overlay" @click.self="showCreateForm = false">
-          <div class="modal-card">
+        <div v-if="showCreateForm" class="modal-overlay" @click.self="closeCreateForm">
+          <div class="modal-card" :inert="saving">
             <div class="modal-header">
               <h3 class="modal-title"><i class="fas fa-masks-theater"></i> {{ t('character.mgr.createTitle') }}</h3>
-              <button class="modal-close" @click="showCreateForm = false">✕</button>
+              <button class="modal-close" @click="closeCreateForm">✕</button>
             </div>
             <div class="modal-body">
               <div class="form-group">
@@ -676,7 +704,7 @@ async function importPack() {
                   :placeholder="t('character.mgr.idPlaceholder')"
                   autofocus
                   @keydown.enter="submitCreateForm"
-                  @keydown.esc="showCreateForm = false"
+                  @keydown.esc="closeCreateForm"
                 />
               </div>
               <div class="form-group">
@@ -715,7 +743,7 @@ async function importPack() {
               <p v-if="createError" class="form-error">{{ createError }}</p>
             </div>
             <div class="modal-footer">
-              <button class="btn-cancel" @click="showCreateForm = false">{{ t('common.cancel') }}</button>
+              <button class="btn-cancel" @click="closeCreateForm">{{ t('common.cancel') }}</button>
               <button class="btn-create" @click="submitCreateForm">{{ t('character.mgr.confirmCreate') }}</button>
             </div>
           </div>
@@ -724,7 +752,7 @@ async function importPack() {
     </div>
 
     <!-- ===== 角色编辑器 ===== -->
-    <div v-if="view === 'editor'" class="editor-view">
+    <div v-if="view === 'editor'" class="editor-view" :inert="saving">
       <!-- 左栏 -->
       <div class="editor-left">
         <div class="editor-sticky">
@@ -733,7 +761,7 @@ async function importPack() {
             <div class="editor-actions">
               <button class="btn-back" @click="backToList">{{ t('common.back') }}</button>
               <button class="btn-save-top" :class="{ dirty: hasChanges }" @click="saveAll">
-                <i v-if="hasChanges" class="fas fa-floppy-disk"></i> {{ t('character.mgr.saveBtn') }}
+                <i v-if="hasChanges" class="fas fa-floppy-disk"></i> {{ saving ? t('safety.saving') : t('character.mgr.saveBtn') }}
               </button>
               <button class="btn-export" :disabled="packBusy" @click="exportPack" :title="t('character.mgr.exportTitle')"><i class="fas fa-file-export"></i></button>
               <button class="btn-delete" @click="showDeleteConfirm = true" :title="t('character.mgr.deleteTitle')"><i class="fas fa-trash-can"></i></button>
@@ -854,7 +882,7 @@ async function importPack() {
             <div class="form-group gs-field">
               <label class="lang-label">{{ t('character.mgr.gptsovitsPromptText') }}</label>
               <input v-model="gsPromptText" class="form-input" type="text"
-                :placeholder="t('character.mgr.gptsovitsPromptTextPlaceholder')" @change="markChanged" />
+                :placeholder="t('character.mgr.gptsovitsPromptTextPlaceholder')" @input="markChanged" />
             </div>
 
             <div class="form-group gs-field">

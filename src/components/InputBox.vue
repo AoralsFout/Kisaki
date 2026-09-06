@@ -24,6 +24,8 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** 会话草稿标识；草稿仅保留在当前窗口内存中 */
   draftKey?: string
+  validDraftKeys?: string[]
+  submit?: (payload: ChatInputPayload) => Promise<boolean>
   /** 初始文本 */
   modelValue?: string
 }>(), {
@@ -42,12 +44,12 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-type Draft = { text: string; images: ImageAttachment[]; error: string; adding: boolean }
+type Draft = { text: string; images: ImageAttachment[]; error: string; adding: boolean; sending: boolean }
 const drafts = reactive(new Map<string, Draft>())
-drafts.set(props.draftKey, { text: props.modelValue, images: [], error: '', adding: false })
+drafts.set(props.draftKey, { text: props.modelValue, images: [], error: '', adding: false, sending: false })
 const draft = computed(() => {
   if (!drafts.has(props.draftKey)) {
-    drafts.set(props.draftKey, { text: '', images: [], error: '', adding: false })
+    drafts.set(props.draftKey, { text: '', images: [], error: '', adding: false, sending: false })
   }
   return drafts.get(props.draftKey)!
 })
@@ -55,6 +57,11 @@ const inputText = computed({ get: () => draft.value.text, set: v => { draft.valu
 const images = computed({ get: () => draft.value.images, set: v => { draft.value.images = v } })
 const imageError = computed({ get: () => draft.value.error, set: v => { draft.value.error = v } })
 const isAddingImages = computed(() => draft.value.adding)
+watch(() => props.validDraftKeys, keys => {
+  if (!keys) return
+  for (const key of drafts.keys()) if (!keys.includes(key)) drafts.delete(key)
+}, { deep: true })
+const isSending = computed(() => draft.value.sending)
 const hasContent = computed(() => Boolean(inputText.value.trim()) || images.value.length > 0)
 
 // 同步 v-model
@@ -81,13 +88,23 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-function sendMessage() {
-  const text = inputText.value.trim()
-  if (!hasContent.value || props.disabled || isAddingImages.value) return
-  emit('send', { text, images: [...images.value] })
-  inputText.value = ''
-  images.value = []
-  imageError.value = ''
+async function sendMessage() {
+  const target = draft.value
+  const text = target.text.trim()
+  if (!hasContent.value || props.disabled || target.adding || target.sending) return
+  const payload = { text, images: [...target.images] }
+  const originalText = target.text
+  const originalImages = [...target.images]
+  target.error = ''
+  target.sending = true
+  try {
+    const accepted = props.submit ? await props.submit(payload) : (emit('send', payload), true)
+    if (!accepted) { target.error = t('safety.sendFailed'); return }
+    if (target.text === originalText && target.images.length === originalImages.length && target.images.every((img, i) => img.id === originalImages[i].id)) {
+      target.text = ''; target.images = []; target.error = ''
+    }
+  } catch { target.error = t('safety.sendFailed') }
+  finally { target.sending = false }
 }
 
 function validationMessage(error: ImageValidationError): string {
@@ -100,7 +117,7 @@ function validationMessage(error: ImageValidationError): string {
 }
 
 async function addFiles(files: Iterable<File>) {
-  if (props.disabled || isAddingImages.value) return
+  if (props.disabled || isAddingImages.value || isSending.value) return
   // 异步读图完成时仍写回原会话，避免切换会话后附件串入。
   const target = draft.value
   imageError.value = ''
@@ -156,12 +173,12 @@ function handleClose() {
         <button class="btn-close" @click="handleClose" :aria-label="t('chat.input.closeAria')">✕</button>
       </div>
       <textarea ref="inputRef" v-model="inputText" class="input-field"
-        :placeholder="placeholder || t('chat.input.placeholder')" :disabled="disabled" rows="3"
+        :placeholder="placeholder || t('chat.input.placeholder')" :disabled="disabled || isSending" rows="3"
         @keydown="handleKeydown" @paste="handlePaste"></textarea>
       <div v-if="images.length" class="image-list" :aria-label="t('chat.input.imagesLabel')">
         <div v-for="image in images" :key="image.id" class="image-preview">
           <img :src="image.dataUrl" :alt="image.name" />
-          <button type="button" class="btn-remove-image" :aria-label="t('chat.input.removeImage', { name: image.name })"
+          <button type="button" class="btn-remove-image" :disabled="disabled || isSending" :aria-label="t('chat.input.removeImage', { name: image.name })"
             @click="removeImage(image.id)">✕</button>
         </div>
       </div>
@@ -170,7 +187,7 @@ function handleClose() {
         <div class="input-actions">
           <input ref="fileInputRef" class="file-input" type="file"
             accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="handleFilePicked" />
-          <button type="button" class="btn-image" :disabled="disabled || isAddingImages || images.length >= MAX_IMAGE_COUNT"
+          <button type="button" class="btn-image" :disabled="disabled || isSending || isAddingImages || images.length >= MAX_IMAGE_COUNT"
             :title="t('chat.input.chooseImageHint', { count: MAX_IMAGE_COUNT })"
             :aria-label="t('chat.input.chooseImage')" @click="fileInputRef?.click()">
             <i class="fas fa-image"></i>
@@ -178,7 +195,7 @@ function handleClose() {
           </button>
           <span class="hint">{{ t('chat.input.hint') }}</span>
         </div>
-        <button class="btn-send" :disabled="!hasContent || disabled || isAddingImages" @click="sendMessage"
+        <button class="btn-send" :disabled="!hasContent || disabled || isSending || isAddingImages" @click="sendMessage"
           :aria-label="t('chat.input.sendAria')">{{ t('chat.input.send') }}</button>
       </div>
     </div>

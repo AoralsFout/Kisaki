@@ -28,6 +28,44 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('InputBox 图片输入', () => {
+  it('发送被拒绝或异常时保留文字和图片，成功后才清理', async () => {
+    const submit = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(true)
+    const wrapper = mount(InputBox, { props: { visible: true, submit } })
+    await wrapper.get('textarea').setValue('保留我')
+    const fileInput = wrapper.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', { configurable: true, value: [imageFile()] })
+    await fileInput.trigger('change')
+    await flushPromises()
+    for (let i = 0; i < 2; i++) {
+      await wrapper.get('.btn-send').trigger('click')
+      await flushPromises()
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留我')
+      expect(wrapper.findAll('.image-preview')).toHaveLength(1)
+      expect(wrapper.get('[role="alert"]').text()).toBe('safety.sendFailed')
+    }
+    await wrapper.get('.btn-send').trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
+    expect(wrapper.findAll('.image-preview')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('删除会话释放草稿，待完成的发送不覆盖另一会话', async () => {
+    let finish!: (value: boolean) => void
+    const submit = vi.fn(() => new Promise<boolean>(r => { finish = r }))
+    const wrapper = mount(InputBox, { props: { visible: true, draftKey: 'a', validDraftKeys: ['a', 'b'], submit } })
+    await wrapper.get('textarea').setValue('A')
+    await wrapper.get('.btn-send').trigger('click')
+    await wrapper.setProps({ draftKey: 'b', validDraftKeys: ['b'] })
+    await wrapper.get('textarea').setValue('B')
+    finish(true)
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('B')
+    await wrapper.setProps({ draftKey: 'a', validDraftKeys: ['a', 'b'] })
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
+    wrapper.unmount()
+  })
+
   it('关闭再打开保留文字与图片，切换会话隔离草稿', async () => {
     const wrapper = mount(InputBox, { props: { visible: true, draftKey: 'a' } })
     await wrapper.get('textarea').setValue('会话 A 的草稿')
