@@ -58,7 +58,8 @@ jobs:
             os: macos
             arch: aarch64
             target: aarch64-apple-darwin
-          - platform: ubuntu-22.04
+          # xcap 0.9.8 使用的 libspa 0.10 需要 PipeWire/SPA 1.0+ 头文件。
+          - platform: ubuntu-24.04
             os: linux
             arch: x86_64
             target: x86_64-unknown-linux-gnu
@@ -68,7 +69,7 @@ jobs:
 
       # Linux：Tauri WebView/托盘/打包依赖，以及 xcap 截图所需的 X11/Wayland/PipeWire 开发库。
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.os == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
