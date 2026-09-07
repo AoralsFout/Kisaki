@@ -14,6 +14,7 @@ import WorkspaceChip from './components/WorkspaceChip.vue'
 import ToolActivityList from './components/ToolActivityList.vue'
 import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
+import ScreenCaptureConfirm from './components/ScreenCaptureConfirm.vue'
 import CommandExecution from './components/CommandExecution.vue'
 import DevPanel from './components/settings/DevPanel.vue'
 import LogViewer from './components/LogViewer.vue'
@@ -431,6 +432,8 @@ async function handleSelectCharacter(charId: string) {
       <ToolConfirm v-if="!noCharacter" />
       <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
       <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
+      <!-- 屏幕截图确认卡（高隐私读取，每次只能允许一次） -->
+      <ScreenCaptureConfirm v-if="!noCharacter && chat.pendingScreenCaptureConfirm" />
       <CommandExecution v-if="!noCharacter" />
 
       <!-- 历史对话：常驻底部；折叠时显示最新一条，对话框弹出时展开到全高 -->

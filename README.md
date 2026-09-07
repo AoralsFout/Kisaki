@@ -12,7 +12,7 @@
 - **TTS 语音播报** — 阿里云 CosyVoice 实时语音合成
 - **会话管理** — 多会话切换，历史消息持久化
 - **角色管理** — 导入/导出角色包（`.zip`），自定义角色
-- **工具调用** — AI 可调整角色表情、动作与窗口位置
+- **工具调用** — AI 可调整角色表情、动作与窗口位置，并在逐次授权后观察屏幕
 - **多语言** — AI 回复文本可翻译为指定语言显示
 - **桌面体验** — 系统托盘、单实例、开机自启、全局快捷键（Alt+K）、桌面通知
 
@@ -28,7 +28,9 @@
 >
 > ```bash
 > sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
->   libayatana-appindicator3-dev libxdo-dev libssl-dev build-essential
+>   libayatana-appindicator3-dev libxdo-dev libssl-dev build-essential \
+>   pkg-config libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev \
+>   libpipewire-0.3-dev libwayland-dev libegl-dev
 > ```
 >
 > 鼠标穿透依赖全局光标坐标，在 **X11** 下可用；**Wayland** 因协议限制无法获取全局光标，穿透不可用（已知限制）。
@@ -130,6 +132,8 @@ Live2D 角色目录结构：
 | 语音模型 / 音色 | CosyVoice 合成参数 |
 
 使用支持 Vision / 多模态输入的模型时，可在对话框点击“选择图片”，或直接粘贴剪贴板中的图片。一次最多发送 4 张，支持 PNG、JPEG、WebP 和 GIF。设置工作区后，AI 也可调用 `read_image` 读取并观察工作区内的图片；路径仍受工作区授权限制，单张上限 10MB。
+
+在“设置 → 权限”中开启“允许 AI 请求截屏”后，AI 还可调用 `capture_screen`。每次截屏都会单独请求确认；默认截取鼠标所在显示器并短暂隐藏 Kisaki。截图仅在内存中缩放、编码并发送给当前 AI 服务，不会落盘或写入会话快照。Linux Wayland 下该能力可能受桌面协议限制。
 
 ## 🏗️ 技术栈
 

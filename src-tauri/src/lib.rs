@@ -7,6 +7,7 @@ mod fileio;
 mod log;
 mod pack;
 mod path;
+mod screenshot;
 mod secure;
 mod sessions;
 mod tray;
@@ -152,6 +153,7 @@ pub fn run() {
             fileio::agent_edit_lines,
             fileio::agent_find_files,
             fileio::agent_search_in_files,
+            screenshot::agent_capture_screen,
             command::agent_prepare_execution,
             command::agent_approve_execution,
             command::agent_execute_plan,

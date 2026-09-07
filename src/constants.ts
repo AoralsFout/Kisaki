@@ -46,6 +46,9 @@ export const STORAGE_AUTO_EXEC_FILES = 'deskpet-auto-exec-files'
 /** 全局「允许 AI 执行本地任务」开关（默认关闭，安全考量） */
 export const STORAGE_COMMAND_ENABLED = 'deskpet-command-enabled'
 
+/** 全局「允许 AI 请求截屏」开关（默认关闭；实际截屏仍需逐次确认） */
+export const STORAGE_SCREEN_CAPTURE_ENABLED = 'deskpet-screen-capture-enabled'
+
 /** 命令执行只在开发构建提供；正式构建由前后端双重禁用。 */
 export const EXPERIMENTAL_COMMAND_AVAILABLE = import.meta.env.DEV
 

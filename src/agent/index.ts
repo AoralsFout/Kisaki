@@ -17,6 +17,7 @@ import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPo
 import { setExpressionTool, playMotionTool } from './tools/live2d'
 import { readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
 import { runProcessTool, runShellTool } from './tools/command'
+import { captureScreenTool } from './tools/screenshot'
 
 const log = createLogger('Agent')
 
@@ -28,6 +29,7 @@ export function initTools() {
     setExpressionTool, playMotionTool,
     readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
     replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
+    captureScreenTool,
     runProcessTool, runShellTool,
   )
   log.info('内置工具已注册 (%d 个)', listTools().length)

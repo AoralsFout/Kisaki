@@ -7,7 +7,7 @@
 import type { Tool, ToolDefinition, ToolOutput } from './types'
 import type { CharacterData } from '../character/loader'
 import { getAgentCharData, getAgentLive2DManifest } from './context'
-import { getCommandEnabled } from './toolPolicy'
+import { getCommandEnabled, getScreenCaptureEnabled, SCREEN_CAPTURE_TOOL_NAME } from './toolPolicy'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../constants'
 import { createLogger } from '../utils/logger'
 
@@ -53,6 +53,12 @@ export function getDefinitions(charData?: CharacterData | null): ToolDefinition[
     if (
       ['run_process', 'run_shell'].includes(t.definition.function.name)
       && (!EXPERIMENTAL_COMMAND_AVAILABLE || !getCommandEnabled())
+    ) continue
+
+    // 截屏工具默认不暴露；用户开启后，每次调用仍须经过专用确认卡。
+    if (
+      t.definition.function.name === SCREEN_CAPTURE_TOOL_NAME
+      && !getScreenCaptureEnabled()
     ) continue
 
     const def = JSON.parse(JSON.stringify(t.definition))

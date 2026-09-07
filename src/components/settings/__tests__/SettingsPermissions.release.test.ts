@@ -9,6 +9,8 @@ vi.mock('../../../agent/toolPolicy', () => ({
   setAutoExecFiles: vi.fn(),
   getCommandEnabled: () => false,
   setCommandEnabled: vi.fn(),
+  getScreenCaptureEnabled: () => false,
+  setScreenCaptureEnabled: vi.fn(),
 }))
 vi.mock('../../../constants', () => ({
   EXPERIMENTAL_COMMAND_AVAILABLE: false,
@@ -22,6 +24,7 @@ describe('SettingsPermissions release mode', () => {
     const wrapper = mount(SettingsPermissions)
 
     expect(wrapper.text()).toContain('settings.permissions.autoExecTitle')
+    expect(wrapper.text()).toContain('settings.permissions.screenCaptureTitle')
     expect(wrapper.text()).not.toContain('settings.permissions.commandTitle')
   })
 })

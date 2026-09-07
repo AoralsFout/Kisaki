@@ -9,6 +9,24 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentExec')
 
+/**
+ * Tauri 的 invoke 失败通常直接 reject 字符串，而不是 Error 实例。
+ * 统一格式化所有未知异常，避免日志和工具回执退化成 `undefined`。
+ */
+export function toolErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  if (error != null) {
+    try {
+      const json = JSON.stringify(error)
+      if (json && json !== '{}') return json
+    } catch { /* ignore */ }
+    const text = String(error)
+    if (text && text !== '[object Object]') return text
+  }
+  return '未知错误'
+}
+
 /** LLM 响应 choice 结构中的 tool_calls 字段 */
 interface LLMChoice {
   delta?: { tool_calls?: Array<Record<string, unknown>> }
@@ -59,11 +77,12 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
       images: result.images,
     }
   } catch (err) {
-    log.warn('工具执行失败: %s - %s', tc.name, (err as Error).message)
+    const message = toolErrorMessage(err)
+    log.warn('工具执行失败: %s - %s', tc.name, message)
     return {
       role: 'tool',
       tool_call_id: tc.id,
-      content: `工具执行错误: ${(err as Error).message}`,
+      content: `工具执行错误: ${message}`,
     }
   }
 }

@@ -6,7 +6,11 @@
  *     （现有 files.test.ts 直接断言 handler→invoke，不应被打断）。
  *   - 分类信息与图标（toolMeta.ts）一样是「关于工具的元信息」，集中声明便于维护。
  */
-import { STORAGE_AUTO_EXEC_FILES, STORAGE_COMMAND_ENABLED } from '../constants'
+import {
+  STORAGE_AUTO_EXEC_FILES,
+  STORAGE_COMMAND_ENABLED,
+  STORAGE_SCREEN_CAPTURE_ENABLED,
+} from '../constants'
 
 /**
  * 会修改文件的工具 → 从其参数中取「受影响的相对路径」。
@@ -111,6 +115,32 @@ export function getCommandEnabled(): boolean {
 export function setCommandEnabled(value: boolean): void {
   try {
     localStorage.setItem(STORAGE_COMMAND_ENABLED, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+// ─── 「允许 AI 请求截屏」开关（默认关闭） ──────────────
+// 截图可能包含其他应用和隐私信息。开关只控制是否向模型暴露工具，
+// 每一次实际调用仍由 ChatStore 弹出专用确认，且没有会话自动允许选项。
+
+export const SCREEN_CAPTURE_TOOL_NAME = 'capture_screen'
+
+export function isScreenCaptureTool(name: string): boolean {
+  return name === SCREEN_CAPTURE_TOOL_NAME
+}
+
+export function getScreenCaptureEnabled(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_SCREEN_CAPTURE_ENABLED) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setScreenCaptureEnabled(value: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_SCREEN_CAPTURE_ENABLED, value ? '1' : '0')
   } catch {
     /* ignore */
   }

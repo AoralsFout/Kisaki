@@ -8,6 +8,7 @@ describe('toolIcon', () => {
   it('已知工具返回对应图标', () => {
     expect(toolIcon('read_file')).toBe('fa-file-lines')
     expect(toolIcon('read_image')).toBe('fa-image')
+    expect(toolIcon('capture_screen')).toBe('fa-camera')
     expect(toolIcon('write_file')).toBe('fa-file-pen')
     expect(toolIcon('list_dir')).toBe('fa-folder-open')
     expect(toolIcon('delete_file')).toBe('fa-trash')
@@ -28,7 +29,7 @@ describe('toolIcon', () => {
       'get_time', 'get_weather', 'calculator',
       'set_character_emotion', 'set_character_stance', 'set_character_costume',
       'set_character_look', 'set_screen_pose', 'get_character_state',
-      'read_file', 'read_image', 'write_file', 'append_file', 'list_dir', 'delete_file',
+      'read_file', 'read_image', 'capture_screen', 'write_file', 'append_file', 'list_dir', 'delete_file',
       'replace_lines', 'insert_lines', 'delete_lines', 'find_files', 'search_in_files',
     ]
     for (const n of names) {

@@ -7,7 +7,14 @@
  */
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getAutoExecFiles, setAutoExecFiles, getCommandEnabled, setCommandEnabled } from '../../agent/toolPolicy'
+import {
+  getAutoExecFiles,
+  setAutoExecFiles,
+  getCommandEnabled,
+  setCommandEnabled,
+  getScreenCaptureEnabled,
+  setScreenCaptureEnabled,
+} from '../../agent/toolPolicy'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../../constants'
 import ToggleRow from '../ui/ToggleRow.vue'
 
@@ -15,6 +22,7 @@ const { t } = useI18n()
 
 const autoExec = ref(getAutoExecFiles())
 const commandEnabled = ref(getCommandEnabled())
+const screenCaptureEnabled = ref(getScreenCaptureEnabled())
 
 function onAutoExecChange() {
   setAutoExecFiles(autoExec.value)
@@ -22,6 +30,10 @@ function onAutoExecChange() {
 
 function onCommandEnabledChange() {
   setCommandEnabled(commandEnabled.value)
+}
+
+function onScreenCaptureEnabledChange() {
+  setScreenCaptureEnabled(screenCaptureEnabled.value)
 }
 </script>
 
@@ -32,6 +44,11 @@ function onCommandEnabledChange() {
 
     <ToggleRow v-model:checked="autoExec" :title="t('settings.permissions.autoExecTitle')"
       :desc="t('settings.permissions.autoExecDesc')" @update:checked="onAutoExecChange" />
+
+    <ToggleRow v-model:checked="screenCaptureEnabled"
+      :title="t('settings.permissions.screenCaptureTitle')"
+      :desc="t('settings.permissions.screenCaptureDesc')"
+      @update:checked="onScreenCaptureEnabledChange" />
 
     <ToggleRow v-if="EXPERIMENTAL_COMMAND_AVAILABLE" v-model:checked="commandEnabled"
       :title="t('settings.permissions.commandTitle')" :desc="t('settings.permissions.commandDesc')"

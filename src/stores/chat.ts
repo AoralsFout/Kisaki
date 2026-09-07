@@ -30,7 +30,16 @@ import type {
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolDefinition, ToolResult } from '../agent'
-import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm, isDangerousTool, dangerousToolSummary } from '../agent/toolPolicy'
+import {
+  isMutatingTool,
+  mutatingPath,
+  getAutoExecFiles,
+  shouldConfirm,
+  isDangerousTool,
+  dangerousToolSummary,
+  getScreenCaptureEnabled,
+  isScreenCaptureTool,
+} from '../agent/toolPolicy'
 import { prepareCommandExecution, approveCommandExecution } from '../agent/tools/command'
 import type { ExecutionPlan } from '../agent/tools/command'
 import { speakTextStreaming, cancelSpeak, getTtsProvider } from '../tts'
@@ -158,6 +167,14 @@ export interface PendingConfirm {
   args: Record<string, any>
   /** 高风险任务由 Rust 规范化后的不可变计划；普通文件确认无此字段。 */
   executionPlan?: ExecutionPlan
+}
+
+/** 待确认的屏幕截图；每次只能允许一次或拒绝。 */
+export interface PendingScreenCaptureConfirm {
+  id: string
+  toolName: string
+  target: 'cursor_monitor' | 'primary_monitor'
+  includeKisaki: boolean
 }
 
 /** 文件操作确认决定 */
@@ -435,6 +452,59 @@ export const useChatStore = defineStore('chat', () => {
   /** UI 调用：对当前待确认项作出决定 */
   function resolveConfirm(decision: ConfirmDecision) {
     confirmResolver?.(decision)
+  }
+
+  // ── 屏幕截图确认（每次都必须确认，无自动允许） ──
+  const pendingScreenCaptureConfirm = ref<PendingScreenCaptureConfirm | null>(null)
+  let screenCaptureConfirmResolver: ((d: 'allow' | 'reject') => void) | null = null
+
+  function waitScreenCaptureConfirm(
+    tc: ToolCall,
+    signal: AbortSignal,
+  ): Promise<'allow' | 'reject'> {
+    return new Promise((resolve) => {
+      if (signal.aborted) { resolve('reject'); return }
+
+      let settled = false
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      function finish(d: 'allow' | 'reject') {
+        if (settled) return
+        settled = true
+        if (timeoutId !== null) clearTimeout(timeoutId)
+        signal.removeEventListener('abort', onAbort)
+        screenCaptureConfirmResolver = null
+        pendingScreenCaptureConfirm.value = null
+        resolve(d)
+      }
+      function onAbort() { finish('reject') }
+
+      timeoutId = setTimeout(() => {
+        log.warn('屏幕截图确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        finish('reject')
+      }, CONFIRM_TIMEOUT_MS)
+
+      pendingScreenCaptureConfirm.value = {
+        id: tc.id,
+        toolName: tc.name,
+        target: tc.arguments.target === 'primary_monitor' ? 'primary_monitor' : 'cursor_monitor',
+        includeKisaki: tc.arguments.include_kisaki === true,
+      }
+      screenCaptureConfirmResolver = finish
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
+  function resolveScreenCaptureConfirm(decision: 'allow' | 'reject') {
+    screenCaptureConfirmResolver?.(decision)
+  }
+
+  function rejectPendingScreenCaptureConfirm() {
+    if (screenCaptureConfirmResolver) {
+      const resolver = screenCaptureConfirmResolver
+      screenCaptureConfirmResolver = null
+      pendingScreenCaptureConfirm.value = null
+      resolver('reject')
+    }
   }
 
   // ── 命令执行确认（每次都必须确认，无自动允许） ──
@@ -733,6 +803,22 @@ export const useChatStore = defineStore('chat', () => {
      * 非改文件工具直接执行。
      */
     const executeWithPolicy = async (tc: ToolCall): Promise<ToolResult> => {
+      // 截图是高隐私读取：设置开关只负责暴露工具，实际每次仍需用户允许一次。
+      if (isScreenCaptureTool(tc.name)) {
+        if (!getScreenCaptureEnabled()) {
+          return {
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: '屏幕截图权限当前未开启，未执行。请提示用户在「设置 → 权限」中开启后再重试。',
+          }
+        }
+        const decision = await waitScreenCaptureConfirm(tc, myAbort.signal)
+        if (decision === 'reject') {
+          log.info('[%s] ✗ 用户拒绝屏幕截图: %o', _fn, tc.arguments)
+          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝屏幕截图，未执行。' }
+        }
+        log.info('[%s] ✓ 用户允许单次屏幕截图', _fn)
+      }
       // 高风险工具（如命令执行）→ 每次都必须确认，无自动允许
       if (isDangerousTool(tc.name)) {
         let executionPlan: ExecutionPlan
@@ -1127,6 +1213,7 @@ export const useChatStore = defineStore('chat', () => {
     // 兜底拒绝待确认的操作，解除工具循环的 await
     rejectPendingConfirm()
     rejectPendingCommandConfirm()
+    rejectPendingScreenCaptureConfirm()
 
     if (abortController) {
       log.trace('[%s] 调用 abortController.abort()', _fn)
@@ -1201,6 +1288,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     rejectPendingConfirm()
     rejectPendingCommandConfirm()
+    rejectPendingScreenCaptureConfirm()
     autoExecSession.value = false
     isProcessing.value = false
     isUsingTools.value = false
@@ -1270,6 +1358,7 @@ export const useChatStore = defineStore('chat', () => {
     // 切换/恢复会话：解除待确认项，并重置「本会话自动允许」
     rejectPendingConfirm()
     rejectPendingCommandConfirm()
+    rejectPendingScreenCaptureConfirm()
     autoExecSession.value = false
     log.trace('[%s] 气泡状态已重置: hideBubble showInput=false thinking=""', _fn)
 
@@ -1398,10 +1487,12 @@ export const useChatStore = defineStore('chat', () => {
         processing: isProcessing.value,
         usingTools: isUsingTools.value,
         activities: toolActivities.value.map(activity => ({ ...activity })),
-        pendingConfirmation: (pendingCommandConfirm.value ?? pendingConfirm.value)
+        pendingConfirmation: (pendingScreenCaptureConfirm.value ?? pendingCommandConfirm.value ?? pendingConfirm.value)
           ? {
-            toolName: (pendingCommandConfirm.value ?? pendingConfirm.value)!.toolName,
-            path: (pendingCommandConfirm.value ?? pendingConfirm.value)!.path,
+            toolName: (pendingScreenCaptureConfirm.value ?? pendingCommandConfirm.value ?? pendingConfirm.value)!.toolName,
+            path: pendingScreenCaptureConfirm.value?.target
+              ?? (pendingCommandConfirm.value ?? pendingConfirm.value)?.path
+              ?? '',
           }
           : null,
         autoExecSession: autoExecSession.value,
@@ -1457,9 +1548,11 @@ export const useChatStore = defineStore('chat', () => {
     showToolActivity,
     pendingConfirm,
     pendingCommandConfirm,
+    pendingScreenCaptureConfirm,
     autoExecSession,
     resolveConfirm,
     resolveCommandConfirm,
+    resolveScreenCaptureConfirm,
     init,
     sendMessage,
     cancelResponse,

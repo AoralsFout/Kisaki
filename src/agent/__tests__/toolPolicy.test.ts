@@ -13,6 +13,9 @@ import {
   shouldConfirm,
   isDangerousTool,
   dangerousToolNames,
+  isScreenCaptureTool,
+  getScreenCaptureEnabled,
+  setScreenCaptureEnabled,
 } from '../toolPolicy'
 
 describe('toolPolicy - 改文件工具分类', () => {
@@ -76,5 +79,22 @@ describe('toolPolicy - 任务执行风险分类', () => {
     expect(isDangerousTool('run_shell')).toBe(true)
     expect(isDangerousTool('read_file')).toBe(false)
     expect(dangerousToolNames().sort()).toEqual(['run_process', 'run_shell'])
+  })
+})
+
+describe('toolPolicy - 屏幕截图权限', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('仅识别 capture_screen，且权限默认关闭', () => {
+    expect(isScreenCaptureTool('capture_screen')).toBe(true)
+    expect(isScreenCaptureTool('read_image')).toBe(false)
+    expect(getScreenCaptureEnabled()).toBe(false)
+  })
+
+  it('开关可持久化往返', () => {
+    setScreenCaptureEnabled(true)
+    expect(getScreenCaptureEnabled()).toBe(true)
+    setScreenCaptureEnabled(false)
+    expect(getScreenCaptureEnabled()).toBe(false)
   })
 })

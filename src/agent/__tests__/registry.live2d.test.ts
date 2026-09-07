@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { register, getDefinitions } from '../registry'
 import { setAgentCharData, setAgentLive2DManifest } from '../context'
 import type { Tool } from '../types'
+import { setScreenCaptureEnabled } from '../toolPolicy'
 
 function mkTool(name: string, appliesTo?: Tool['appliesTo'], props?: Record<string, any>): Tool {
   return {
@@ -19,10 +20,20 @@ function mkTool(name: string, appliesTo?: Tool['appliesTo'], props?: Record<stri
 
 describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
   beforeEach(() => {
+    localStorage.clear()
     register(mkTool('t_illu', 'illustration'))
     register(mkTool('t_l2d', 'live2d', { expression: { type: 'string' }, motion: { type: 'string' } }))
     register(mkTool('t_both', 'both'))
     setAgentLive2DManifest(null)
+  })
+
+  it('仅在用户开启权限后向模型暴露截屏工具', () => {
+    register(mkTool('capture_screen'))
+    setAgentCharData({ render: 'illustration' } as any)
+
+    expect(getDefinitions().map(d => d.function.name)).not.toContain('capture_screen')
+    setScreenCaptureEnabled(true)
+    expect(getDefinitions().map(d => d.function.name)).toContain('capture_screen')
   })
 
   it('illustration 角色：含 illustration/both，不含 live2d', () => {
