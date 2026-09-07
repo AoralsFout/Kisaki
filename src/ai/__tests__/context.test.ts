@@ -158,6 +158,35 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(restored.getMessages().find(message => message.role === 'user')?.content).toEqual(user?.content)
   })
 
+  it('在文本工具回执之后注入读图结果，且不把工具图片写入快照', () => {
+    const image = {
+      id: 'tool-img', name: 'error.png', mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,TOOL_IMAGE_BYTES', size: 42,
+    }
+    const ctx = new ChatContext({ maxContextTokens: 100000 })
+    ctx.addUserMessage('检查错误截图')
+    ctx.addAssistantToolCall([{
+      id: 'read-img', type: 'function', function: {
+        name: 'read_image', arguments: JSON.stringify({ path: 'error.png' }),
+      },
+    }])
+    ctx.addToolResult('read-img', '已读取图片')
+    ctx.addToolImages('read-img', [image])
+
+    const messages = ctx.getMessages()
+    const toolIndex = messages.findIndex(message => message.role === 'tool')
+    expect(messages[toolIndex + 1].role).toBe('user')
+    expect(JSON.stringify(messages[toolIndex + 1].content)).toContain('TOOL_IMAGE_BYTES')
+    expect(messages[toolIndex + 1].content).toEqual([
+      expect.objectContaining({ type: 'text' }),
+      { type: 'image_url', image_url: { url: image.dataUrl, detail: 'auto' } },
+    ])
+
+    const snapshotJson = JSON.stringify(ctx.exportSnapshot())
+    expect(snapshotJson).not.toContain('TOOL_IMAGE_BYTES')
+    expect(snapshotJson).not.toContain('[工具图片，仅供观察]')
+  })
+
   it('上下文裁剪旧回合后，按历史尾部恢复正确的图片', () => {
     const oldImage = { id: 'old', name: 'old.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,OLD', size: 3 }
     const newImage = { id: 'new', name: 'new.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,NEW', size: 3 }

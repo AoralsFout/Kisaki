@@ -3,7 +3,7 @@
  */
 export { register, registerAll, getTool, getDefinitions, listTools } from './registry'
 export { parseToolCalls, executeToolCall, executeToolCalls } from './executor'
-export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter } from './types'
+export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter, ToolOutput, ToolImage } from './types'
 export { setAgentCharData, setAgentController, setAgentLive2DController, getAgentLive2DController, setAgentLive2DManifest } from './context'
 export { SAY_TOOL_DEF, SAY_TOOL_NAME } from './tools/say'
 
@@ -15,7 +15,7 @@ import { calculatorTool } from './tools/calculator'
 import { webSearchTool } from './tools/webSearch'
 import { setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool } from './tools/character'
 import { setExpressionTool, playMotionTool } from './tools/live2d'
-import { readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
+import { readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool, replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool } from './tools/files'
 import { runProcessTool, runShellTool } from './tools/command'
 
 const log = createLogger('Agent')
@@ -26,7 +26,7 @@ export function initTools() {
     timeTool, weatherTool, calculatorTool, webSearchTool,
     setEmotionTool, setStanceTool, setCostumeTool, setLookTool, setScreenPoseTool, getStateTool,
     setExpressionTool, playMotionTool,
-    readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
+    readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
     replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
     runProcessTool, runShellTool,
   )

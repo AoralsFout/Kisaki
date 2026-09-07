@@ -28,6 +28,7 @@ const TOOL_ICONS: Record<string, string> = {
   run_shell: 'fa-code',
   // 文件类
   read_file: 'fa-file-lines',
+  read_image: 'fa-image',
   write_file: 'fa-file-pen',
   append_file: 'fa-file-circle-plus',
   list_dir: 'fa-folder-open',

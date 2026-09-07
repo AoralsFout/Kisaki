@@ -143,6 +143,7 @@ pub fn run() {
             fileio::agent_resolve_workspace,
             fileio::agent_revoke_workspace,
             fileio::agent_read_file,
+            fileio::agent_read_image,
             fileio::agent_write_file,
             fileio::agent_append_file,
             fileio::agent_list_dir,

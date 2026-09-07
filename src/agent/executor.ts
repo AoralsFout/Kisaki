@@ -49,12 +49,14 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
 
   log.debug('执行工具: %s, 参数: %o', tc.name, tc.arguments)
   try {
-    const result = await tool.handler(tc.arguments)
+    const output = await tool.handler(tc.arguments)
+    const result = typeof output === 'string' ? { content: output } : output
     log.info('工具执行完成: %s', tc.name)
     return {
       role: 'tool',
       tool_call_id: tc.id,
-      content: result,
+      content: result.content,
+      images: result.images,
     }
   } catch (err) {
     log.warn('工具执行失败: %s - %s', tc.name, (err as Error).message)

@@ -75,6 +75,7 @@ export default {
       set_screen_pose: '調整位置',
       get_character_state: '查詢狀態',
       read_file: '讀取檔案',
+      read_image: '讀取圖片',
       write_file: '寫入檔案',
       append_file: '追加檔案',
       list_dir: '列出目錄',

@@ -4,7 +4,7 @@
  * 管理所有可用工具，提供注册、查找、列出等功能。
  * getDefinitions() 会动态注入当前角色可用值到工具参数定义中。
  */
-import type { Tool, ToolDefinition } from './types'
+import type { Tool, ToolDefinition, ToolOutput } from './types'
 import type { CharacterData } from '../character/loader'
 import { getAgentCharData, getAgentLive2DManifest } from './context'
 import { getCommandEnabled } from './toolPolicy'
@@ -14,21 +14,23 @@ import { createLogger } from '../utils/logger'
 const log = createLogger('AgentRegistry')
 
 /** 工具注册表 */
-const tools = new Map<string, Tool>()
+type RegisteredTool = Tool<string | ToolOutput>
+
+const tools = new Map<string, RegisteredTool>()
 
 /** 注册一个工具 */
-export function register(tool: Tool) {
+export function register(tool: RegisteredTool) {
   tools.set(tool.definition.function.name, tool)
 }
 
 /** 批量注册 */
-export function registerAll(...toolList: Tool[]) {
+export function registerAll(...toolList: RegisteredTool[]) {
   for (const t of toolList) register(t)
   log.debug('批量注册 %d 个工具', toolList.length)
 }
 
 /** 按名称获取工具 */
-export function getTool(name: string): Tool | undefined {
+export function getTool(name: string): RegisteredTool | undefined {
   return tools.get(name)
 }
 

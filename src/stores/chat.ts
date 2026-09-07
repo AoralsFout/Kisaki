@@ -15,7 +15,10 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText } from '../ai'
+import {
+  chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText,
+  MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES,
+} from '../ai'
 import type {
   ChatContextInspection,
   ChatContextSnapshot,
@@ -39,6 +42,24 @@ import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
 
 const log = createLogger('ChatStore')
+
+/**
+ * 收集单轮工具输出图片并执行请求级数量/体积限制。
+ * 返回值表示是否有图片因超限被丢弃，调用方可把提示写进工具文本回执。
+ */
+function collectToolImages(result: ToolResult, collected: ImageAttachment[]): boolean {
+  let rejected = false
+  let totalBytes = collected.reduce((sum, image) => sum + image.size, 0)
+  for (const image of result.images ?? []) {
+    if (collected.length >= MAX_IMAGE_COUNT || totalBytes + image.size > MAX_TOTAL_IMAGE_BYTES) {
+      rejected = true
+      continue
+    }
+    collected.push(image)
+    totalBytes += image.size
+  }
+  return rejected
+}
 
 // ─── 调试计时器工具 ────────────────────────────────────
 /**
@@ -848,13 +869,21 @@ export const useChatStore = defineStore('chat', () => {
             }))
             chatContext.addAssistantToolCall(textToolCallsData, cleanText || undefined)
             syncContextStats()
+            const toolImages: ImageAttachment[] = []
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
               beginActivity(tc.id, tc.name || '?')
               log.info('[%s] 第%d轮 ✦ 执行文本动作[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tc.name || '?')
               const toolResult = await executeWithPolicy(tc)
+              if (collectToolImages(toolResult, toolImages)) {
+                toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
+              }
               endActivity(tc.id, resultStatus(toolResult?.content || ''))
               chatContext.addToolResult(tc.id, toolResult.content)
+              syncContextStats()
+            }
+            if (toolImages.length) {
+              chatContext.addToolImages(textCalls.map(call => call.id).join(', '), toolImages)
               syncContextStats()
             }
             isUsingTools.value = false
@@ -896,6 +925,7 @@ export const useChatStore = defineStore('chat', () => {
           syncContextStats()
 
           // 先执行动作工具（让立绘先变）
+          const toolImages: ImageAttachment[] = []
           for (let ti = 0; ti < actionCalls.length; ti++) {
             const tc = actionCalls[ti]
             const toolTimer = debugTimer(`${_fn} tool#${ti} turn#${turn}`)
@@ -919,6 +949,9 @@ export const useChatStore = defineStore('chat', () => {
               continue
             }
             const toolResult = await executeWithPolicy(toolCall)
+            if (collectToolImages(toolResult, toolImages)) {
+              toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
+            }
             toolTimer.stop()
             endActivity(tc.id, resultStatus(toolResult?.content || ''))
             log.debug('[%s] 第%d轮 ★ 工具结果(%s): %s', _fn, turn, tcName,
@@ -927,6 +960,16 @@ export const useChatStore = defineStore('chat', () => {
             syncContextStats()
           }
           isUsingTools.value = false
+
+          // 同批调用 say 时，模型尚未见到刚读取的图片，不能把预先生成的 say 当作读图结论。
+          // 先为 say 写入回执以保持协议完整，再把图片交给下一轮模型观察。
+          if (sayCall && toolImages.length) {
+            chatContext.addToolResult(sayCall.id, '未说出：需要先观察刚读取的图片，再生成最终答复。')
+            chatContext.addToolImages(actionCalls.map(call => call.id).join(', '), toolImages)
+            syncContextStats()
+            turnTimer.stop('tool-images — continue')
+            continue
+          }
 
           // ── say 出现 → 字段兜底 + 渲染 + TTS + 终止 ──────
           if (sayCall) {
@@ -948,6 +991,13 @@ export const useChatStore = defineStore('chat', () => {
             }
             turnTimer.stop('say — break')
             break
+          }
+
+          if (toolImages.length) {
+            chatContext.addToolImages(actionCalls.map(call => call.id).join(', '), toolImages)
+            syncContextStats()
+            turnTimer.stop('tool-images — continue')
+            continue
           }
 
           // ── 仅动作、无 say ──────────────────────────────

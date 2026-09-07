@@ -78,6 +78,7 @@ export default {
       set_screen_pose: '调整位置',
       get_character_state: '查询状态',
       read_file: '读取文件',
+      read_image: '读取图片',
       write_file: '写入文件',
       append_file: '追加文件',
       list_dir: '列出目录',

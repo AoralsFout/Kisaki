@@ -26,7 +26,7 @@ const localStorageMock = (() => {
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
 import {
-  readFileTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
+  readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
   replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
 } from '../files'
 import { useSessionStore } from '../../../stores/session'
@@ -83,6 +83,27 @@ describe('文件工具 - 已授权工作目录', () => {
   it('read_file 空文件返回占位提示', async () => {
     invokeMock.mockResolvedValue('')
     expect(await readFileTool.handler({ path: 'a.txt' })).toBe('(空文件)')
+  })
+
+  it('read_image 返回可交给多模态上下文的图片，而不是把 base64 塞进文本', async () => {
+    invokeMock.mockResolvedValue({
+      data_url: 'data:image/png;base64,AAAA',
+      mime_type: 'image/png',
+      size: 3,
+      name: 'shot.png',
+    })
+    const out = await readImageTool.handler({ path: 'screens/shot.png' })
+    expect(invokeMock).toHaveBeenCalledWith('agent_read_image', {
+      workspaceId: WORKSPACE_ID,
+      relPath: 'screens/shot.png',
+    })
+    expect(out.content).not.toContain('AAAA')
+    expect(out.images).toEqual([expect.objectContaining({
+      name: 'shot.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,AAAA',
+      size: 3,
+    })])
   })
 
   it('write_file 调用后端并回报字符数', async () => {

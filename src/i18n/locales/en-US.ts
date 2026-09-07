@@ -75,6 +75,7 @@ export default {
       set_screen_pose: 'Adjust position',
       get_character_state: 'Check state',
       read_file: 'Read file',
+      read_image: 'Read image',
       write_file: 'Write file',
       append_file: 'Append file',
       list_dir: 'List directory',

@@ -11,10 +11,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use crate::path::safe_join_rel;
+use base64::Engine;
+use serde::Serialize;
 use tauri_plugin_dialog::DialogExt;
 
 /// 单次读取上限：2 MiB。防止把超大文件灌进 LLM 上下文。
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+/// 单张模型输入图片上限：与前端附件限制保持一致。
+const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 /// 按行区间读取：返回行数与字节上限（保护上下文）。
 const MAX_RANGE_LINES: u64 = 800;
 const MAX_RANGE_BYTES: usize = 200 * 1024;
@@ -78,6 +82,65 @@ pub(crate) fn agent_read_file(workspace_id: String, rel_path: String) -> Result<
         ));
     }
     fs::read_to_string(&path).map_err(|e| format!("读取失败（需为 UTF-8 文本）: {}", e))
+}
+
+#[derive(Serialize)]
+pub(crate) struct ImageReadResult {
+    data_url: String,
+    mime_type: &'static str,
+    size: u64,
+    name: String,
+}
+
+/// 根据文件签名识别允许发送给多模态模型的图片格式，不信任扩展名。
+fn detect_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
+        return Some("image/png");
+    }
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
+}
+
+/// 读取工作区图片并编码为兼容 OpenAI image_url 的 data URL。
+#[tauri::command]
+pub(crate) fn agent_read_image(
+    workspace_id: String,
+    rel_path: String,
+) -> Result<ImageReadResult, String> {
+    let path = safe_join_rel(&check_workspace(&workspace_id)?, &rel_path)?;
+    let meta = fs::metadata(&path).map_err(|e| format!("读取失败: {}", e))?;
+    if !meta.is_file() {
+        return Err("目标不是文件".to_string());
+    }
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "图片过大（{} 字节，上限 {} 字节）",
+            meta.len(),
+            MAX_IMAGE_BYTES
+        ));
+    }
+    let bytes = fs::read(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let mime_type = detect_image_mime(&bytes)
+        .ok_or_else(|| "不支持的图片格式，仅支持 PNG、JPEG、WebP 和 GIF".to_string())?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let name = path
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "image".to_string());
+    Ok(ImageReadResult {
+        data_url: format!("data:{};base64,{}", mime_type, encoded),
+        mime_type,
+        size: meta.len(),
+        name,
+    })
 }
 
 /// 写入/覆盖工作目录内的文件，自动创建所需的父目录。
@@ -480,4 +543,25 @@ pub(crate) fn agent_search_in_files(
         true
     });
     Ok(serde_json::Value::Array(matches))
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::detect_image_mime;
+
+    #[test]
+    fn detects_supported_images_by_signature() {
+        assert_eq!(
+            detect_image_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(detect_image_mime(b"\xff\xd8\xffrest"), Some("image/jpeg"));
+        assert_eq!(detect_image_mime(b"GIF89arest"), Some("image/gif"));
+        assert_eq!(detect_image_mime(b"RIFF1234WEBPrest"), Some("image/webp"));
+    }
+
+    #[test]
+    fn rejects_extension_disguised_as_image() {
+        assert_eq!(detect_image_mime(b"not really a png"), None);
+    }
 }

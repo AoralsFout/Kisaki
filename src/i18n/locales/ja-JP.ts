@@ -75,6 +75,7 @@ export default {
       set_screen_pose: '位置を調整',
       get_character_state: '状態を確認',
       read_file: 'ファイル読込',
+      read_image: '画像読込',
       write_file: 'ファイル書込',
       append_file: 'ファイル追記',
       list_dir: 'フォルダ一覧',
