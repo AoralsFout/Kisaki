@@ -97,6 +97,31 @@ describe('ChatHistory 历史列表', () => {
     wrapper.unmount()
   })
 
+  it('折叠态长消息显示顶部预览入口，点击后展开完整历史', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.messages.push({ id: 'm-long', role: 'assistant', text: '很长的消息', timestamp: 0 })
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const height = this.classList.contains('history-item') ? 444 : 220
+      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
+    })
+
+    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    await flushPromises()
+
+    expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 220px')
+    const expand = wrapper.get('.collapsed-more')
+    expect(expand.text()).toContain('chat.history.expandMessage')
+    await expand.trigger('click')
+    expect(chat.showInput).toBe(true)
+    expect(wrapper.get('.chat-history').classes()).toContain('expanded')
+    expect(wrapper.find('.collapsed-more').exists()).toBe(false)
+
+    rectSpy.mockRestore()
+    wrapper.unmount()
+  })
+
   it('切换会话时直接跳到底部，同一会话的新消息才平滑滚动', async () => {
     const { useChatStore } = await import('../stores/chat')
     const { useSessionStore } = await import('../stores/session')

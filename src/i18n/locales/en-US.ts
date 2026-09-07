@@ -532,6 +532,7 @@ export default {
       switchSession: 'Switch session',
       openImage: 'View image: {name}',
       imageViewerTitle: 'Image viewer',
+      expandMessage: 'Expand full message',
     },
     input: {
       title: 'Chat',

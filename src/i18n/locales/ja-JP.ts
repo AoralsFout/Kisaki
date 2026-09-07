@@ -532,6 +532,7 @@ export default {
       switchSession: 'セッションを切り替え',
       openImage: '画像を表示：{name}',
       imageViewerTitle: '画像を表示',
+      expandMessage: '全文を表示',
     },
     input: {
       title: '会話',

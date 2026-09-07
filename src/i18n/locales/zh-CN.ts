@@ -535,6 +535,7 @@ export default {
       switchSession: '切换会话',
       openImage: '查看图片：{name}',
       imageViewerTitle: '查看图片',
+      expandMessage: '展开查看全文',
     },
     input: {
       title: '对话',

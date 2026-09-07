@@ -2,7 +2,7 @@
 /**
  * 历史对话列表 —— 常驻底部交互区，取代独立对话气泡
  *
- * - 折叠态（对话框收起）：仅展开一条消息的高度、不可滚动，底部锚定显示最新回复；
+ * - 折叠态（对话框收起）：仅展示最新一条；短消息底部对齐，长消息从顶部预览；
  * - 展开态（对话框弹出）：生长到全高并可滚动，展开/收起在同一元素上过渡，动画连贯；
  * - 容器整体为实体区域（data-pet-solid）：背景透明但空隙不穿透——悬停空隙时的
  *   滚轮会转发给消息列表滚动，避免滚动意图被透传到桌面；
@@ -18,6 +18,7 @@ import { useSessionStore } from '../stores/session'
 import { useCharacterStore } from '../character'
 import { shouldReduceMotion } from '../utils/motionPreference'
 import ImageLightbox from './ImageLightbox.vue'
+import { collapsedLatestScrollTop } from './chatHistoryLayout'
 
 const { t } = useI18n()
 
@@ -63,27 +64,35 @@ const hasPending = computed(() =>
   chat.isProcessing && Boolean(chat.currentBubbleText || chat.currentThinking),
 )
 
-/** 悬停在气泡间空隙时的滚轮转发给列表滚动（列表自身滚动由浏览器原生处理） */
+/** 展开态下，悬停在气泡间空隙时把滚轮转发给列表（折叠态不可滚动）。 */
 function onWheel(e: WheelEvent) {
   const list = listRef.value
-  if (!list) return
+  if (!list || !expanded.value) return
   if (e.target instanceof Node && list.contains(e.target)) return
   list.scrollBy({ top: e.deltaY })
 }
 
 /**
- * 折叠高度 = 最新一条消息的实际高度（上限 220px，过长时裁剪只露尾部），
+ * 折叠高度 = 最新一条消息的实际高度（上限 220px，过长时从顶部预览），
  * 保证折叠态恰好只展开一条对话。
  */
+const MAX_COLLAPSED_HEIGHT = 220
 const collapsedHeight = ref(0)
+const latestOverflowing = ref(false)
+
+function lastHistoryItem(): HTMLElement | null {
+  const items = listRef.value?.querySelectorAll<HTMLElement>('.history-item')
+  return items?.[items.length - 1] ?? null
+}
+
 function measureCollapsed() {
   const list = listRef.value
   if (!list) return
-  const items = list.querySelectorAll<HTMLElement>('.history-item')
-  const last = items[items.length - 1]
+  const last = lastHistoryItem()
   const padBottom = parseFloat(getComputedStyle(list).paddingBottom) || 0
   const h = last ? last.getBoundingClientRect().height + padBottom : 0
-  collapsedHeight.value = Math.min(Math.ceil(h), 220)
+  latestOverflowing.value = h > MAX_COLLAPSED_HEIGHT
+  collapsedHeight.value = Math.min(Math.ceil(h), MAX_COLLAPSED_HEIGHT)
 }
 watch(
   () => [sessionStore.currentSessionId, chat.messages.length, hasPending.value, expanded.value] as const,
@@ -91,18 +100,41 @@ watch(
   { immediate: true },
 )
 
-// 滚到底部：新消息与流式增量平滑滚动；展开/收起与首启首次载入瞬时定位
-function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
-  const resolvedBehavior = behavior === 'smooth' && shouldReduceMotion() ? 'auto' : behavior
-  nextTick(() => {
-    listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior: resolvedBehavior })
+// 对齐最新消息：展开态滚到底；折叠态短消息滚到底、长消息定位到消息顶部。
+function collapsedTarget(list: HTMLElement): number {
+  const last = lastHistoryItem()
+  if (!last) return 0
+  const listRect = list.getBoundingClientRect()
+  const itemRect = last.getBoundingClientRect()
+  return collapsedLatestScrollTop({
+    scrollHeight: list.scrollHeight,
+    currentScrollTop: list.scrollTop,
+    listTop: listRect.top,
+    itemTop: itemRect.top,
+    itemHeight: itemRect.height,
+    viewportHeight: collapsedHeight.value,
   })
 }
 
-function jumpToBottomNow() {
+function scrollToLatest(behavior: ScrollBehavior = 'smooth') {
+  const resolvedBehavior = behavior === 'smooth' && shouldReduceMotion() ? 'auto' : behavior
+  nextTick(() => {
+    const list = listRef.value
+    if (!list) return
+    list.scrollTo({
+      top: expanded.value ? list.scrollHeight : collapsedTarget(list),
+      behavior: resolvedBehavior,
+    })
+  })
+}
+
+function jumpToLatestNow() {
   const list = listRef.value
   if (!list) return
-  list.scrollTo({ top: list.scrollHeight, behavior: 'auto' })
+  list.scrollTo({
+    top: expanded.value ? list.scrollHeight : collapsedTarget(list),
+    behavior: 'auto',
+  })
 }
 
 let sessionSettleVersion = 0
@@ -117,7 +149,7 @@ function cancelCollapseScroll() {
  * 会话替换会同时改变末条消息高度和列表 scrollHeight。先禁用行高过渡并重测折叠高度，
  * 再在新高度提交后及下一绘制帧各校准一次，避免布局钳制把位置留在底部上方。
  */
-async function settleSessionAtBottom() {
+async function settleSessionAtLatest() {
   const version = ++sessionSettleVersion
   cancelCollapseScroll()
   sessionSwitching.value = true
@@ -126,10 +158,10 @@ async function settleSessionAtBottom() {
   measureCollapsed()
   await nextTick()
   if (version !== sessionSettleVersion) return
-  jumpToBottomNow()
+  jumpToLatestNow()
   requestAnimationFrame(() => {
     if (version !== sessionSettleVersion) return
-    jumpToBottomNow()
+    jumpToLatestNow()
     sessionSwitching.value = false
   })
 }
@@ -139,7 +171,7 @@ function onHistoryImageLoad() {
   void nextTick(async () => {
     measureCollapsed()
     await nextTick()
-    jumpToBottomNow()
+    jumpToLatestNow()
   })
 }
 
@@ -157,18 +189,25 @@ watch(
     const sessionChanged = sessionId !== lastSessionId
     lastSessionId = sessionId
     if (!props.visible) return
-    if (sessionChanged) void settleSessionAtBottom()
-    else scrollToBottom(!initialMessagesSettled ? 'auto' : 'smooth')
+    if (sessionChanged) void settleSessionAtLatest()
+    else scrollToLatest(!initialMessagesSettled ? 'auto' : 'smooth')
     initialMessagesSettled = true
   },
 )
 watch(
   () => chat.currentBubbleText.length,
-  () => { if (props.visible && expanded.value) scrollToBottom('auto') },
+  () => {
+    if (!props.visible) return
+    if (expanded.value) scrollToLatest('auto')
+    else nextTick(() => {
+      measureCollapsed()
+      scrollToLatest('auto')
+    })
+  },
 )
 watch(
   () => props.visible,
-  (v) => { if (v) scrollToBottom('auto') },
+  (v) => { if (v) scrollToLatest('auto') },
   { immediate: true },
 )
 // 折叠/展开切换：行高过渡会不断改变列表的可滚动量，
@@ -192,22 +231,20 @@ function pinToBottomDuringTransition() {
     box.removeEventListener('transitionend', finish)
     box.removeEventListener('transitioncancel', finish)
     cancelAnimationFrame(raf)
-    scrollToBottom('auto')
+    scrollToLatest('auto')
   }
   const timeout = setTimeout(() => finish(), 1000) // 兜底：transition 事件丢失时终止循环
   raf = requestAnimationFrame(tick)
   box.addEventListener('transitionend', finish)
   box.addEventListener('transitioncancel', finish)
 }
-/** 收起：scrollTop 与行高过渡同步插值下滑到最新消息——
-    起点直接钳到终点会在收起开始瞬间瞬移；与行高过渡同进度插值则窗口连续变化，无跳变 */
-function collapseToBottomAnimated() {
+/** 收起：scrollTop 与行高过渡同步移向最新消息的最终锚点，避免结束时跳变。 */
+function collapseToLatestAnimated() {
   const list = listRef.value
   if (!list) return
-  const contentH = list.scrollHeight
   const startScroll = list.scrollTop
-  const endScroll = Math.max(contentH - collapsedHeight.value, startScroll)
-  if (endScroll - startScroll <= 1) return // 已在底部，无需补偿动画
+  const endScroll = collapsedTarget(list)
+  if (Math.abs(endScroll - startScroll) <= 1) return
   cancelCollapseScroll()
   const duration = 350
   const startTime = performance.now()
@@ -224,21 +261,21 @@ watch(expanded, (v) => {
   const list = listRef.value
   if (!list) return
   if (sessionSwitching.value || shouldReduceMotion()) {
-    jumpToBottomNow() // 会话切换/无过渡：直接定位
+    jumpToLatestNow() // 会话切换/无过渡：直接定位
     return
   }
   if (v) pinToBottomDuringTransition()
-  else collapseToBottomAnimated()
+  else collapseToLatestAnimated()
   // 过渡结束校准（消除插值与 CSS 行高过渡的微小舍入差）
   const box = historyRef.value
-  if (box) box.addEventListener('transitionend', () => scrollToBottom('auto'), { once: true })
+  if (box) box.addEventListener('transitionend', () => scrollToLatest('auto'), { once: true })
 })
 </script>
 
 <template>
   <ImageLightbox :visible="Boolean(previewImage)" :src="previewImage?.dataUrl"
     :alt="previewImage?.name" @close="previewImage = null" />
-  <div v-if="visible" ref="historyRef" :class="['chat-history', { expanded, entered, 'session-switching': sessionSwitching }]"
+  <div v-if="visible" ref="historyRef" :class="['chat-history', { expanded, entered, 'session-switching': sessionSwitching, 'latest-overflowing': latestOverflowing }]"
     :style="{ '--collapsed-h': `${collapsedHeight}px` }" data-pet-solid @wheel="onWheel">
     <div ref="listRef" class="message-list">
       <div v-for="msg in chat.messages" :key="msg.id" class="history-item">
@@ -288,6 +325,11 @@ watch(expanded, (v) => {
         <div class="msg-text" data-selectable>{{ chat.currentBubbleText }}<span v-if="chat.isTyping" class="pending-cursor">▌</span></div>
       </div>
     </div>
+    <button v-if="latestOverflowing && !expanded" type="button" class="collapsed-more"
+      :aria-label="t('chat.history.expandMessage')" data-pet-solid @click.stop="chat.openInput">
+      <span>{{ t('chat.history.expandMessage') }}</span>
+      <i class="fas fa-chevron-up" aria-hidden="true"></i>
+    </button>
   </div>
 </template>
 
@@ -318,6 +360,42 @@ watch(expanded, (v) => {
 
 .chat-history.session-switching {
   transition: none;
+}
+
+.chat-history.latest-overflowing:not(.expanded)::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 54px;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: linear-gradient(to bottom, transparent, var(--c-bubble-light) 72%);
+  pointer-events: none;
+}
+
+.collapsed-more {
+  position: absolute;
+  z-index: 2;
+  right: 18px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: rgba(0, 0, 0, 0.62);
+  font-size: var(--fs-aux);
+  cursor: pointer;
+}
+
+.collapsed-more:hover,
+.collapsed-more:focus-visible {
+  color: rgba(0, 0, 0, 0.82);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {
