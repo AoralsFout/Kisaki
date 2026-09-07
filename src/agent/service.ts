@@ -9,7 +9,6 @@ import type { CharacterData } from '../character/loader'
 import { getDefinitions, getTool } from './registry'
 import { executeToolCall } from './executor'
 import { setAgentCharData } from './context'
-import { setAvailableCharacters } from './tools/character'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentSvc')
@@ -26,8 +25,6 @@ export interface AgentService {
   stripTextToolCalls(text: string): string
   /** 同步角色数据到工具上下文 */
   syncCharacterData(data: CharacterData | null): void
-  /** 同步可用角色列表 */
-  syncAvailableCharacters(list: string[]): void
   /** 检查工具是否存在 */
   hasTool(name: string): boolean
 }
@@ -58,10 +55,6 @@ export const agentService: AgentService = {
 
   syncCharacterData(data) {
     setAgentCharData(data)
-  },
-
-  syncAvailableCharacters(list) {
-    setAvailableCharacters(list)
   },
 
   hasTool(name) {

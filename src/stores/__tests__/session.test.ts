@@ -36,6 +36,24 @@ describe('useSessionStore', () => {
     expect(store.currentSession).not.toBeNull()
     expect(store.currentSession!.name).toBe('新对话')
     expect(store.currentSession!.messages).toEqual([])
+    expect(store.canChangeCharacter).toBe(true)
+  })
+
+  it('首条用户消息发送后永久锁定当前会话角色', async () => {
+    const store = useSessionStore()
+    await store.init()
+    const chat = useChatStore()
+
+    chat.addMessage('user', '你好')
+    expect(store.canChangeCharacter).toBe(false)
+    expect(store.currentSession!.characterLocked).toBe(true)
+
+    chat.clearMessages()
+    expect(chat.messages).toHaveLength(0)
+    expect(store.canChangeCharacter).toBe(false)
+
+    store.createSession('可换角色的新对话')
+    expect(store.canChangeCharacter).toBe(true)
   })
 
   it('本地存储写入失败时置 persistError 并记录日志', async () => {
@@ -213,6 +231,8 @@ describe('useSessionStore', () => {
     expect(chat.messages).toHaveLength(2)
     expect(chat.messages[0].text).toBe('你好')
     expect(chat.messages[1].text).toBe('嘿')
+    expect(store.currentSession!.characterLocked).toBe(true)
+    expect(store.canChangeCharacter).toBe(false)
   })
 
   it('会话列表按创建时间正序排列', async () => {

@@ -23,7 +23,6 @@ const TOOL_ICONS: Record<string, string> = {
   play_motion: 'fa-film',
   set_screen_pose: 'fa-up-down-left-right',
   get_character_state: 'fa-circle-info',
-  switch_character: 'fa-rotate',
   // 命令执行
   run_process: 'fa-terminal',
   run_shell: 'fa-code',

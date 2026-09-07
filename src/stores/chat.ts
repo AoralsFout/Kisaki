@@ -652,7 +652,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const config = loadConfig()
-    /** 取当前角色的语言配置（角色可能在循环中被 switch_character 切换，故每次现取） */
+    /** 取当前角色的语言配置（控制器可能在本轮初始化期间才完成挂载，故每次现取） */
     const getLangs = () => {
       const d = useCharacterStore().data
       return {

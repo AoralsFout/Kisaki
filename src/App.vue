@@ -26,7 +26,7 @@ import { loadConfigSecure, isConfigValid } from './ai'
 import type { ChatInputPayload } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
-import { setAvailableCharacters, setOnCharacterSwitched, getAgentLive2DController } from './agent'
+import { getAgentLive2DController } from './agent'
 import { createLogger } from './utils/logger'
 import {
   WINDOW_SETTINGS,
@@ -156,7 +156,7 @@ function togglePassthrough() {
 
 /**
  * 应用当前角色的人格到对话上下文（仅更新 system prompt，不重置历史）。
- * 供首次初始化、UI 切角色、以及 AI 自助 switch_character 工具共用。
+ * 供首次初始化、发送消息前的 UI 切角色以及会话恢复共用。
  */
 function applyCharacterPersona() {
   if (!charStore.prompt) return
@@ -171,7 +171,6 @@ function applyCharacterPersona() {
  */
 async function onCharactersChanged() {
   await charStore.refreshList()
-  setAvailableCharacters(charStore.availableList)
   const list = charStore.availableList
   if (list.length === 0) return // 角色被删空：noCharacter 自动恢复为 true
   const cur = charStore.currentId
@@ -180,7 +179,7 @@ async function onCharactersChanged() {
   applyCharacterPersona()
 }
 
-// 角色切换后（UI / agent / 会话恢复任一路径）统一刷新人设（system prompt）
+// 角色切换后（UI / 会话恢复任一路径）统一刷新人设（system prompt）
 watch(() => charStore.currentId, () => applyCharacterPersona())
 
 // ── 首次运行引导 ──
@@ -271,19 +270,11 @@ onMounted(async () => {
     onboardingDismissed.value = isOnboardingDismissed()
     showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
   }
-  // 同步可用角色列表到 agent 上下文（避免 agent 直接 import Pinia）
-  setAvailableCharacters(charStore.availableList)
-  watch(() => charStore.availableList, (list) => {
-    setAvailableCharacters(list)
-  })
   if (charStore.prompt) {
     applyCharacterPersona()
   }
   // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
   setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
-  // 注入“AI 自助切换角色后刷新人格”回调（switch_character 工具会调用）
-  setOnCharacterSwitched(applyCharacterPersona)
-
   // 初始化会话管理（system prompt 设定后加载历史消息）
   await sessionStore.init()
 
@@ -392,9 +383,7 @@ async function openSettingsWindow(tab?: string) {
 }
 
 async function handleSelectCharacter(charId: string) {
-  if (charId === charStore.currentId) return
-  // 先取消正在进行中的 AI 请求与 TTS，防止生成的回复被写入将被清空的上下文
-  if (chat.isProcessing) chat.cancelResponse()
+  if (!sessionStore.canChangeCharacter || charId === charStore.currentId) return
   const ctrl = getCharacterController()
   if (ctrl) {
     await ctrl.switchCharacter(charId)
@@ -482,7 +471,9 @@ async function handleSelectCharacter(charId: string) {
             <Transition name="menu-fade">
               <div v-if="showMoreMenu" id="more-menu" ref="moreMenuRef" class="more-menu" role="menu"
                 data-pet-solid @keydown="onMoreMenuKeydown">
-                <button class="menu-item" role="menuitem" :disabled="chat.isProcessing || noCharacter"
+                <button class="menu-item" role="menuitem"
+                  :disabled="chat.isProcessing || noCharacter || !sessionStore.canChangeCharacter"
+                  :title="!sessionStore.canChangeCharacter ? t('app.toolbar.characterLocked') : undefined"
                   @click="menuAct(() => { showCharacterSelect = true })">
                   <i class="fas fa-rotate menu-icon"></i>
                   <span>{{ t('app.toolbar.character') }}</span>

@@ -11,7 +11,6 @@
 import { ref } from 'vue'
 import { Priority, type Live2DSprite } from 'easy-live2d'
 import { useCharacterStore } from '../../stores/character'
-import { useSessionStore } from '../../stores/session'
 import { ALL_POSE_KEYS, type PoseKey } from '../poses'
 import type { Live2DManifest } from './manifest'
 import { createLogger } from '../../utils/logger'
@@ -81,13 +80,6 @@ export function useLive2DController() {
     log.info('屏幕位置: %s', key)
   }
 
-  /** 渲染无关的角色切换（供 switch_character 工具复用） */
-  async function switchCharacter(id: string) {
-    log.info('切换角色: %s', id)
-    await charStore.loadCharacter(id, true)
-    useSessionStore().saveCurrentSession()
-  }
-
   /** Live2D 口型：用 easy-live2d playVoice 播放语音并驱动口型；signal 中止即停 */
   async function speakVoice(url: string, signal: AbortSignal): Promise<void> {
     const s = sprite
@@ -114,7 +106,7 @@ export function useLive2DController() {
   return {
     ready, currentExpression, charStore,
     attach, detach,
-    setExpression, playMotion, setScreenPose, switchCharacter, speakVoice, getState,
+    setExpression, playMotion, setScreenPose, speakVoice, getState,
   }
 }
 

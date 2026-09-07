@@ -11,7 +11,6 @@ describe('toolIcon', () => {
     expect(toolIcon('list_dir')).toBe('fa-folder-open')
     expect(toolIcon('delete_file')).toBe('fa-trash')
     expect(toolIcon('set_character_emotion')).toBe('fa-face-smile')
-    expect(toolIcon('switch_character')).toBe('fa-rotate')
     expect(toolIcon('get_time')).toBe('fa-clock')
     expect(toolIcon('find_files')).toBe('fa-magnifying-glass')
     expect(toolIcon('replace_lines')).toBe('fa-pen-to-square')
@@ -23,11 +22,11 @@ describe('toolIcon', () => {
     expect(toolIcon('say')).toBe('fa-gear') // say 不在映射内（不进列表）
   })
 
-  it('覆盖全部 20 个已注册工具，均非兜底', () => {
+  it('覆盖全部 19 个常规工具，均非兜底', () => {
     const names = [
       'get_time', 'get_weather', 'calculator',
       'set_character_emotion', 'set_character_stance', 'set_character_costume',
-      'set_character_look', 'set_screen_pose', 'get_character_state', 'switch_character',
+      'set_character_look', 'set_screen_pose', 'get_character_state',
       'read_file', 'write_file', 'append_file', 'list_dir', 'delete_file',
       'replace_lines', 'insert_lines', 'delete_lines', 'find_files', 'search_in_files',
     ]

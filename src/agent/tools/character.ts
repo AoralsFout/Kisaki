@@ -5,17 +5,10 @@
  */
 import type { Tool } from '../types'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character'
-import { getAgentCharData, getAgentController, getAgentLive2DController, setAgentCharData, getOnCharacterSwitched } from '../context'
+import { getAgentCharData, getAgentController, getAgentLive2DController } from '../context'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolCharacter')
-
-/** 可用角色列表（由 App.vue 通过 setAgentCharData 后的缓存注入） */
-let _availableChars: string[] = []
-
-export function setAvailableCharacters(list: string[]) {
-  _availableChars = list
-}
 
 function getStore() {
   const data = getAgentCharData()
@@ -27,7 +20,6 @@ function getStore() {
     poses: data.poses ?? [],
     costumes: data.costumes ?? [],
     name: data.name,
-    availableList: _availableChars,
   }
 }
 
@@ -260,47 +252,6 @@ export const getStateTool: Tool = {
       `屏幕位置: ${screenLabel}`,
       `当前图片: ${img?.file ?? '无'}`,
     ].join('\n')
-  },
-}
-
-/** 切换角色 */
-export const switchCharacterTool: Tool = {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'switch_character',
-      description: '切换到另一个角色（更换立绘、服装和人格）',
-      parameters: {
-        type: 'object',
-        properties: {
-          character_id: {
-            type: 'string',
-            description: '角色ID',
-          },
-        },
-        required: ['character_id'],
-      },
-    },
-  },
-  handler: async (args) => {
-    const id = String(args.character_id ?? '')
-    if (!_availableChars.includes(id)) {
-      log.warn('未知角色: %s', id)
-      return `未知角色 "${id}"，可用: ${_availableChars.join(', ')}`
-    }
-    // 渲染无关切换：按当前角色 render 选控制器（两种控制器都实现 switchCharacter+charStore）
-    const render = getAgentCharData()?.render ?? 'illustration'
-    const ctrl = render === 'live2d' ? getAgentLive2DController() : getAgentController()
-    if (!ctrl) return '角色控制器未初始化'
-    await ctrl.switchCharacter(id)
-    // 切换后刷新 agent 上下文的角色数据（供本轮后续工具的枚举校验使用），
-    // 并通知上层刷新对话人格（system prompt）。否则 AI 自助切换角色后
-    // 立绘/音色变了但人设仍是旧角色。
-    setAgentCharData(ctrl.charStore.data)
-    getOnCharacterSwitched()?.()
-    const newName = ctrl.charStore.name
-    log.info('角色切换: %s (%s)', id, newName)
-    return `已切换到 ${newName}`
   },
 }
 

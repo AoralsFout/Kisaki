@@ -35,6 +35,8 @@ export interface Session {
   context?: ChatContextSnapshot
   /** 会话关联的角色 ID（切回会话时自动切到该角色） */
   characterId?: string
+  /** 首条用户消息发送后锁定角色；清空/回档消息不会解除，只能新建会话。 */
+  characterLocked?: boolean
   /** 会话关联的角色视觉状态（情绪/姿势/服装/屏幕位置） */
   characterState?: CharacterVisualState
   /** 本会话授权给 AI 读写的工作目录绝对路径；null/undefined = 未授权 */
@@ -91,6 +93,12 @@ function saveJSON(key: string, value: unknown): boolean {
   }
 }
 
+/** 兼容旧数据：界面消息或协议上下文任一含用户消息，都表示会话已经开始。 */
+function hasUserMessage(session: Session): boolean {
+  return session.messages.some(message => message.role === 'user')
+    || session.context?.messages.some(message => message.role === 'user') === true
+}
+
 // ─── 文件持久化（Tauri）与 localStorage 回退 ────────────────
 // 会话数据（聊天历史、角色状态、检查点）是用户资产且体积可能远超
 // localStorage 配额（WebView 约 10MB），故迁移到 Rust 管理的
@@ -140,6 +148,13 @@ export const useSessionStore = defineStore('session', () => {
     sessions.value.find(s => s.id === currentSessionId.value) ?? null,
   )
 
+  /** 当前会话尚未发送过消息时才允许更换角色。 */
+  const canChangeCharacter = computed(() => {
+    const session = currentSession.value
+    if (!session) return false
+    return !session.characterLocked && !hasUserMessage(session)
+  })
+
   /** 会话列表，按创建时间正序（旧→新） */
   const sessionList = computed(() =>
     [...sessions.value].sort((a, b) => a.createdAt - b.createdAt),
@@ -180,6 +195,10 @@ export const useSessionStore = defineStore('session', () => {
         if (session.workspaceRoot && !session.workspaceId) {
           session.workspaceRoot = null
         }
+        // 旧会话没有 characterLocked 字段：只要已有用户消息就视为已锁定。
+        if (hasUserMessage(session)) {
+          session.characterLocked = true
+        }
       }
       // 恢复上次使用的会话
       const lastId = file.ok && file.data
@@ -210,6 +229,7 @@ export const useSessionStore = defineStore('session', () => {
         id: generateId(),
         name: '新对话',
         messages: [],
+        characterLocked: false,
         createdAt: now,
         updatedAt: now,
       }
@@ -314,6 +334,7 @@ export const useSessionStore = defineStore('session', () => {
       name: name || `新对话 ${count}`,
       messages: [],
       characterId: charStore.currentId,
+      characterLocked: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -363,6 +384,10 @@ export const useSessionStore = defineStore('session', () => {
     const chatStore = useChatStore()
     // 思考过程只保留在当前运行时 UI，不写入长期会话文件。
     session.messages = chatStore.messages.map(({ thinking: _thinking, ...message }) => message)
+    // 锁定是单向状态：即使之后清空消息或回档，也必须新建会话才能换角色。
+    if (hasUserMessage(session)) {
+      session.characterLocked = true
+    }
     session.context = chatStore.exportContext()
     // 保存角色身份与当前视觉状态
     const charStore = useCharacterStore()
@@ -667,6 +692,7 @@ export const useSessionStore = defineStore('session', () => {
     // 计算
     currentSession,
     sessionList,
+    canChangeCharacter,
     // 方法
     init,
     createSession,
