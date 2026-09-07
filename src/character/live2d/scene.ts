@@ -9,7 +9,7 @@
  * asset:// 加载必须用 CubismSetting + redirectPath（见设计 §10.1）；app 用
  * preserveDrawingBuffer 以便穿透掩码读取主画布 alpha（§10.2）。
  */
-import { ref, watch, onUnmounted, type Ref } from 'vue'
+import { ref, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { Config, CubismSetting, Live2DSprite, LogLevel, Priority } from 'easy-live2d'
 import { Application, Ticker } from 'pixi.js'
 import { loadLive2DManifest, live2dRedirect } from './manifest'
@@ -18,6 +18,7 @@ import type { Live2DConfig } from '../loader'
 import { getPose } from '../poses'
 import type { PoseKey } from '../poses'
 import { createLogger } from '../../utils/logger'
+import { calculateLive2DLayout } from './layout'
 
 const log = createLogger('Live2DScene')
 
@@ -49,8 +50,9 @@ export function useLive2DScene(
   let manifest: Live2DManifest | null = null
   let disposed = false
   let loadToken = 0
+  let resizeObserver: ResizeObserver | null = null
 
-  /** 按高度铺满（×scale），水平按屏幕姿态预设对齐、底部对齐 */
+  /** 按高度铺满（×scale），用中心锚点并让模型坐标偏移随显示比例缩放。 */
   function applyTransform() {
     if (!sprite || !containerRef.value) return
     const live2d = source.config()
@@ -60,13 +62,23 @@ export function useLive2DScene(
     const ch = containerRef.value.clientHeight || window.innerHeight
     const size = sprite.getModelCanvasSize?.()
     const aspect = size && size.height ? size.width / size.height : cw / ch
-    const sh = ch * scale
-    const sw = sh * aspect
     const hx = preset.key.includes('left') ? 0 : preset.key.includes('right') ? 1 : 0.5
-    sprite.width = sw
-    sprite.height = sh
-    sprite.x = (cw - sw) * hx + (live2d?.offsetX ?? 0)
-    sprite.y = (ch - sh) + (live2d?.offsetY ?? 0)
+    const layout = calculateLive2DLayout({
+      canvasWidth: cw,
+      canvasHeight: ch,
+      modelAspect: aspect,
+      modelCanvasHeight: size?.height ?? ch,
+      scale,
+      horizontalAlign: hx,
+      offsetX: live2d?.offsetX,
+      offsetY: live2d?.offsetY,
+    })
+    // easy-live2d 默认 anchor=(0,0)，显式使用模型中心；布局函数会把角色配置中的
+    // 模型坐标偏移换算为当前显示像素，避免小窗口被固定大偏移推离画布。
+    sprite.anchor.set(0.5)
+    sprite.width = layout.width
+    sprite.height = layout.height
+    sprite.position.set(layout.x, layout.y)
   }
 
   async function setupModel() {
@@ -142,12 +154,20 @@ export function useLive2DScene(
     applyTransform,
   )
   window.addEventListener('resize', applyTransform)
+  onMounted(() => {
+    if (typeof ResizeObserver !== 'undefined' && containerRef.value) {
+      resizeObserver = new ResizeObserver(() => applyTransform())
+      resizeObserver.observe(containerRef.value)
+    }
+  })
 
   void setupModel() // 初始加载
 
   onUnmounted(() => {
     disposed = true
     window.removeEventListener('resize', applyTransform)
+    resizeObserver?.disconnect()
+    resizeObserver = null
     options.onDispose?.()
     try { sprite?.destroy() } catch { /* ignore */ }
     try { app?.destroy() } catch { /* ignore */ }
