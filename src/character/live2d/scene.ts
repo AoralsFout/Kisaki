@@ -62,14 +62,13 @@ export function useLive2DScene(
     const ch = containerRef.value.clientHeight || window.innerHeight
     const size = sprite.getModelCanvasSize?.()
     const aspect = size && size.height ? size.width / size.height : cw / ch
-    const hx = preset.key.includes('left') ? 0 : preset.key.includes('right') ? 1 : 0.5
     const layout = calculateLive2DLayout({
       canvasWidth: cw,
       canvasHeight: ch,
       modelAspect: aspect,
       modelCanvasHeight: size?.height ?? ch,
       scale,
-      horizontalAlign: hx,
+      pose: preset,
       offsetX: live2d?.offsetX,
       offsetY: live2d?.offsetY,
     })

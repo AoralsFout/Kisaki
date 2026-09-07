@@ -128,7 +128,7 @@ defineExpose({ controller })
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  mask-image: linear-gradient(to left,#00000000 0%,#000 20%,#000 80%,#00000000 100%);
+  /* mask-image: linear-gradient(to left,#00000000 0%,#000 20%,#000 80%,#00000000 100%); */
   /* contain 限制浏览器布局/样式/绘制范围，提升重绘性能 */
   contain: layout style paint;
   /* content-visibility 跳过视口外的渲染 */
