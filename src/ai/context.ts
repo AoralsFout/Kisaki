@@ -48,6 +48,30 @@ export interface ContextStats {
   utilization: number
 }
 
+/** 上下文检查器中的消息来源。 */
+export type ContextMessageOrigin = 'system' | 'summary' | 'history'
+
+/**
+ * 供只读检查器展示的单条模型消息。
+ *
+ * 图片 data URL 会替换为包含 MIME 与体积的说明，避免跨窗口复制大块 base64；
+ * 文字、工具调用参数和工具结果均保持运行时原貌。
+ */
+export interface ContextInspectionMessage extends ChatMessage {
+  origin: ContextMessageOrigin
+  estimatedTokens: number
+  position: number
+}
+
+/** 当前 ChatContext 的只读、非持久化检查结果。 */
+export interface ChatContextInspection {
+  messages: ContextInspectionMessage[]
+  stats: ContextStats
+  rollingSummary: string
+  maxRounds: number
+  hasTurnReminder: boolean
+}
+
 export class ContextBudgetError extends Error {
   constructor(readonly estimated: number, readonly limit: number) {
     super(`当前请求上下文约 ${estimated} tokens，超过预算 ${limit}；请缩短本轮输入或新建会话`)
@@ -170,6 +194,29 @@ function cloneMessage(message: ChatMessage): ChatMessage {
       function: { name: tc.function.name, arguments: tc.function.arguments },
     })),
   }
+}
+
+/** 把嵌入图片替换为可读元数据；检查器不需要、也不应跨窗口复制 base64 本体。 */
+function cloneMessageForInspection(message: ChatMessage): ChatMessage {
+  const cloned = cloneMessage(message)
+  if (!Array.isArray(cloned.content)) return cloned
+  cloned.content = cloned.content.map(part => {
+    if (part.type === 'text') return part
+    const url = part.image_url.url
+    if (!url.startsWith('data:')) return part
+    const match = url.match(/^data:([^;,]+)(?:;base64)?,(.*)$/s)
+    const mime = match?.[1] || 'application/octet-stream'
+    const encodedLength = match?.[2]?.length ?? 0
+    const approximateBytes = Math.max(0, Math.floor(encodedLength * 0.75))
+    return {
+      type: 'image_url',
+      image_url: {
+        detail: part.image_url.detail,
+        url: `[embedded image: ${mime}, approximately ${approximateBytes} bytes]`,
+      },
+    }
+  })
+  return cloned
 }
 
 /**
@@ -481,6 +528,46 @@ export class ChatContext {
       summarizedRounds: this.summarizedRounds,
       prunedMessages: this.prunedMessages,
       utilization: Math.min(1, estimatedTokens / Math.max(1, this.maxContextTokens)),
+    }
+  }
+
+  /**
+   * 生成上下文检查器视图，不触发裁剪、不修改统计状态。
+   * 消息顺序与下一次请求一致：system（含每轮提醒）→ 滚动摘要 → 活跃历史。
+   */
+  inspect(tools: unknown[] = []): ChatContextInspection {
+    const materialized = this.materializeMessages(true)
+    const hasSummary = Boolean(this.rollingSummary)
+    const toolDefinitionTokens = tools.length > 0 ? estimateTokens(JSON.stringify(tools)) : 0
+    const messages = materialized.map((message, index): ContextInspectionMessage => {
+      const origin: ContextMessageOrigin = index === 0
+        ? 'system'
+        : hasSummary && index <= 2
+          ? 'summary'
+          : 'history'
+      return {
+        ...cloneMessageForInspection(message),
+        origin,
+        estimatedTokens: this.estimateMessageTokens(message),
+        position: index + 1,
+      }
+    })
+    const estimatedTokens = messages.reduce((sum, message) => sum + message.estimatedTokens, 0)
+      + toolDefinitionTokens
+    return {
+      messages,
+      stats: {
+        estimatedTokens,
+        maxContextTokens: this.maxContextTokens,
+        toolDefinitionTokens,
+        messageCount: messages.length,
+        summarizedRounds: this.summarizedRounds,
+        prunedMessages: this.prunedMessages,
+        utilization: Math.min(1, estimatedTokens / Math.max(1, this.maxContextTokens)),
+      },
+      rollingSummary: this.rollingSummary,
+      maxRounds: this.maxRounds,
+      hasTurnReminder: Boolean(this.voiceLang && this.displayLang),
     }
   }
 

@@ -16,10 +16,17 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { chat, isConfigValid, loadConfig, ChatContext, MAX_TOOL_TURNS, translateText } from '../ai'
-import type { ChatContextSnapshot, ChatInputPayload, ContextStats, ImageAttachment, ToolCallData } from '../ai'
+import type {
+  ChatContextInspection,
+  ChatContextSnapshot,
+  ChatInputPayload,
+  ContextStats,
+  ImageAttachment,
+  ToolCallData,
+} from '../ai'
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
-import type { ToolCall, ToolResult } from '../agent'
+import type { ToolCall, ToolDefinition, ToolResult } from '../agent'
 import { isMutatingTool, mutatingPath, getAutoExecFiles, shouldConfirm, isDangerousTool, dangerousToolSummary } from '../agent/toolPolicy'
 import { prepareCommandExecution, approveCommandExecution } from '../agent/tools/command'
 import type { ExecutionPlan } from '../agent/tools/command'
@@ -78,6 +85,26 @@ export interface ChatMessage {
   /** 消息发出时的角色身份快照（assistant 消息）；旧数据缺失时由界面回退当前角色名 */
   charId?: string
   charName?: string
+}
+
+/** 当前会话完整上下文的只读检查结果，仅用于设置页手动快照。 */
+export interface CurrentContextInspection extends ChatContextInspection {
+  capturedAt: number
+  model: string
+  endpoint: string
+  toolDefinitions: ToolDefinition[]
+  persona: {
+    voiceLang: string
+    displayLang: string
+    render: 'illustration' | 'live2d'
+  } | null
+  runtime: {
+    processing: boolean
+    usingTools: boolean
+    activities: ToolActivity[]
+    pendingConfirmation: { toolName: string; path: string } | null
+    autoExecSession: boolean
+  }
 }
 
 /** 角色身份来源：由 App 注入（避免 store 直接依赖 Pinia 角色状态） */
@@ -1297,6 +1324,41 @@ export const useChatStore = defineStore('chat', () => {
     return chatContext.exportSnapshot()
   }
 
+  /**
+   * 返回下一次模型请求可见的完整上下文视图。
+   * 不写入磁盘，不含 API Key；图片只保留 MIME 与体积说明。
+   */
+  function inspectContext(): CurrentContextInspection {
+    const tools = [...agentService.getToolDefinitions(useCharacterStore().data), SAY_TOOL_DEF] as ToolDefinition[]
+    const config = loadConfig()
+    return {
+      ...chatContext.inspect(tools),
+      capturedAt: Date.now(),
+      model: config.model || '',
+      endpoint: config.baseURL || '',
+      toolDefinitions: tools,
+      persona: currentPersona
+        ? {
+          voiceLang: currentPersona.voiceLang || '',
+          displayLang: currentPersona.displayLang || '',
+          render: currentPersona.render ?? 'illustration',
+        }
+        : null,
+      runtime: {
+        processing: isProcessing.value,
+        usingTools: isUsingTools.value,
+        activities: toolActivities.value.map(activity => ({ ...activity })),
+        pendingConfirmation: (pendingCommandConfirm.value ?? pendingConfirm.value)
+          ? {
+            toolName: (pendingCommandConfirm.value ?? pendingConfirm.value)!.toolName,
+            path: (pendingCommandConfirm.value ?? pendingConfirm.value)!.path,
+          }
+          : null,
+        autoExecSession: autoExecSession.value,
+      },
+    }
+  }
+
   function showBubbleText(text: string, typing: boolean = true) {
     const _fn = 'showBubbleText'
     log.trace('[%s] text=%d字 typing=%s text="%s"', _fn, text.length, typing, text.slice(0, 50))
@@ -1358,6 +1420,7 @@ export const useChatStore = defineStore('chat', () => {
     setSystemPrompt,
     refreshModelContext,
     exportContext,
+    inspectContext,
     showBubbleText,
     hideBubble,
     toggleInput,

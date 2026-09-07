@@ -24,6 +24,7 @@ import SettingsAbout from './settings/SettingsAbout.vue'
 import SettingsPrivacy from './settings/SettingsPrivacy.vue'
 import SettingsPermissions from './settings/SettingsPermissions.vue'
 import SettingsDiagnostics from './settings/SettingsDiagnostics.vue'
+import SettingsContext from './settings/SettingsContext.vue'
 
 const { t } = useI18n()
 
@@ -32,11 +33,11 @@ const isDevelopment = import.meta.env.DEV
 const selfWindow = ref<WebviewWindow | null>(null)
 
 // ---- 导航 ----
-type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'permissions' | 'dev' | 'about' | 'privacy' | 'diagnostics'
+type Tab = 'general' | 'api' | 'search' | 'character' | 'tts' | 'permissions' | 'dev' | 'about' | 'privacy' | 'diagnostics' | 'context'
 const TAB_GROUPS: Array<{ key: 'experience' | 'connection' | 'maintenance'; tabs: Tab[] }> = [
   { key: 'experience', tabs: ['general', 'character', 'tts'] },
   { key: 'connection', tabs: ['api', 'search', 'permissions'] },
-  { key: 'maintenance', tabs: ['privacy', 'diagnostics', 'about'] },
+  { key: 'maintenance', tabs: ['context', 'privacy', 'diagnostics', 'about'] },
 ]
 const VALID_TABS: Tab[] = [
   ...TAB_GROUPS.flatMap(g => g.tabs),
@@ -51,6 +52,7 @@ const TAB_META: Record<Tab, { icon: string; label: string }> = {
   permissions: { icon: 'fa-user-shield', label: 'settings.nav.permissions' },
   privacy: { icon: 'fa-shield-halved', label: 'settings.nav.privacy' },
   diagnostics: { icon: 'fa-clipboard-list', label: 'settings.nav.diagnostics' },
+  context: { icon: 'fa-layer-group', label: 'settings.nav.context' },
   about: { icon: 'fa-circle-info', label: 'settings.nav.about' },
   dev: { icon: 'fa-screwdriver-wrench', label: 'settings.nav.dev' },
 }
@@ -185,6 +187,7 @@ function closeWindow() {
         </div>
 
         <SettingsDiagnostics v-if="activeTab === 'diagnostics'" />
+        <SettingsContext v-if="activeTab === 'context'" />
         <SettingsAbout v-if="activeTab === 'about'" />
         <SettingsPrivacy v-if="activeTab === 'privacy'" />
       </main>

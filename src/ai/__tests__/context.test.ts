@@ -177,4 +177,40 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(JSON.stringify(restored.getMessages())).toContain('base64,NEW')
     expect(JSON.stringify(restored.getMessages())).not.toContain('base64,OLD')
   })
+
+  it('检查视图按真实请求顺序展示 system、摘要、历史和工具预算', () => {
+    const ctx = new ChatContext({ maxRounds: 1, maxContextTokens: 100000 })
+    ctx.setSystemPrompt('测试人格', 'ja-JP', 'zh-CN', 'illustration')
+    ctx.addUserMessage('较早的问题')
+    ctx.addAssistantMessage('较早的回答')
+    ctx.addUserMessage('当前问题')
+    ctx.getMessages() // 触发旧回合摘要
+
+    const inspection = ctx.inspect([{
+      type: 'function', function: { name: 'calculator', description: '计算表达式' },
+    }])
+
+    expect(inspection.messages.map(message => message.origin)).toEqual([
+      'system', 'summary', 'summary', 'history',
+    ])
+    expect(inspection.messages[0].content).toContain('最终提交提醒')
+    expect(inspection.messages[1].content).toContain('较早的问题')
+    expect(inspection.messages[3].content).toBe('当前问题')
+    expect(inspection.stats.toolDefinitionTokens).toBeGreaterThan(0)
+    expect(inspection.stats.estimatedTokens).toBeGreaterThan(inspection.stats.toolDefinitionTokens)
+    expect(inspection.hasTurnReminder).toBe(true)
+  })
+
+  it('检查视图保留图片元数据但不跨窗口复制 base64', () => {
+    const ctx = new ChatContext({ maxContextTokens: 100000 })
+    ctx.addUserMessage('看图', [{
+      id: 'inspect-image', name: 'inspect.png', mimeType: 'image/png',
+      dataUrl: `data:image/png;base64,${'A'.repeat(400)}`, size: 300,
+    }])
+
+    const inspectionJson = JSON.stringify(ctx.inspect())
+    expect(inspectionJson).toContain('embedded image: image/png')
+    expect(inspectionJson).toContain('approximately 300 bytes')
+    expect(inspectionJson).not.toContain('A'.repeat(100))
+  })
 })
