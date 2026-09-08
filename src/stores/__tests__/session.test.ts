@@ -82,6 +82,24 @@ describe('useSessionStore', () => {
     expect(s.messages).toEqual([])
   })
 
+  it('删除旧会话后新建会话沿用最大编号+1，不产生重名', async () => {
+    const store = useSessionStore()
+    await store.init()
+
+    // 默认「新对话」+ 自动命名依次得到「新对话 2」「新对话 3」
+    const a = store.createSession() // 新对话 2
+    const b = store.createSession() // 新对话 3
+    expect(a.name).toBe('新对话 2')
+    expect(b.name).toBe('新对话 3')
+
+    // 删除中间编号「新对话 2」，再新建时不应复用它导致重名
+    expect(store.deleteSession(a.id)).toBe(true)
+    const c = store.createSession()
+    const names = store.sessionList.map(s => s.name)
+    expect(new Set(names).size).toBe(names.length) // 所有名称唯一
+    expect(c.name).toBe('新对话 4')                // 按最大编号 3 + 1，而非「会话数 2 + 1」
+  })
+
   it('可以创建指定名称的会话', async () => {
     const store = useSessionStore()
     await store.init()

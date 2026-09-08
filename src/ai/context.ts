@@ -235,7 +235,7 @@ function buildLangInstruction(voiceLang: string, displayLang: string): string {
   const voiceLangName = langName(voiceLang)
   const displayLangName = langName(displayLang)
   const voiceRules = `voice 必须使用 ${voiceLangName} 的可朗读自然语言。voice 中只允许文字、语言正常所需的空格，以及半角逗号 , 逗号是唯一允许的标点和分句符号。禁止句号、问号、感叹号、冒号、分号、引号、括号、斜杠、连字符、省略号、换行、Markdown、emoji、颜文字及其他特殊符号。禁止阿拉伯数字、罗马数字和数学符号，必须按语义改写成 ${voiceLangName} 的可读文字，例如把数字、百分比、日期、时间、版本号、金额和运算式完整念出来。网址、文件路径、代码和缩写也要改写成适合口头表达的说法，不要逐字符朗读。不得包含动作或心理描写。display 不受这些语音字符限制。`
-  const terminalRules = `say 是终止当前工具循环的最终提交动作。应用一收到 say 就会立刻结束本轮，say 之后的计划或工具调用都不会执行。因此，仅在所有必要的查询、操作和验证都已完成，并且你已经准备结束当前回复时调用一次 say。执行过程中、汇报进度时、等待工具结果时都不要调用 say，也不要把 say 与任何其他工具放在同一批调用中。若必须向用户提问才能继续，可以把问题作为本轮最终回复并调用 say。`
+  const terminalRules = `say 是终止当前工具循环的最终提交动作。应用一收到 say 就会立刻结束本轮，say 之后的计划或工具调用都不会执行。因此，仅在所有必要的查询、操作和验证都已完成，并且你已经准备结束当前回复时调用一次 say。执行过程中、汇报进度时、等待工具结果时都不要调用 say。若必须向用户提问才能继续，可以把问题作为本轮最终回复并调用 say。say 可与「确定性展示类动作工具」（set_character_emotion、set_screen_pose、set_character_stance、set_character_costume、set_character_look、立绘/Live2D 的表情与动作，执行后无需读取结果）放在同一批：先执行动作，再同批调用 say 结束即可。但严禁把 say 与需要读取/依赖结果才能作答的工具（read_file、read_image、list_dir、find_files、search_in_files、write_file、append_file、delete_file、capture_screen、web_search、run_process、run_shell）放在同一批——必须先执行并让下一轮看到结果，再单独调用 say。`
 
   if (voiceLang === displayLang) {
     return `\n\n## 🗣 说话方式（必须遵守）
@@ -262,9 +262,9 @@ ${voiceRules}`
 /** 为每轮生成的简短说话提醒（利用近因偏差） */
 function buildTurnReminder(voiceLang: string, displayLang: string): string {
   if (voiceLang === displayLang) {
-    return `[最终提交提醒] say 会立即终止工具循环。先完成并验证全部任务，不要把 say 与其他工具同批调用；最后单独调用一次 say。voice 仅允许文字、空格和半角逗号，不得含数字或其他符号，所有内容都要改写成可朗读文本。`
+    return `[最终提交提醒] say 会立即终止工具循环。先完成并验证全部任务；确定性展示类动作工具可与 say 同批，其余工具务必先让下一轮读取结果，最后单独调用一次 say。voice 仅允许文字、空格和半角逗号，不得含数字或其他符号，所有内容都要改写成可朗读文本。`
   }
-  return `[最终提交提醒] say 会立即终止工具循环。先完成并验证全部任务，不要把 say 与其他工具同批调用；最后单独调用一次 say。voice=${langName(voiceLang)}可朗读台词，只允许文字、空格和半角逗号，不得含数字或其他符号；display=${langName(displayLang)}译文，两者都要给。`
+  return `[最终提交提醒] say 会立即终止工具循环。先完成并验证全部任务；确定性展示类动作工具可与 say 同批，其余工具务必先让下一轮读取结果，最后单独调用一次 say。voice=${langName(voiceLang)}可朗读台词，只允许文字、空格和半角逗号，不得含数字或其他符号；display=${langName(displayLang)}译文，两者都要给。`
 }
 
 /** 工具使用说明（按渲染类型生成，自动追加到所有角色提示词末尾） */
@@ -276,7 +276,7 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 ### say 是终止性工具
 - 调用 say 会立即结束当前工具循环；它不是进度播报工具
 - 必须先完成所有必要的工具调用、读取工具结果并验证任务结果，然后在最后一轮单独调用一次 say
-- 禁止在执行中途调用 say，禁止把 say 与其他工具放在同一批调用中，禁止在 say 之后安排任何操作
+- 禁止在执行中途调用 say；确定性展示类动作工具（set_character_emotion、set_screen_pose、set_character_stance、set_character_costume、set_character_look、表情/动作）可与 say 同批，其余工具务必先执行并读完结果后再单独 say；禁止在 say 之后安排任何操作
 - 只有当本轮工作已经完成，或确实需要用户补充信息才能继续时，才调用 say 给出最终答复或最终问题
 
 ### 你必须使用函数调用的场景

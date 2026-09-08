@@ -9,14 +9,14 @@ import { describe, it, expect } from 'vitest'
 import { ChatContext, ContextBudgetError } from '../context'
 
 describe('ChatContext 上下文裁剪（回合感知）', () => {
-  it('系统提示明确 say 只能作为最后的单独终止调用', () => {
+  it('系统提示明确 say 是最后终止动作，且可与确定性展示动作同批', () => {
     const ctx = new ChatContext({ maxContextTokens: 100000 })
     ctx.setSystemPrompt('助手', 'ja-JP', 'zh-CN', 'illustration')
     ctx.addUserMessage('完成一个需要多步工具调用的任务')
 
     const system = ctx.getMessages()[0].content
     expect(system).toContain('say 是终止当前工具循环的最终提交动作')
-    expect(system).toContain('不要把 say 与任何其他工具放在同一批调用中')
+    expect(system).toContain('say 可与「确定性展示类动作工具」')
     expect(system).toContain('必须先完成所有必要的工具调用、读取工具结果并验证任务结果')
     expect(system).toContain('最后单独调用一次 say')
   })

@@ -106,11 +106,15 @@ function hasUserMessage(session: Session): boolean {
 
 /** true=文件模式；false=localStorage 回退；init 前为 null */
 let fileMode: boolean | null = null
-/** 合并同一事件循环中的重复全量保存，并保证磁盘写入严格串行。 */
-let pendingFilePayload: string | null = null
+/** 合并短时间内的重复全量保存：只保留最新快照，真正落盘时才序列化。 */
+let pendingFileSnapshot: { sessions: Session[]; currentId: string } | null = null
 let pendingFileWaiters: Array<(ok: boolean) => void> = []
 let fileWriteRunning = false
-let fileFlushScheduled = false
+let fileFlushTimer: ReturnType<typeof setTimeout> | null = null
+/** 脏状态合并窗口：250–500 ms，兼顾回调及时性与低频落盘。 */
+const FILE_FLUSH_DELAY = 300
+/** 只注册一次页面隐藏/关闭落盘监听。 */
+let sessionFlushRegistered = false
 
 type FileLoadResult =
   | { ok: true; data: { sessions: Session[]; currentId: string } | null }
@@ -253,6 +257,15 @@ export const useSessionStore = defineStore('session', () => {
     ready.value = true
     log.info("session_store.init.info", `初始化完成: ${sessions.value.length} 个会话, 当前="${currentSession.value?.name ?? '无'}"`, { sessions_value: sessions.value.length, current_session_value: currentSession.value?.name ?? '无' })
 
+    // 页面隐藏/关闭时强制落盘，避免脏状态合并窗口内的快照丢失。
+    if (typeof window !== 'undefined' && !sessionFlushRegistered) {
+      sessionFlushRegistered = true
+      window.addEventListener('pagehide', () => { void flushFilePersist() })
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void flushFilePersist()
+      })
+    }
+
     // 恢复当前会话绑定的角色与视觉状态（可能异步切角色，不阻塞 ready）
     if (toRestore) await restoreSessionState(toRestore)
   }
@@ -264,30 +277,31 @@ export const useSessionStore = defineStore('session', () => {
    * 失败时置 persistError，供 UI 提示用户。
    */
   function persistToFile(sessions: Session[], currentId: string): Promise<boolean> {
-    const payload = JSON.stringify({ sessions, currentId })
-    pendingFilePayload = payload
+    // 只保留最新快照，真正落盘时才 JSON.stringify。
+    pendingFileSnapshot = { sessions, currentId }
     const result = new Promise<boolean>(resolve => pendingFileWaiters.push(resolve))
     scheduleFileFlush()
     return result
   }
 
   function scheduleFileFlush() {
-    if (fileWriteRunning || fileFlushScheduled) return
-    fileFlushScheduled = true
-    queueMicrotask(() => { void flushFilePersist() })
+    if (fileWriteRunning) return
+    if (fileFlushTimer != null) return
+    fileFlushTimer = setTimeout(() => { fileFlushTimer = null; void flushFilePersist() }, FILE_FLUSH_DELAY)
   }
 
   async function flushFilePersist() {
     if (fileWriteRunning) return
-    fileFlushScheduled = false
-    const payload = pendingFilePayload
-    if (payload == null) return
-    pendingFilePayload = null
+    const snapshot = pendingFileSnapshot
+    if (snapshot == null) return
+    pendingFileSnapshot = null
+    if (fileFlushTimer != null) { clearTimeout(fileFlushTimer); fileFlushTimer = null }
     const waiters = pendingFileWaiters
     pendingFileWaiters = []
     fileWriteRunning = true
     let ok = true
     try {
+      const payload = JSON.stringify(snapshot)
       await invoke('sessions_save', { data: payload })
     } catch (e) {
       ok = false
@@ -296,7 +310,7 @@ export const useSessionStore = defineStore('session', () => {
     } finally {
       fileWriteRunning = false
       for (const resolve of waiters) resolve(ok)
-      if (pendingFilePayload != null) scheduleFileFlush()
+      if (pendingFileSnapshot != null) scheduleFileFlush()
     }
   }
 
@@ -318,16 +332,29 @@ export const useSessionStore = defineStore('session', () => {
 
   // ── 会话操作 ──
 
+  /** 生成「新对话 N」中比现有最大编号大 1 的唯一名称（删除旧会话后不会重名）。 */
+  function nextSessionName(existing: Session[]): string {
+    // 允许裸「新对话」视为编号 1，保持首个自动命名仍为「新对话 2」，但避免按数量+1 产生重名。
+    const re = /^新对话(?:\s*(\d+))?$/
+    let max = 1
+    for (const s of existing) {
+      const m = s.name.match(re)
+      if (!m) continue
+      const num = m[1] ? Number(m[1]) : 1
+      if (num >= max) max = num + 1
+    }
+    return `新对话 ${max}`
+  }
+
   /**
    * 创建新会话并立即切换到它
    * @param name 会话名称，留空自动生成 "新对话 N"
    */
   function createSession(name?: string): Session {
-    const count = sessions.value.length + 1
     const charStore = useCharacterStore()
     const session: Session = {
       id: generateId(),
-      name: name || `新对话 ${count}`,
+      name: name || nextSessionName(sessions.value),
       messages: [],
       characterId: charStore.currentId,
       characterLocked: false,
@@ -461,7 +488,7 @@ export const useSessionStore = defineStore('session', () => {
     if (previousId && previousId !== grant.id) {
       void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => { /* ignore */ })
     }
-    log.info("session_store.set_workspace.info", `已设置会话工作目录: ${grant.path}`, { grant_path: grant.path })
+    log.info("session_store.set_workspace.info", `已设置会话工作目录: workspaceId=${grant.id}`, { workspace_id: grant.id })
   }
 
   /** 取消当前会话的工作目录授权 */
