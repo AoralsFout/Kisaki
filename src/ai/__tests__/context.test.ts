@@ -21,15 +21,15 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(system).toContain('最后单独调用一次 say')
   })
 
-  it('系统提示把 voice 限制为可朗读文字、空格和半角逗号', () => {
+  it('系统提示允许 voice 保留阿拉伯数字和数字常用符号', () => {
     const ctx = new ChatContext({ maxContextTokens: 100000 })
     ctx.setSystemPrompt('助手', 'zh-CN', 'zh-CN', 'live2d')
     ctx.addUserMessage('告诉我版本和日期')
 
     const system = ctx.getMessages()[0].content
-    expect(system).toContain('半角逗号 , 逗号是唯一允许的标点和分句符号')
-    expect(system).toContain('禁止阿拉伯数字、罗马数字和数学符号')
-    expect(system).toContain('日期、时间、版本号、金额和运算式完整念出来')
+    expect(system).toContain('允许文字、阿拉伯数字、语言正常所需的空格、半角逗号')
+    expect(system).toContain('阿拉伯数字、百分比、日期、时间、版本号、金额和运算式可以保留数字原样')
+    expect(system).toContain('禁止罗马数字、其他标点')
     expect(system).toContain('display 不受这些语音字符限制')
   })
 

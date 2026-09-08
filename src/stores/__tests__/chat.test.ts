@@ -95,7 +95,24 @@ describe('resolveSayContent', () => {
     expect(r).toEqual({ voice: '[ja-JP]嗨', display: '嗨' })
   })
 
-  it('voice 含数字或其他标点时触发 TTS 安全改写', async () => {
+  it('voice 含数字和数字常用符号时本地保留，不调用翻译', async () => {
+    const { resolveSayContent } = await import('../chat')
+    let translateCalls = 0
+    const translate = async () => {
+      translateCalls++
+      return '不应调用'
+    }
+    const r = await resolveSayContent(
+      { voice: '版本2.6，完成率50%', display: '版本2.6，完成率50%' },
+      'zh-CN',
+      'zh-CN',
+      translate,
+    )
+    expect(translateCalls).toBe(0)
+    expect(r).toEqual({ voice: '版本2.6,完成率50%', display: '版本2.6，完成率50%' })
+  })
+
+  it('voice 含括号等其他符号时触发 TTS 安全改写', async () => {
     const { resolveSayContent } = await import('../chat')
     let ttsSafe: boolean | undefined
     const rewrite = async (_text: string, _target: string, opts?: { ttsSafe?: boolean }) => {
@@ -103,13 +120,13 @@ describe('resolveSayContent', () => {
       return '版本二点六,已经完成'
     }
     const r = await resolveSayContent(
-      { voice: '版本2.6，已经完成！', display: '版本 2.6，已经完成！' },
+      { voice: '版本2.6（测试），已经完成！', display: '版本 2.6（测试），已经完成！' },
       'zh-CN',
       'zh-CN',
       rewrite,
     )
     expect(ttsSafe).toBe(true)
-    expect(r).toEqual({ voice: '版本二点六,已经完成', display: '版本 2.6，已经完成！' })
+    expect(r).toEqual({ voice: '版本二点六,已经完成', display: '版本 2.6（测试），已经完成！' })
   })
 
   it('已调用 say 且仅有日语句读问题时本地修复，不走翻译兜底', async () => {

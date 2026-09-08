@@ -26,7 +26,7 @@ function cacheTranslation(key: string, value: string) {
 export interface TranslateOptions {
   /** 说话者人设，用于让译文更贴合角色语气（可选） */
   persona?: string
-  /** 输出将直接送入 TTS，要求改写为仅含可朗读文字、空格和半角逗号的文本 */
+  /** 输出将直接送入 TTS，要求改写为仅含可朗读文字、数字、空格、半角逗号和数字常用符号的文本 */
   ttsSafe?: boolean
   /** 取消信号 */
   signal?: AbortSignal
@@ -74,9 +74,10 @@ export async function translateText(
   const personaLine = opts?.persona ? `说话者的人设：${opts.persona}\n` : ''
   const outputRule = opts?.ttsSafe
     ? `输出将直接送入语音合成。即使原文已经是${targetName}，也要按以下规则改写：` +
-      `只允许可朗读文字、语言正常所需的空格和半角逗号，半角逗号是唯一允许的标点和分句符号；` +
-      `禁止其他标点、换行、Markdown、emoji、颜文字、特殊符号、阿拉伯数字、罗马数字和数学符号；` +
-      `数字、百分比、日期、时间、版本号、金额、运算式、网址、路径、代码和缩写必须按语义写成${targetName}的可读口语。`
+      `只允许可朗读文字、阿拉伯数字、语言正常所需的空格、半角逗号，以及数字常用的小数点、百分号、时间冒号、斜杠和正负号；` +
+      `阿拉伯数字、百分比、日期、时间、版本号、金额和运算式应保留数字原样，不要为了朗读改写成文字；` +
+      `禁止罗马数字、其他标点、换行、Markdown、emoji、颜文字和特殊符号；` +
+      `网址、路径、代码和缩写仍应改写成${targetName}的可读口语。`
     : ''
 
   try {

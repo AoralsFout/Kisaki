@@ -10,11 +10,10 @@ describe('say 工具约束', () => {
     expect(description).toContain('不要用它播报中间进度')
   })
 
-  it('voice 参数禁止数字和除半角逗号外的符号', () => {
+  it('voice 参数允许数字并限制其他符号', () => {
     const voice = SAY_TOOL_DEF.function.parameters?.properties?.voice
-    expect(voice?.description).toContain('只能包含可朗读文字、语言正常所需的空格和半角逗号')
-    expect(voice?.description).toContain('半角逗号是唯一允许的标点和分句符号')
-    expect(voice?.description).toContain('不得包含阿拉伯数字、罗马数字或数学符号')
-    expect(voice?.description).toContain('必须按语义改写成母语中适合口头表达的可读文字')
+    expect(voice?.description).toContain('允许可朗读文字、阿拉伯数字、语言正常所需的空格、半角逗号')
+    expect(voice?.description).toContain('可以保留数字原样，不要为了朗读改写成文字')
+    expect(voice?.description).toContain('禁止罗马数字、其他标点')
   })
 })

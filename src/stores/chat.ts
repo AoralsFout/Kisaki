@@ -193,9 +193,9 @@ type TranslateFn = (
   opts?: { ttsSafe?: boolean },
 ) => Promise<string>
 
-/** voice 只允许 Unicode 文字、组合附加符、普通空格和半角逗号。 */
+/** voice 允许 Unicode 文字、数字、普通空格、半角逗号和数字常用符号。 */
 function isTtsSafeVoice(text: string): boolean {
-  return /^[\p{L}\p{M} ,]*$/u.test(text)
+  return /^[\p{L}\p{M}\p{Nd} .,%:+\/\-]*$/u.test(text)
 }
 
 /**
@@ -241,15 +241,15 @@ function repairJapaneseWordCommas(text: string, voiceLang: string): string {
 /**
  * 对不需要语义理解的 voice 问题做本地、确定性修复。
  *
- * 只接受文字、空白、半角逗号和常见中日句读符号。数字、网址、代码或其他符号
- * 仍返回 null，交给翻译模型按语义改写，避免简单删符号造成误读。
+ * 只接受文字、数字、空白、半角逗号、常见中日句读符号和数字常用符号。
+ * 网址、代码或其他特殊符号仍返回 null，交给翻译模型按语义改写。
  *
  * @internal 导出以支持单元测试
  */
 export function normalizeTtsSafeVoice(text: string, voiceLang: string): string | null {
   const trimmed = (text ?? '').trim()
   if (!trimmed) return ''
-  if (!/^[\p{L}\p{M}\s,、，。！？；：]*$/u.test(trimmed)) return null
+  if (!/^[\p{L}\p{M}\p{Nd}\s,、，。！？；：.%:+\/\-]*$/u.test(trimmed)) return null
 
   let normalized = trimmed
     .replace(/[、，。！？；：]+/gu, ',')
