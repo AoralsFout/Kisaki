@@ -42,6 +42,8 @@ export default {
       solid: '實體',
       settings: '設定',
       more: '更多',
+      moveWindow: '移動視窗',
+      resizeCanvas: '畫布高度',
     },
     aria: {
       chatInput: '開啟聊天面板',
@@ -49,6 +51,8 @@ export default {
       stop: '停止生成',
       configTodo: '繼續完成初始設定',
       more: '開啟更多選單',
+      moveWindow: '拖動視窗',
+      resizeCharacterCanvas: '調整角色畫布高度',
     },
     stop: '停止',
     configTodo: '完成初始設定',

@@ -20,6 +20,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
+    "core:window:allow-start-dragging",
     "core:window:allow-set-ignore-cursor-events",
     "autostart:allow-enable",
     "autostart:allow-disable",

@@ -36,9 +36,10 @@ import {
   EVENT_SETTINGS_NAVIGATE,
   STORAGE_ONBOARDING_DONE,
   STORAGE_ONBOARDING_DISMISSED,
+  STORAGE_CHARACTER_CANVAS_TOP,
 } from './constants'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { getAllWindows } from '@tauri-apps/api/window'
+import { getAllWindows, getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
 import { listen, emitTo } from '@tauri-apps/api/event'
 import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
 import { initWindowState } from './utils/windowState'
@@ -61,6 +62,72 @@ const characterRef = ref<InstanceType<typeof Character> | null>(null)
 const showSession = ref(false)
 const showCharacterSelect = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
+
+// ── 角色画布顶部位置 ────────────────────────────────
+const CHARACTER_CANVAS_TOP_MAX = 0.8
+
+function clampCharacterTopRatio(value: number): number {
+  return Math.min(CHARACTER_CANVAS_TOP_MAX, Math.max(0, value))
+}
+
+function loadCharacterTopRatio(): number {
+  try {
+    const stored = Number(localStorage.getItem(STORAGE_CHARACTER_CANVAS_TOP))
+    if (Number.isFinite(stored)) return clampCharacterTopRatio(stored)
+  } catch { /* ignore */ }
+  return 0
+}
+
+const characterTopRatio = ref(loadCharacterTopRatio())
+const characterCanvasStyle = computed(() => ({
+  top: `${characterTopRatio.value * 100}%`,
+}))
+
+watch(characterTopRatio, value => {
+  try { localStorage.setItem(STORAGE_CHARACTER_CANVAS_TOP, String(value)) } catch { /* ignore */ }
+})
+
+async function startWindowDrag(event: MouseEvent) {
+  if (event.button !== 0) return
+  try {
+    await getCurrentWindow().startDragging()
+  } catch (error) {
+    log.warn("app.start_window_drag.warn", "拖动窗口失败", error)
+  }
+}
+
+/** 键盘方向键移动窗口。 */
+async function onMoveWindowKeydown(event: KeyboardEvent) {
+  const step = 20
+  const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+  const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+  if (!dx && !dy) return
+  event.preventDefault()
+  event.stopPropagation()
+  try {
+    const appWindow = getCurrentWindow()
+    const position = await appWindow.outerPosition()
+    await appWindow.setPosition(new PhysicalPosition(position.x + dx, position.y + dy))
+  } catch (error) {
+    log.warn("app.move_window_keydown.warn", "键盘移动窗口失败", error)
+  }
+}
+
+/** 滚轮向下缩短画布，向上增高画布。 */
+function onCanvasHeightWheel(event: WheelEvent) {
+  const delta = Math.max(-0.05, Math.min(0.05, event.deltaY * 0.0004))
+  if (!delta) return
+  characterTopRatio.value = clampCharacterTopRatio(characterTopRatio.value + delta)
+}
+
+/** 键盘方向键：↑ 增高画布，↓ 缩短画布。 */
+function onCanvasHeightKeydown(event: KeyboardEvent) {
+  const delta = event.key === 'ArrowDown' ? 0.03 : event.key === 'ArrowUp' ? -0.03 : 0
+  if (!delta) return
+  event.preventDefault()
+  event.stopPropagation()
+  characterTopRatio.value = clampCharacterTopRatio(characterTopRatio.value + delta)
+}
 
 /** 打开对话框（历史随对话框展开）；会话/换角色等其它浮层互斥关闭 */
 function openChat() {
@@ -382,13 +449,12 @@ async function handleSelectCharacter(charId: string) {
 
 <template>
   <main class="app-container">
-    <!-- 拖拽区域 -->
-    <div class="drag-region" data-tauri-drag-region data-pet-solid></div>
-
     <!-- 角色区 -->
     <!-- 边框跟随穿透模式（而非光标瞬时命中）：实体态常显作状态指示，穿透态始终隐藏 -->
     <div class="character-area" :class="{ 'is-passthrough': passthroughOn }">
-      <Character v-if="charReady && !noCharacter" ref="characterRef" @click="handleCharacterClick" />
+      <div class="character-canvas" :style="characterCanvasStyle">
+        <Character v-if="charReady && !noCharacter" ref="characterRef" @click="handleCharacterClick" />
+      </div>
 
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
       <div v-if="noCharacter" class="no-char-guide" data-pet-solid>
@@ -405,7 +471,7 @@ async function handleSelectCharacter(charId: string) {
     <ToolActivityList v-if="!noCharacter" />
 
     <!-- 底部交互区 -->
-    <div class="bottom-area">
+    <div class="bottom-area" :class="{ 'chat-open': chat.showInput }">
       <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
       <ToolConfirm v-if="!noCharacter" />
       <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
@@ -419,8 +485,7 @@ async function handleSelectCharacter(charId: string) {
 
       <!-- 状态行：配置待办；无内容时不渲染，出现时不推动工具栏位置 -->
       <div v-if="showConfigTodo" class="status-row" data-pet-solid>
-        <button class="stop-btn config-todo" @click="showOnboarding = true"
-          :aria-label="t('app.aria.configTodo')">
+        <button class="stop-btn config-todo" @click="showOnboarding = true" :aria-label="t('app.aria.configTodo')">
           <i class="fas fa-clipboard-check"></i>
           <span>{{ t('app.configTodo') }}</span>
         </button>
@@ -429,16 +494,14 @@ async function handleSelectCharacter(charId: string) {
       <div class="bars">
         <!-- 工作区条（AI 文件读写目录，按会话独立） -->
         <WorkspaceChip v-if="!noCharacter" />
-
         <!-- 陪伴状态工具栏：聊天 / 会话 / 更多（换角色、语音、穿透、设置收敛进更多；日志入口在 设置 → 诊断） -->
         <div class="toolbar" data-pet-solid>
-          <button class="tool-btn" :disabled="noCharacter" @click="openChat"
-            :aria-label="t('app.aria.chatInput')">
+          <button class="tool-btn" :disabled="noCharacter" @click="openChat" :aria-label="t('app.aria.chatInput')">
             <i class="fas fa-comment btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
           </button>
-          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter"
-            @click="toggleSessionPanel" :aria-label="t('app.toolbar.session')">
+          <button class="tool-btn" :disabled="chat.isProcessing || noCharacter" @click="toggleSessionPanel"
+            :aria-label="t('app.toolbar.session')">
             <i class="fas fa-comments btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.session') }}</span>
           </button>
@@ -450,8 +513,8 @@ async function handleSelectCharacter(charId: string) {
               <span class="btn-label">{{ t('app.toolbar.more') }}</span>
             </button>
             <Transition name="menu-fade">
-              <div v-if="showMoreMenu" id="more-menu" ref="moreMenuRef" class="more-menu" role="menu"
-                data-pet-solid @keydown="onMoreMenuKeydown">
+              <div v-if="showMoreMenu" id="more-menu" ref="moreMenuRef" class="more-menu" role="menu" data-pet-solid
+                @keydown="onMoreMenuKeydown">
                 <button class="menu-item" role="menuitem"
                   :disabled="chat.isProcessing || noCharacter || !sessionStore.canChangeCharacter"
                   :title="!sessionStore.canChangeCharacter ? t('app.toolbar.characterLocked') : undefined"
@@ -463,7 +526,8 @@ async function handleSelectCharacter(charId: string) {
                   <i class="fas fa-volume-high menu-icon" :class="{ 'is-off': !ttsEnabled }"></i>
                   <span>{{ ttsEnabled ? t('app.toolbar.voice') : t('app.toolbar.mute') }}</span>
                 </button>
-                <button class="menu-item" role="menuitem" :aria-pressed="passthroughOn" @click="menuAct(togglePassthrough)">
+                <button class="menu-item" role="menuitem" :aria-pressed="passthroughOn"
+                  @click="menuAct(togglePassthrough)">
                   <i class="fas fa-arrow-pointer menu-icon" :class="{ 'is-off': !passthroughOn }"></i>
                   <span>{{ passthroughOn ? t('app.toolbar.passthrough') : t('app.toolbar.solid') }}</span>
                 </button>
@@ -475,6 +539,24 @@ async function handleSelectCharacter(charId: string) {
             </Transition>
           </div>
         </div>
+        <!-- 窗口 / 画布控制栏 -->
+        <div class="toolbar canvas-toolbar" data-pet-solid>
+          <button class="tool-btn" type="button" :aria-label="t('app.aria.moveWindow')"
+            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+            @mousedown.stop.prevent="startWindowDrag"
+            @keydown="onMoveWindowKeydown">
+            <i class="fas fa-up-down-left-right btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.moveWindow') }}</span>
+          </button>
+          <button class="tool-btn" type="button" :aria-label="t('app.aria.resizeCharacterCanvas')"
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            @wheel.prevent.stop="onCanvasHeightWheel"
+            @keydown="onCanvasHeightKeydown">
+            <i class="fas fa-up-down btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.resizeCanvas') }}</span>
+          </button>
+        </div>
+
 
         <!-- 停止生成：与工具栏同一行，出现/消失不改变工具栏位置 -->
         <button v-if="chat.isProcessing" class="stop-btn" data-pet-solid @click="chat.cancelResponse()"
@@ -492,8 +574,7 @@ async function handleSelectCharacter(charId: string) {
         <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId"
           :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
           :title="sessionStore.currentSession?.name" @close="chat.closeInput()"
-          :context-utilization="chat.contextStats.utilization"
-          :context-detail="contextDetail" />
+          :context-utilization="chat.contextStats.utilization" :context-detail="contextDetail" />
       </div>
     </div>
 
@@ -570,40 +651,6 @@ async function handleSelectCharacter(charId: string) {
   opacity: 0.88;
 }
 
-.drag-region {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 200px;
-  height: 30px;
-  -webkit-app-region: drag;
-  cursor: move;
-  z-index: 1000;
-  background: #00000090;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  font-size: 12px;
-  opacity: 0;
-
-  transition: opacity 0.25s;
-
-  &:hover {
-    opacity: 1;
-  }
-
-  &::before {
-    position: absolute;
-    content: ' ';
-    width: 150px;
-    height: 1px;
-    background: var(--c-text-muted);
-  }
-}
-
 .character-area {
   position: absolute;
   width: calc(100% - 2px);
@@ -615,6 +662,15 @@ async function handleSelectCharacter(charId: string) {
    用 transparent 而非 none，保留 1px 占位避免布局抖动。 */
 .character-area.is-passthrough {
   border-color: transparent;
+}
+
+/* 内部角色画布：只调整它自己的高度，不改变外层应用窗口尺寸 */
+.character-canvas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
 }
 
 /* ---- 输入框弹出/收起动画（从底部缓慢展开） ---- */
@@ -643,14 +699,33 @@ async function handleSelectCharacter(charId: string) {
   pointer-events: none;
 }
 
+/* 对话框展开时底部区域占满窗口，让历史列表真正顶到窗口顶部 */
+.bottom-area.chat-open {
+  top: 0;
+  bottom: 0;
+}
+
+.bottom-area.chat-open :deep(.chat-history) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.bottom-area.chat-open :deep(.chat-history.expanded) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .bottom-area>* {
   pointer-events: auto;
+  /* 展开态底部区域占满窗口时，输入框/工具栏不能被历史列表挤压 */
+  flex-shrink: 0;
 }
 
 .bars {
   display: flex;
   flex-direction: row;
-  align-items: stretch; /* 工作区条与工具栏等高，垂直居中对齐 */
+  flex-wrap: wrap;
+  align-items: stretch;
+  /* 工作区条与工具栏等高，垂直居中对齐 */
   justify-content: center;
   gap: 8px;
   margin: 8px 0px;
@@ -834,7 +909,12 @@ async function handleSelectCharacter(charId: string) {
 }
 
 @media (max-height: 520px) {
-  .input-wrapper.open { max-height: 55vh; }
-  .bars { margin-block: var(--space-1); }
+  .input-wrapper.open {
+    max-height: 55vh;
+  }
+
+  .bars {
+    margin-block: var(--space-1);
+  }
 }
 </style>

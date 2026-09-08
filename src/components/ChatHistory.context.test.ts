@@ -105,12 +105,13 @@ describe('ChatHistory 历史列表', () => {
       const height = this.classList.contains('history-item') ? 444 : 220
       return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
     })
+    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(300)
 
     const wrapper = mount(ChatHistory, { props: { visible: true } })
     await flushPromises()
 
     expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 220px')
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 300px')
     const expand = wrapper.get('.collapsed-more')
     expect(expand.text()).toContain('chat.history.expandMessage')
     await expand.trigger('click')
@@ -119,6 +120,7 @@ describe('ChatHistory 历史列表', () => {
     expect(wrapper.find('.collapsed-more').exists()).toBe(false)
 
     rectSpy.mockRestore()
+    viewportSpy.mockRestore()
     wrapper.unmount()
   })
 

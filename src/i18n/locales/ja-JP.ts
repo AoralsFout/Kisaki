@@ -42,6 +42,8 @@ export default {
       solid: 'ソリッド',
       settings: '設定',
       more: 'その他',
+      moveWindow: 'ウィンドウ移動',
+      resizeCanvas: 'キャンバス高さ',
     },
     aria: {
       chatInput: 'チャットパネルを開く',
@@ -49,6 +51,8 @@ export default {
       stop: '生成を停止',
       configTodo: '初期設定を続けて完了',
       more: 'その他メニューを開く',
+      moveWindow: 'ウィンドウをドラッグ',
+      resizeCharacterCanvas: 'キャラクターキャンバスの高さを調整',
     },
     stop: '停止',
     configTodo: '初期設定を完了',

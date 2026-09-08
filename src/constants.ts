@@ -140,3 +140,6 @@ export const STORAGE_SESSIONS = 'deskpet-sessions'
 
 /** 当前会话 ID 存储键 */
 export const STORAGE_CURRENT_SESSION = 'deskpet-current-session'
+
+/** 角色画布顶部位置（占窗口高度的比例，0–0.8） */
+export const STORAGE_CHARACTER_CANVAS_TOP = 'deskpet-character-canvas-top-ratio'

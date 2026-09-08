@@ -42,6 +42,8 @@ export default {
       solid: 'Solid mode',
       settings: 'Settings',
       more: 'More',
+      moveWindow: 'Move window',
+      resizeCanvas: 'Canvas height',
     },
     aria: {
       chatInput: 'Open chat panel',
@@ -49,6 +51,8 @@ export default {
       stop: 'Stop generating',
       configTodo: 'Resume initial setup',
       more: 'Open more menu',
+      moveWindow: 'Drag window',
+      resizeCharacterCanvas: 'Resize character canvas height',
     },
     stop: 'Stop',
     configTodo: 'Finish initial setup',

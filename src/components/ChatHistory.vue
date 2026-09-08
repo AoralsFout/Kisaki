@@ -43,6 +43,7 @@ const expanded = computed(() => chat.showInput)
 const entered = ref(false)
 onMounted(() => {
   requestAnimationFrame(() => { entered.value = true })
+  window.addEventListener('resize', onViewportResize)
 })
 
 /** 助手消息展示名：优先消息内的角色身份快照，旧数据回退当前角色名/品牌名 */
@@ -73,10 +74,14 @@ function onWheel(e: WheelEvent) {
 }
 
 /**
- * 折叠高度 = 最新一条消息的实际高度（上限 220px，过长时从顶部预览），
- * 保证折叠态恰好只展开一条对话。
+ * 折叠高度 = 最新一条消息的实际高度，最大不超过当前窗口高度；
+ * 超过窗口高度时仍显示“展开查看全文”。
  */
-const MAX_COLLAPSED_HEIGHT = 220
+function viewportHeight(): number {
+  if (typeof window === 'undefined') return 1
+  return Math.max(1, window.innerHeight || document.documentElement?.clientHeight || 1)
+}
+
 const collapsedHeight = ref(0)
 const latestOverflowing = ref(false)
 
@@ -91,8 +96,30 @@ function measureCollapsed() {
   const last = lastHistoryItem()
   const padBottom = parseFloat(getComputedStyle(list).paddingBottom) || 0
   const h = last ? last.getBoundingClientRect().height + padBottom : 0
-  latestOverflowing.value = h > MAX_COLLAPSED_HEIGHT
-  collapsedHeight.value = Math.min(Math.ceil(h), MAX_COLLAPSED_HEIGHT)
+  const maxHeight = collapsedAvailableHeight()
+  latestOverflowing.value = h > maxHeight
+  collapsedHeight.value = Math.min(Math.ceil(h), maxHeight)
+}
+
+/** 历史列表可用的最大收起高度 = 窗口高度 - 其下方工具栏/输入区占用的高度。 */
+function collapsedAvailableHeight(): number {
+  const history = historyRef.value
+  if (!history) return viewportHeight()
+  let belowHeight = 0
+  for (let sibling = history.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    const el = sibling as HTMLElement
+    const rect = el.getBoundingClientRect()
+    const style = getComputedStyle(el)
+    belowHeight += rect.height
+      + (parseFloat(style.marginTop) || 0)
+      + (parseFloat(style.marginBottom) || 0)
+  }
+  return Math.max(1, viewportHeight() - belowHeight)
+}
+
+function onViewportResize() {
+  measureCollapsed()
+  scrollToLatest('auto')
 }
 watch(
   () => [sessionStore.currentSessionId, chat.messages.length, hasPending.value, expanded.value] as const,
@@ -178,6 +205,7 @@ function onHistoryImageLoad() {
 onUnmounted(() => {
   sessionSettleVersion++
   cancelCollapseScroll()
+  window.removeEventListener('resize', onViewportResize)
 })
 
 // 首次载入与每次切换会话都瞬时定位；仅同一会话内的新消息使用平滑滚动。
@@ -350,7 +378,7 @@ watch(expanded, (v) => {
 
 /* 折叠态：仅最新一条消息的高度（动态量测） */
 .chat-history.entered {
-  grid-template-rows: var(--collapsed-h, 220px);
+  grid-template-rows: var(--collapsed-h, 100vh);
 }
 
 /* 展开态：对话框弹出时生长到全高 */
