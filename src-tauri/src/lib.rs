@@ -85,6 +85,7 @@ pub fn run() {
                 sessions_dir,
                 app_data.join("workspace-grants.json"),
             )?;
+            log::install_panic_hook();
             command::init_output_dir(app_cache.join("execution-output"))?;
             // asset:// 仅允许读取角色目录。静态配置保持空 scope，运行时加入实际目录，
             // 兼容 dev 的仓库 characters/ 与生产 app_data_dir，同时避免暴露全盘文件。
@@ -113,7 +114,11 @@ pub fn run() {
                         }
                     })
                 {
-                    eprintln!("[kisaki] 注册全局快捷键 Alt+K 失败: {e}");
+                    log::write_native_log(
+                        "warn",
+                        "Shortcut",
+                        format!("注册全局快捷键 Alt+K 失败: {e}"),
+                    );
                 }
             }
 

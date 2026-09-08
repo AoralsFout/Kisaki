@@ -37,7 +37,7 @@ export function getDisplayLanguage(): string {
 /** 设置用户偏好的显示语言 */
 export function setDisplayLanguage(lang: string) {
   localStorage.setItem(DISPLAY_LANG_KEY, lang)
-  log.info('显示语言切换: %s', lang)
+  log.info("language.set_display_language.info", `显示语言切换: ${lang}`, { lang: lang })
 }
 
 /**

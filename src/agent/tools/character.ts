@@ -48,13 +48,13 @@ export const setEmotionTool: Tool = {
     const store = getStore()
     if (!store) return '角色数据未就绪'
     if (store.emotions.length && !store.emotions.includes(emotion)) {
-      log.warn('不支持的情绪: %s', emotion)
+      log.warn("tool_character.module.warn", `不支持的情绪: ${emotion}`, undefined, { emotion: emotion })
       return `不支持的情绪。可用: ${store.emotions.join(', ')}`
     }
     const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setEmotion(emotion)
-    log.info('表情切换: %s', emotion)
+    log.info("tool_character.module.info", `表情切换: ${emotion}`, { emotion: emotion })
     return `表情已切换为「${emotion}」`
   },
 }
@@ -84,13 +84,13 @@ export const setStanceTool: Tool = {
     const store = getStore()
     if (!store) return '角色数据未就绪'
     if (store.poses.length && !store.poses.includes(stance)) {
-      log.warn('不支持的姿势: %s', stance)
+      log.warn("tool_character.module.warn", `不支持的姿势: ${stance}`, undefined, { stance: stance })
       return `不支持的姿势。可用: ${store.poses.join(', ')}`
     }
     const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setPoseTag(stance)
-    log.info('姿势切换: %s', stance)
+    log.info("tool_character.module.info", `姿势切换: ${stance}`, { stance: stance })
     return `姿势已切换为「${stance}」`
   },
 }
@@ -120,13 +120,13 @@ export const setCostumeTool: Tool = {
     const store = getStore()
     if (!store) return '角色数据未就绪'
     if (store.costumes.length && !store.costumes.includes(costume)) {
-      log.warn('不支持的服装: %s', costume)
+      log.warn("tool_character.module.warn", `不支持的服装: ${costume}`, undefined, { costume: costume })
       return `不支持的服装。可用: ${store.costumes.join(', ')}`
     }
     const ctrl = getAgentController()
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setCostume(costume)
-    log.info('服装切换: %s', costume)
+    log.info("tool_character.module.info", `服装切换: ${costume}`, { costume: costume })
     return `服装已切换为「${costume}」`
   },
 }
@@ -161,7 +161,7 @@ export const setLookTool: Tool = {
     if (args.stance) parts.push(`姿势=${args.stance}`)
     if (args.emotion) parts.push(`表情=${args.emotion}`)
     if (args.costume) parts.push(`服装=${args.costume}`)
-    log.info('角色外观更新: %s', parts.join(', ') || '无变更')
+    log.info("tool_character.module.info", `角色外观更新: ${parts.join(', ') || '无变更'}`, { parts_join: parts.join(', ') || '无变更' })
     return parts.length ? `已更新：${parts.join('、')}` : '未做任何更改'
   },
 }
@@ -189,7 +189,7 @@ export const setScreenPoseTool: Tool = {
   handler: async (args) => {
     const pose = String(args.pose ?? '')
     if (!ALL_POSE_KEYS.includes(pose as any)) {
-      log.warn('不支持的屏幕位置: %s', pose)
+      log.warn("tool_character.module.warn", `不支持的屏幕位置: ${pose}`, undefined, { pose: pose })
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
     const render = getAgentCharData()?.render ?? 'illustration'
@@ -197,7 +197,7 @@ export const setScreenPoseTool: Tool = {
     if (!ctrl) return '角色控制器未初始化'
     ctrl.setScreenPose(pose as any)
     const label = POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose
-    log.info('屏幕位置切换: %s (%s)', pose, label)
+    log.info("tool_character.module.info", `屏幕位置切换: ${pose} (${label})`, { pose: pose, label: label })
     return `屏幕位置已切换为「${label}」`
   },
 }
@@ -243,7 +243,7 @@ export const getStateTool: Tool = {
       costume: ctrl.currentCostume.value,
       screen: screenLabel,
     }
-    log.debug('查询角色状态: %o', state)
+    log.debug("tool_character.module.debug", `查询角色状态: ${JSON.stringify(state)}`, { state: state })
     return [
       `角色: ${state.character}`,
       `姿势: ${state.pose}`,

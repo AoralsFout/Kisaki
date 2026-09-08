@@ -33,7 +33,7 @@ export const weatherTool: Tool = {
   handler: async (args) => {
     const city = String(args.city)
     const days = Math.min(Math.max(Number(args.days) || 1, 1), 3)
-    log.debug('查询天气: %s (%d 天)', city, days)
+    log.debug("tool_weather.module.debug", `查询天气: ${city} (${days} 天)`, { city: city, days: days })
 
     try {
       const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, {
@@ -47,7 +47,7 @@ export const weatherTool: Tool = {
       const forecast = data.weather?.slice(0, days) ?? []
 
       if (!current) {
-        log.warn('未获取到天气数据: %s', city)
+        log.warn("tool_weather.module.warn", `未获取到天气数据: ${city}`, undefined, { city: city })
         return `无法获取 "${city}" 的天气信息`
       }
 
@@ -65,14 +65,14 @@ export const weatherTool: Tool = {
         result += `\n📅 ${date}: ${desc} ${minTemp}~${maxTemp}°C`
       }
 
-      log.info('天气查询成功: %s - %s°C', city, current.temp_C)
+      log.info("tool_weather.module.info", `天气查询成功: ${city} - ${current.temp_C}°C`, { city: city, current_temp_c: current.temp_C })
       return result
     } catch (err) {
       if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
-        log.warn('天气查询超时: %s', city)
+        log.warn("tool_weather.module.warn", `天气查询超时: ${city}`, undefined, { city: city })
         return `查询 "${city}" 天气超时，请稍后重试`
       }
-      log.warn('天气查询失败: %s - %s', city, (err as Error).message)
+      log.warn("tool_weather.module.warn", `天气查询失败: ${city} - ${(err as Error).message}`, err, { city: city })
       return `查询天气失败: ${(err as Error).message}`
     }
   },

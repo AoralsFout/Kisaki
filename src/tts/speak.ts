@@ -117,7 +117,7 @@ export class TtsEngine {
       if (controller.signal.aborted) return
       await this.playAudio(result.audio_base64, result.format, controller.signal)
     } catch (err) {
-      log.warn('批处理播报失败', err)
+      log.warn("tts.speak_text.warn", "批处理播报失败", err)
     } finally {
       if (this.currentController === controller) {
         this.currentController = null
@@ -163,14 +163,14 @@ export class TtsEngine {
     const canStream = MediaSource.isTypeSupported(mimeType)
 
     if (!canStream) {
-      log.info('当前环境不支持 MediaSource 流式播放，回退到批处理模式')
+      log.info("tts.speak_text_streaming.info", "当前环境不支持 MediaSource 流式播放，回退到批处理模式")
       return this.speakText(text, voiceId)
     }
 
     try {
       await this.playStream(controller, cvConfig.model, voiceId, text, wsUrl, mimeType)
     } catch (err) {
-      log.warn('流式播报失败', err)
+      log.warn("tts.speak_text_streaming.warn", "流式播报失败", err)
     } finally {
       if (this.currentController === controller) {
         this.currentController = null
@@ -190,13 +190,13 @@ export class TtsEngine {
   ): Promise<void> {
     const config = loadGptSoVitsConfig()
     if (!config.apiUrl) {
-      log.warn('GPT-SoVITS API URL 未配置，跳过 TTS')
+      log.warn("tts.speak_gpt_so_vits_stream.warn", "GPT-SoVITS API URL 未配置，跳过 TTS")
       return
     }
 
     const charParams = await this.getGptSoVitsCharacterParams()
     if (!charParams.refAudioPath) {
-      log.warn('GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
+      log.warn("tts.speak_gpt_so_vits_stream.warn", "GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS")
       return
     }
 
@@ -211,7 +211,7 @@ export class TtsEngine {
       charParams.promptLang || undefined,
     )
 
-    log.debug('GPT-SoVITS 流式请求: stream_id=%s', streamId)
+    log.debug("tts.speak_gpt_so_vits_stream.debug", `GPT-SoVITS 流式请求: stream_id=${streamId}`, { stream_id: streamId })
 
     // Web Audio 连续 PCM 播放器：收到字节即排程播放，无缝衔接、低延迟
     const player = new PcmStreamPlayer()
@@ -263,7 +263,7 @@ export class TtsEngine {
     }
 
     if (streamError) {
-      log.warn('GPT-SoVITS 流式合成失败: %s', streamError)
+      log.warn("tts.speak_gpt_so_vits_stream.warn", `GPT-SoVITS 流式合成失败: ${streamError}`, streamError)
     }
   }
 
@@ -276,14 +276,14 @@ export class TtsEngine {
   ): Promise<void> {
     const config = loadGptSoVitsConfig()
     if (!config.apiUrl) {
-      log.warn('GPT-SoVITS API URL 未配置，跳过 TTS')
+      log.warn("tts.speak_with_gpt_so_vits.warn", "GPT-SoVITS API URL 未配置，跳过 TTS")
       return
     }
 
     // 获取角色级参数（参考音频必须从角色数据获取）
     const charParams = await this.getGptSoVitsCharacterParams()
     if (!charParams.refAudioPath) {
-      log.warn('GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
+      log.warn("tts.speak_with_gpt_so_vits.warn", "GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS")
       return
     }
 
@@ -306,7 +306,7 @@ export class TtsEngine {
         try {
           await this.voicePlayer(url, controller.signal)
         } catch {
-          log.warn('playVoice 口型播放失败，回退 HTMLAudio')
+          log.warn("tts.speak_with_gpt_so_vits.warn", "playVoice 口型播放失败，回退 HTMLAudio")
           if (!controller.signal.aborted) {
             await playAudioBlob(result.blob, controller.signal)
           }
@@ -317,7 +317,7 @@ export class TtsEngine {
         await playAudioBlob(result.blob, controller.signal)
       }
     } catch (err) {
-      log.warn('GPT-SoVITS 合成/播放失败: %s', (err as Error).message)
+      log.warn("tts.speak_with_gpt_so_vits.warn", `GPT-SoVITS 合成/播放失败: ${(err as Error).message}`, err)
     } finally {
       if (this.currentController === controller) {
         this.currentController = null
@@ -375,7 +375,7 @@ export class TtsEngine {
         apiKey: cvConfig.apiKey, model: cvConfig.model, voice: voiceId, text, wsUrl,
       })
     } catch (err) {
-      log.warn('口型合成失败', err)
+      log.warn("tts.speak_batch_with_lip_sync.warn", "口型合成失败", err)
       return
     }
     if (controller.signal.aborted) return
@@ -388,7 +388,7 @@ export class TtsEngine {
     try {
       await this.voicePlayer!(url, controller.signal)
     } catch (err) {
-      log.warn('playVoice 口型播放失败，回退 HTMLAudio', err)
+      log.warn("tts.speak_batch_with_lip_sync.warn", "playVoice 口型播放失败，回退 HTMLAudio", err)
       if (!controller.signal.aborted) await this.playAudio(result.audio_base64, result.format, controller.signal)
     } finally {
       URL.revokeObjectURL(url)
@@ -476,7 +476,7 @@ export class TtsEngine {
           flushBuffer()
           if (!firstChunkAppended) {
             firstChunkAppended = true
-            audio.play().catch(e => log.warn('音频播放启动失败', e))
+            audio.play().catch(e => log.warn("tts.play_stream.warn", "音频播放启动失败", e))
           }
         } catch { /* 跳过损坏块 */ }
       })
@@ -525,10 +525,10 @@ export class TtsEngine {
       audio.pause()
       audio.src = ''
       if (mediaSource.readyState !== 'closed') {
-        try { mediaSource.endOfStream() } catch (e) { log.warn('MediaSource endOfStream 失败', e) }
+        try { mediaSource.endOfStream() } catch (e) { log.warn("tts.cleanup_media_source.warn", "MediaSource endOfStream 失败", e) }
       }
       URL.revokeObjectURL(blobUrl)
-    } catch (e) { log.warn('清理 MediaSource 资源失败', e) }
+    } catch (e) { log.warn("tts.cleanup_media_source.warn", "清理 MediaSource 资源失败", e) }
   }
 
   /** 通过 HTMLAudioElement 播放 base64 音频 */

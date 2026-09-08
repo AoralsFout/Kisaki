@@ -159,7 +159,7 @@ export class ApiClient {
 
         // 网络错误才重试
         if (attempt < maxRetries) {
-          log.warn('请求失败，第 %d 次重试: %s', attempt + 1, lastError)
+          log.warn("api_client.request.warn", `请求失败，第 ${attempt + 1} 次重试: ${lastError}`, undefined, { attempt: attempt + 1, last_error: lastError })
           await this.delay(attempt)
           continue
         }

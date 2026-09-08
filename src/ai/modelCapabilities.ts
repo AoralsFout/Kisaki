@@ -1003,12 +1003,11 @@ export function getModelProfile(model: string): ModelProfile {
   const normalizedModel = normalizeModelId(model)
   for (const entry of MODEL_REGISTRY) {
     if (entry.pattern.test(normalizedModel)) {
-      log.debug('模型 [%s] 匹配→%s (窗口=%d, 层级=%s)',
-        model, entry.profile.family, entry.profile.maxContextWindow, entry.profile.tier)
+      log.debug("model_caps.get_model_profile.debug", `模型 [${model}] 匹配→${entry.profile.family} (窗口=${entry.profile.maxContextWindow}, 层级=${entry.profile.tier})`, { model: model, entry_profile: entry.profile.family, entry_profile2: entry.profile.maxContextWindow, entry_profile23: entry.profile.tier })
       return { ...entry.profile }
     }
   }
-  log.info('模型 [%s] 未在注册表中找到，使用默认配置', model)
+  log.info("model_caps.get_model_profile.info", `模型 [${model}] 未在注册表中找到，使用默认配置`, { model: model })
   return { ...DEFAULT_PROFILE }
 }
 
@@ -1024,8 +1023,7 @@ export function getContextLimit(model: string): number {
   const budget = profile.maxContextWindow - reserved
   const cap = TIER_CONTEXT_CAP[profile.tier]
   const limit = clamp(Math.min(budget, cap), 4_000, 200_000)
-  log.trace('getContextLimit(%s) = %d (窗口=%d, 输出=%d, 层级上限=%d)',
-    model, limit, profile.maxContextWindow, profile.recommendedMaxTokens, cap)
+  log.trace("model_caps.get_context_limit.trace", `getContextLimit(${model}) = ${limit} (窗口=${profile.maxContextWindow}, 输出=${profile.recommendedMaxTokens}, 层级上限=${cap})`, { model: model, limit: limit, profile_max_context_window: profile.maxContextWindow, profile_recommended_max_tokens: profile.recommendedMaxTokens, cap: cap })
   return limit
 }
 
@@ -1038,7 +1036,6 @@ export function getContextLimit(model: string): number {
 export function getMaxRounds(model: string): number {
   const limit = getContextLimit(model)
   const rounds = clamp(Math.floor(limit / AVG_TOKENS_PER_TURN), 5, 100)
-  log.trace('getMaxRounds(%s) = %d (limit=%d, avgT=%d)',
-    model, rounds, limit, AVG_TOKENS_PER_TURN)
+  log.trace("model_caps.get_max_rounds.trace", `getMaxRounds(${model}) = ${rounds} (limit=${limit}, avgT=${AVG_TOKENS_PER_TURN})`, { model: model, rounds: rounds, limit: limit, avg_tokens_per_turn: AVG_TOKENS_PER_TURN })
   return rounds
 }

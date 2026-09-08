@@ -35,7 +35,7 @@ async function pickDirectory() {
       sessionStore.setWorkspace(grant)
     }
   } catch (err) {
-    log.warn('选择工作目录失败: %s', (err as Error).message)
+    log.warn("workspace_chip.pick_directory.warn", `选择工作目录失败: ${(err as Error).message}`, err)
   }
 }
 

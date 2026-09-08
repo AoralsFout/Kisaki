@@ -176,7 +176,7 @@ async function onCharactersChanged() {
   if (list.length === 0) return // 角色被删空：noCharacter 自动恢复为 true
   const cur = charStore.currentId
   const target = list.includes(cur) ? cur : (list.includes('kisaki') ? 'kisaki' : list[0])
-  await charStore.loadCharacter(target, true).catch((e) => log.error('刷新角色失败', e))
+  await charStore.loadCharacter(target, true).catch((e) => log.error("app.on_characters_changed.error", "刷新角色失败", e))
   applyCharacterPersona()
 }
 
@@ -262,7 +262,7 @@ onMounted(async () => {
   // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
   await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
   chat.init()
-  await charStore.init().catch((e) => log.error('角色初始化失败', e))
+  await charStore.init().catch((e) => log.error("app.module.error", "角色初始化失败", e))
   charReady.value = true
   // 首次运行：无完成标记时显示引导；已被「稍后」搁置则不再整层弹出，
   // 改以主窗口的配置待办入口恢复（仅主窗口）。
@@ -311,7 +311,7 @@ onMounted(async () => {
           })
         }
       }
-    } catch (e) { log.warn('BroadcastChannel 初始化失败', e) }
+    } catch (e) { log.warn("app.module.warn", "BroadcastChannel 初始化失败", e) }
   }
 
   // 监听其它窗口（设置窗口）的角色变更通知，刷新主窗口角色状态
@@ -362,7 +362,7 @@ async function openSettingsWindow(tab?: string) {
       // 已有窗口时通过事件定位到目标标签（设置窗口侧会先经过未保存更改确认）
       if (tab) {
         await emitTo(WINDOW_SETTINGS, EVENT_SETTINGS_NAVIGATE, { tab })
-          .catch((e) => log.warn('定位设置标签失败', e))
+          .catch((e) => log.warn("app.open_settings_window.warn", "定位设置标签失败", e))
       }
       return
     }
@@ -379,7 +379,7 @@ async function openSettingsWindow(tab?: string) {
       visible: false,
     })
   } catch (e) {
-    log.error('无法打开设置窗口', e)
+    log.error("app.open_settings_window.error", "无法打开设置窗口", e)
   }
 }
 

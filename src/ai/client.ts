@@ -95,11 +95,11 @@ export async function loadConfigSecure(): Promise<AIConfig> {
   if (resolved.key === null) {
     if (resolved.readError) {
       // 瞬时读取失败：保留 keyStorage 标记，不清除配置，下次重试
-      log.error('API Key 读取失败（瞬时），保留配置待重试')
+      log.error("api.load_config_secure.error", "API Key 读取失败（瞬时），保留配置待重试", new Error("API Key 读取失败（瞬时），保留配置待重试"))
       return { ...config, apiKey: '' }
     }
     // 密钥链条目丢失 / 本地密文损坏：清掉 Key，避免把乱码发给 API 造成 401
-    log.error('API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    log.error("api.load_config_secure.error", "API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
     const { keyStorage: _marker, ...rest } = config
     saveConfig({ ...rest, apiKey: '' })
     return { ...rest, apiKey: '' }
@@ -219,14 +219,14 @@ export async function chat(
   }
   if (tools?.length) {
     body.tools = tools
-    log.debug('tools sent: %d', tools.length, tools.map(t => t.function.name))
+    log.debug("api.chat.debug", `tools sent: ${tools.length}`, { tools_length: tools.length, tools_map: tools.map(t => t.function.name) })
   } else if (responseFormat) {
     // response_format 与 tools 互斥：有 tools 时不能用，无 tools 时可用
     body.response_format = responseFormat
     const detail = responseFormat.type === 'json_schema'
       ? 'json_schema(' + (responseFormat.json_schema?.name ?? '') + ')'
       : 'json_object'
-    log.info('📐 response_format=%s (model=%s)', detail, config.model)
+    log.info("api.chat.info", `📐 response_format=${detail} (model=${config.model})`, { detail: detail, config_model: config.model })
   }
 
   for (let attempt = 1; ; attempt++) {

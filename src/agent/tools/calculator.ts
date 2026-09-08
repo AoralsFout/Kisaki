@@ -183,13 +183,13 @@ export const calculatorTool: Tool = {
     const expr = String(args.expression ?? '')
     if (!expr.trim()) return '请提供数学表达式'
 
-    log.debug('计算: "%s"', expr)
+    log.debug("tool_calculator.module.debug", `计算: "${expr}"`, { expr: expr })
     try {
       const result = safeEval(expr)
-      log.debug('计算结果: %s = %s', expr, result)
+      log.debug("tool_calculator.module.debug", `计算结果: ${expr} = ${result}`, { expr: expr, result: result })
       return `${expr} = ${result}`
     } catch (err) {
-      log.warn('计算失败: "%s" - %s', expr, (err as Error).message)
+      log.warn("tool_calculator.module.warn", `计算失败: "${expr}" - ${(err as Error).message}`, err, { expr: expr })
       return `计算错误: ${(err as Error).message}`
     }
   },

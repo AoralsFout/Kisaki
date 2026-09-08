@@ -24,7 +24,7 @@ const statusText = computed(() => t(`app.execution.status.${executionState.statu
       </button>
     </div>
     <code v-if="executionState.command" class="execution-command" data-selectable>{{ executionState.command }}</code>
-    <pre v-if="executionState.output" class="execution-output" data-selectable>{{ executionState.output }}</pre>
+    <pre v-if="executionState.output" class="code-block execution-output" data-selectable>{{ executionState.output }}</pre>
     <div v-else class="execution-wait">{{ t('app.execution.waitingOutput') }}</div>
   </div>
 </template>
@@ -81,13 +81,11 @@ const statusText = computed(() => t(`app.execution.status.${executionState.statu
   max-height: 160px;
   overflow: auto;
   margin: 8px 0 0;
-  padding: 8px;
+  padding: 9px 11px;
+  border: 1px solid rgba(120, 180, 255, 0.12);
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.36);
   color: #c7e6ce;
-  font: var(--fs-aux)/1.45 var(--font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .execution-wait { margin-top: 7px; font-size: var(--fs-aux); color: rgba(255, 255, 255, 0.72); }

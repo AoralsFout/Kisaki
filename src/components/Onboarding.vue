@@ -60,7 +60,7 @@ async function refreshApi() {
     const cfg = await loadConfigSecure()
     apiReady.value = isConfigValid(cfg)
   } catch (e) {
-    log.warn('检测 API 配置失败', e)
+    log.warn("onboarding.refresh_api.warn", "检测 API 配置失败", e)
     apiReady.value = false
   }
 }

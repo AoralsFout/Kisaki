@@ -155,4 +155,4 @@ function parseTextToolCalls(
 
 import { initTools } from './index'
 initTools()
-log.info('Agent 服务初始化完成')
+log.info("agent_svc.module.info", "Agent 服务初始化完成")

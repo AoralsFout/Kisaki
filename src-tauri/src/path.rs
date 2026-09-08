@@ -60,6 +60,13 @@ pub(crate) fn log_dir() -> PathBuf {
     dir
 }
 
+/// 日志系统初始化前返回 None，供 panic hook 和测试期的尽力而为日志使用。
+pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
+    let dir = LOGS_DIR.get()?.clone();
+    let _ = fs::create_dir_all(&dir);
+    Some(dir)
+}
+
 /// AI 文件改动备份根目录（app_cache_dir/backups）。
 pub(crate) fn backups_dir() -> PathBuf {
     let dir = BACKUPS_DIR.get().expect("BACKUPS_DIR 未初始化").clone();

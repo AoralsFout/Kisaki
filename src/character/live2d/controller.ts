@@ -50,13 +50,13 @@ export function useLive2DController() {
   function setExpression(id: string): boolean {
     if (!sprite || !manifest) return false
     if (!manifest.expressions.some(e => e.id === id)) {
-      log.warn('未知表情: %s', id)
+      log.warn("live2_dctrl.set_expression.warn", `未知表情: ${id}`, undefined, { id: id })
       return false
     }
     sprite.setExpression({ expressionId: id })
     currentExpression.value = id
     charStore.applyVisualState({ emotion: id }) // 复用 emotion 字段持久化
-    log.info('表情切换: %s', id)
+    log.info("live2_dctrl.set_expression.info", `表情切换: ${id}`, { id: id })
     return true
   }
 
@@ -64,11 +64,11 @@ export function useLive2DController() {
   function playMotion(group: string, no = 0): boolean {
     if (!sprite || !manifest) return false
     if (!manifest.motions.some(m => m.group === group)) {
-      log.warn('未知动作组: %s', group)
+      log.warn("live2_dctrl.play_motion.warn", `未知动作组: ${group}`, undefined, { group: group })
       return false
     }
     void sprite.startMotion({ group, no, priority: Priority.Normal })
-    log.info('播放动作: %s[%d]', group, no)
+    log.info("live2_dctrl.play_motion.info", `播放动作: ${group}[${no}]`, { group: group, no: no })
     return true
   }
 
@@ -77,7 +77,7 @@ export function useLive2DController() {
     if (!ALL_POSE_KEYS.includes(key)) return
     charStore.applyVisualState({ screenPose: key })
     onScreenPose?.()
-    log.info('屏幕位置: %s', key)
+    log.info("live2_dctrl.set_screen_pose.info", `屏幕位置: ${key}`, { key: key })
   }
 
   /** Live2D 口型：用 easy-live2d playVoice 播放语音并驱动口型；signal 中止即停 */

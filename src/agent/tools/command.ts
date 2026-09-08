@@ -185,7 +185,7 @@ export const runShellTool: Tool = {
     },
   },
   handler: async args => {
-    log.warn('执行已批准的 Shell 计划')
+    log.warn("tool_command.module.warn", "执行已批准的 Shell 计划")
     return executeApproved(args)
   },
 }

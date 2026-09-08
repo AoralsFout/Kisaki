@@ -7,8 +7,16 @@
  */
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getBuffer, clearBuffer, subscribe, subscribeCrossWindow } from '../utils/logger'
-import type { LogEntry, LogLevel } from '../utils/logger'
+import {
+  LOG_SCHEMA_VERSION,
+  createLogger,
+  getBuffer,
+  clearBuffer,
+  flushLogs,
+  subscribe,
+  subscribeCrossWindow,
+} from '../utils/logger'
+import type { LogEntry, LogLevel, LogContext, SerializedError } from '../utils/logger'
 import { QUERY_LOGS } from '../constants'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -16,6 +24,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { initWindowState } from '../utils/windowState'
 
 const { t } = useI18n()
+const log = createLogger('LogViewer')
 
 // ─── 窗口模式 ─────────────────────────────────────────
 
@@ -26,13 +35,16 @@ const isStandalone = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 
 interface DisplayEntry {
   id: number
+  schemaVersion: typeof LOG_SCHEMA_VERSION
   timestamp: string
   level: LogLevel
   namespace: string
   message: string
-  args?: unknown[]
+  event: string
+  error?: SerializedError
+  context?: LogContext
   /** 来源窗口 */
-  source?: string
+  source: string
   /** 是否展开显示详细内容 */
   expanded: boolean
 }
@@ -209,12 +221,27 @@ function formatTime(ts: string): string {
   return `${h}:${m}:${s}.${ms}`
 }
 
-function formatArgsDisplay(args?: unknown[]): string {
-  if (!args || args.length === 0) return ''
-  return args.map(a => {
-    if (a instanceof Error) return `Error: ${a.message}\n${a.stack || ''}`
-    try { return JSON.stringify(a, null, 2) } catch { return String(a) }
-  }).join('\n---\n')
+function formatValue(value: unknown): string {
+  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+function hasDetails(entry: DisplayEntry): boolean {
+  return Boolean(entry.error || entry.context || entry.event)
+}
+
+function formatDetailsDisplay(entry: DisplayEntry): string {
+  const sections: string[] = []
+  if (entry.event) sections.push(`event: ${entry.event}`)
+  if (entry.error) {
+    const lines = [`${entry.error.name}: ${entry.error.message}`]
+    if (entry.error.code) lines.push(`code: ${entry.error.code}`)
+    if (entry.error.stack) lines.push(entry.error.stack)
+    if (entry.error.cause) lines.push(`cause:\n${formatValue(entry.error.cause)}`)
+    if (entry.error.details) lines.push(`details:\n${formatValue(entry.error.details)}`)
+    sections.push(lines.join('\n'))
+  }
+  if (entry.context) sections.push(`context:\n${formatValue(entry.context)}`)
+  return sections.join('\n\n---\n\n')
 }
 
 // ─── 实时模式（rAF 节流） ────────────────────────────
@@ -222,11 +249,14 @@ function formatArgsDisplay(args?: unknown[]): string {
 function addEntry(entry: LogEntry) {
   const display: DisplayEntry = {
     id: nextId++,
+    schemaVersion: entry.schemaVersion,
     timestamp: entry.timestamp,
     level: entry.level,
     namespace: entry.namespace,
     message: entry.message,
-    args: entry.args,
+    event: entry.event,
+    error: entry.error,
+    context: entry.context,
     source: entry.source,
     expanded: false,
   }
@@ -240,12 +270,16 @@ function addEntry(entry: LogEntry) {
 // ─── 历史模式 ─────────────────────────────────────────
 
 interface HistoryResultEntry {
+  schemaVersion: typeof LOG_SCHEMA_VERSION
   line: number
   timestamp: string
-  level: string
+  level: LogLevel
   namespace: string
   message: string
   source: string
+  event: string
+  error?: SerializedError
+  context?: LogContext
 }
 
 interface HistoryPage {
@@ -255,15 +289,21 @@ interface HistoryPage {
 }
 
 function mapHistoryEntries(result: HistoryResultEntry[]): DisplayEntry[] {
-  return result.map(r => ({
+  return result
+    .filter(r => r.schemaVersion === LOG_SCHEMA_VERSION)
+    .map(r => ({
     id: nextId++,
+    schemaVersion: r.schemaVersion,
     timestamp: r.timestamp,
-    level: (ALL_LEVELS.includes(r.level as LogLevel) ? r.level : 'info') as LogLevel,
+    level: r.level,
     namespace: r.namespace,
     message: r.message,
-    source: r.source || undefined,
+    event: r.event,
+    error: r.error,
+    context: r.context,
+    source: r.source,
     expanded: false,
-  }))
+    }))
 }
 
 async function readHistoryPage(before: number | null): Promise<HistoryPage> {
@@ -349,6 +389,8 @@ async function refreshHistory() {
 
 async function exportLog() {
   try {
+    // 确保导出的文件包含用户点击导出前刚产生的错误日志。
+    await flushLogs()
     const destPath = await save({
       title: t('dialogs.exportLog'),
       defaultPath: 'kisaki-logs-' + new Date().toISOString().slice(0, 10) + '.log',
@@ -367,7 +409,7 @@ async function exportLog() {
       })
     } else {
       // 实时模式：先 flush 再导出当日文件
-      const filename = `app-${new Date().toISOString().slice(0, 10)}.jsonl`
+      const filename = `app-v${LOG_SCHEMA_VERSION}-${new Date().toISOString().slice(0, 10)}.jsonl`
       // 尝试导出，如果当日文件不存在则说明没有日志
       try {
         await invoke('export_log_file', {
@@ -375,41 +417,31 @@ async function exportLog() {
           destPath,
         })
       } catch {
-        // 回退：把内存中的日志写出为一个临时文件再导出
-        // 此时直接写入一个简易文本格式到目标路径
+        // 当前尚无落盘文件时，仅导出本窗口内存中的 v2 日志。
         const content = entries.value.map(e =>
-          `[${e.timestamp}] [${e.level.toUpperCase()}] [${e.namespace}] ${e.message}`
+          JSON.stringify({
+            schemaVersion: e.schemaVersion,
+            timestamp: e.timestamp,
+            level: e.level,
+            namespace: e.namespace,
+            event: e.event,
+            message: e.message,
+            source: e.source,
+            error: e.error,
+            context: e.context,
+          })
         ).join('\n')
-
-        // 通过 Tauri 文件写入命令保存
-        try {
-          await invoke('append_log_entries', {
-            filename: '__export_temp.jsonl',
-            entries: [{
-              timestamp: new Date().toISOString(),
-              level: 'info',
-              namespace: 'Export',
-              message: '用户导出日志',
-            }],
-          })
-          await invoke('export_log_file', {
-            sourceFilename: '__export_temp.jsonl',
-            destPath,
-          })
-        } catch {
-          // 最终兜底：用 Blob 下载（在 WebView 环境中可能不生效）
-          const blob = new Blob([content], { type: 'text/plain' })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `kisaki-logs-${new Date().toISOString().slice(0, 10)}.log`
-          a.click()
-          URL.revokeObjectURL(url)
-        }
+        const blob = new Blob([content], { type: 'application/x-ndjson' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `kisaki-logs-v${LOG_SCHEMA_VERSION}-${new Date().toISOString().slice(0, 10)}.jsonl`
+        a.click()
+        URL.revokeObjectURL(url)
       }
     }
   } catch (e) {
-    console.error('导出日志失败:', e)
+    log.error('log_viewer.export_failed', '导出日志失败', e)
   }
 }
 
@@ -497,7 +529,7 @@ async function closeWindow() {
   try {
     await getCurrentWebviewWindow().close()
   } catch (e) {
-    console.warn('[LogViewer] 关闭窗口失败:', e)
+    log.warn('log_viewer.window_close_failed', '关闭日志窗口失败', e)
   }
 }
 
@@ -507,13 +539,13 @@ async function maximizeWindow() {
     try {
       await getCurrentWebviewWindow().unmaximize()
     } catch (e) {
-      console.warn('[LogViewer] 取消最大化窗口失败:', e)
+      log.warn('log_viewer.window_unmaximize_failed', '取消最大化日志窗口失败', e)
     }
   } else {
     try {
       await getCurrentWebviewWindow().maximize()
     } catch (e) {
-      console.warn('[LogViewer] 最大化窗口失败:', e)
+      log.warn('log_viewer.window_maximize_failed', '最大化日志窗口失败', e)
     }
   }
 }
@@ -522,7 +554,7 @@ async function minimizeWindow() {
   try {
     await getCurrentWebviewWindow().minimize()
   } catch (e) {
-    console.warn('[LogViewer] 最小化窗口失败:', e)
+    log.warn('log_viewer.window_minimize_failed', '最小化日志窗口失败', e)
   }
 }
 
@@ -636,8 +668,8 @@ function onWheel() {
 
       <!-- 日志行 -->
       <div v-for="entry in filteredEntries" :key="entry.id" :class="['log-row', { expanded: entry.expanded }]"
-        :tabindex="entry.args?.length ? 0 : undefined" :role="entry.args?.length ? 'button' : undefined"
-        :aria-expanded="entry.args?.length ? entry.expanded : undefined"
+        :tabindex="hasDetails(entry) ? 0 : undefined" :role="hasDetails(entry) ? 'button' : undefined"
+        :aria-expanded="hasDetails(entry) ? entry.expanded : undefined"
         @click="toggleExpand(entry)" @keydown.enter="toggleExpand(entry)" @keydown.space.prevent="toggleExpand(entry)">
         <div class="log-line">
           <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
@@ -647,13 +679,13 @@ function onWheel() {
           <span class="log-namespace">{{ entry.namespace }}</span>
           <span v-if="entry.source" class="log-source">{{ entry.source }}</span>
           <span class="log-msg">{{ entry.message }}</span>
-          <span v-if="entry.args?.length" class="log-expand-icon">
+          <span v-if="hasDetails(entry)" class="log-expand-icon">
             <i class="fas fa-chevron-down"></i>
           </span>
         </div>
         <!-- 展开的详细信息 -->
-        <div v-if="entry.expanded && entry.args?.length" class="log-detail" @click.stop>
-          <pre class="log-detail-pre">{{ formatArgsDisplay(entry.args) }}</pre>
+        <div v-if="entry.expanded && hasDetails(entry)" class="log-detail" @click.stop>
+          <pre class="code-block log-detail-pre" data-selectable>{{ formatDetailsDisplay(entry) }}</pre>
         </div>
       </div>
     </div>
@@ -674,7 +706,7 @@ function onWheel() {
   position: relative;
   background: var(--c-panel);
   color: var(--c-text);
-  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-family: var(--font-code);
   font-size: 12px;
   overflow: hidden;
 }
@@ -1101,20 +1133,20 @@ function onWheel() {
 
 /* ─── 展开详情 ───────────────────────────────────────── */
 .log-detail {
-  padding: 6px 0 6px 86px;
+  padding: 7px 8px 9px 92px;
 }
 
 .log-detail-pre {
-  margin: 0;
-  font-size: var(--fs-aux);
-  color: var(--c-text-secondary);
-  background: rgba(0, 0, 0, 0.3);
-  padding: 8px 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-all;
+  max-height: min(44vh, 420px);
+  padding: 11px 14px 12px;
+  overflow: auto;
+  border: 1px solid rgba(155, 180, 255, 0.12);
+  border-left: 2px solid rgba(155, 180, 255, 0.5);
+  border-radius: var(--radius-control);
+  color: #cbd3e7;
+  background: linear-gradient(105deg, rgba(74, 122, 255, 0.055), transparent 38%), #151522;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  word-break: normal;
 }
 
 /* ─── 底部新日志提示 ─────────────────────────────────── */

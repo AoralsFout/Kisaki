@@ -14,7 +14,7 @@ let controller: CharacterController | null = null
 /** 注册控制器（Character.vue 挂载时调用） */
 export function registerCharacterController(c: CharacterController) {
   controller = c
-  log.info('角色控制器已注册')
+  log.info("command_bus.register_character_controller.info", "角色控制器已注册")
 }
 
 /** 获取控制器（Agent 工具调用） */

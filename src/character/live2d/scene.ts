@@ -91,7 +91,7 @@ export function useLive2DScene(
     try {
       mf = await loadLive2DManifest(id, { live2d })
     } catch (e) {
-      log.error('加载 Live2D 清单失败: %s', (e as Error).message)
+      log.error("live2_dscene.setup_model.error", `加载 Live2D 清单失败: ${(e as Error).message}`, e)
       return
     }
     if (disposed || token !== loadToken || !canvasRef.value) return
@@ -133,7 +133,7 @@ export function useLive2DScene(
       ready.value = true
       applyTransform()
       options.onReady?.(s, mf)
-      log.info('Live2D scene ready: %s (idle=%s)', id, mf.idleGroup)
+      log.info("live2_dscene.setup_model.info", `Live2D scene ready: ${id} (idle=${mf.idleGroup})`, { id: id, mf_idle_group: mf.idleGroup })
     })
     s.onLive2D('hit', () => {
       if (manifest?.tapGroup && sprite) {

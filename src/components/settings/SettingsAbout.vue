@@ -11,8 +11,10 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { getAllWindows } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { createLogger } from '../../utils/logger'
 
 const { t } = useI18n()
+const log = createLogger('SettingsAbout')
 const appVersion = __APP_VERSION__
 
 // ── 自动更新 ──
@@ -35,6 +37,7 @@ async function checkUpdate() {
     updateVersion.value = update.version
     updateState.value = 'available'
   } catch (e) {
+    log.error('settings.update_check_failed', '检查应用更新失败', e)
     updateState.value = 'error'
     updateMessage.value = (e as Error)?.message || String(e)
   }
@@ -48,10 +51,12 @@ async function downloadUpdate() {
     // 安装完成后自动重启、立即生效；relaunch 失败则回退为「手动重启」提示
     try {
       await relaunch()
-    } catch {
+    } catch (error) {
+      log.warn('settings.update_relaunch_failed', '更新安装完成但自动重启失败', error)
       updateState.value = 'installed'
     }
   } catch (e) {
+    log.error('settings.update_install_failed', '下载或安装应用更新失败', e)
     updateState.value = 'error'
     updateMessage.value = (e as Error)?.message || String(e)
   }
@@ -62,7 +67,7 @@ async function openCharacterFolder() {
     const dirs = await invoke<{ characters: string }>('get_data_dirs')
     await revealItemInDir(dirs.characters)
   } catch (e) {
-    console.error('打开角色数据文件夹失败:', e)
+    log.error('settings.character_folder_open_failed', '打开角色数据文件夹失败', e)
   }
 }
 
@@ -70,9 +75,15 @@ async function exitApp() {
   try {
     const all = await getAllWindows()
     for (const w of all) {
-      try { await w.close() } catch { }
+      try {
+        await w.close()
+      } catch (error) {
+        log.warn('settings.app_window_close_failed', '退出应用时关闭窗口失败', error, { label: w.label })
+      }
     }
-  } catch { }
+  } catch (error) {
+    log.error('settings.app_exit_failed', '获取应用窗口列表失败', error)
+  }
 }
 
 </script>

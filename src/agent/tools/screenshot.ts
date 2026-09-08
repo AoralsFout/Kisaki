@@ -63,7 +63,7 @@ export const captureScreenTool: Tool<ToolOutput> = {
         hidden = true
         await delay(COMPOSITOR_SETTLE_MS)
       }
-      log.debug('capture_screen: target=%s includeKisaki=%s', target, includeKisaki)
+      log.debug("tool_screenshot.module.debug", `capture_screen: target=${target} includeKisaki=${includeKisaki}`, { target: target, include_kisaki: includeKisaki })
       const image = await invoke<ScreenCaptureResult>('agent_capture_screen', { target })
       return {
         content: `已截取${image.monitor_name}（${image.width}×${image.height}，PNG，${image.size} 字节），截图已附加供观察。`,
@@ -78,8 +78,7 @@ export const captureScreenTool: Tool<ToolOutput> = {
     } finally {
       if (hidden) {
         await currentWindow.show().catch(error => {
-          log.warn('截屏后恢复 Kisaki 窗口失败: %s',
-            error instanceof Error ? error.message : String(error))
+          log.warn("tool_screenshot.module.warn", `截屏后恢复 Kisaki 窗口失败: ${error instanceof Error ? error.message : String(error)}`, error, { error_instanceof: error instanceof Error ? error.message : String(error) })
         })
       }
     }

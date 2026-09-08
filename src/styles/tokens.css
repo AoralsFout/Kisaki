@@ -59,8 +59,11 @@
   --fs-aux: 12px;
   --fs-title: 20px;
 
-  /* ── 等宽字体：仅用于路径、命令、ID 等内容 ── */
-  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  /* ── 等宽字体：数据标签与多行代码分开控制 ── */
+  --font-code: 'Cascadia Mono', 'SFMono-Regular', 'JetBrains Mono', 'Sarasa Mono SC', 'Microsoft YaHei UI', Consolas, monospace;
+  --font-mono: var(--font-code);
+  --fs-code: 12.5px;
+  --lh-code: 1.62;
 
   /* ── 阴影 ── */
   --shadow-overlay: 0 12px 40px rgba(0, 0, 0, 0.5);

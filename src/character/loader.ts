@@ -27,9 +27,9 @@ export async function initCharacterDataDir(): Promise<void> {
       const dirs: any = await invoke('get_data_dirs')
       _charactersPath = String(dirs.characters ?? '')
       _dataDirReady = true
-      log.info('data_dir 已就绪: %s', _charactersPath)
+      log.info("char_loader.init_character_data_dir.info", `data_dir 已就绪: ${_charactersPath}`, { characters_path: _charactersPath })
     } catch (err) {
-      log.warn('get_data_dirs 失败（非 Tauri 环境?）: %s', (err as Error).message)
+      log.warn("char_loader.init_character_data_dir.warn", `get_data_dirs 失败（非 Tauri 环境?）: ${(err as Error).message}`, err)
     }
   })()
   return _readyPromise
@@ -38,7 +38,7 @@ export async function initCharacterDataDir(): Promise<void> {
 /** 强制刷新图片缓存（保存/导入角色后调用，递增版本号） */
 export let bustImageCache = () => {
   _imgVer++
-  log.debug('图片缓存已刷新, 版本: %d', _imgVer)
+  log.debug("char_loader.bust_image_cache.debug", `图片缓存已刷新, 版本: ${_imgVer}`, { img_ver: _imgVer })
 }
 
 export interface CharacterImageData {
@@ -159,7 +159,7 @@ export function migrateCharacterData(raw: Record<string, unknown>): CharacterDat
       // v2：渲染方式，旧角色默认静态立绘
       render: (data.render as RenderKind) || 'illustration',
     }
-    log.info('数据迁移: v%d → v%d', version, CURRENT_VERSION)
+    log.info("char_loader.migrate_character_data.info", `数据迁移: v${version} → v${CURRENT_VERSION}`, { version: version, current_version: CURRENT_VERSION })
   }
 
   return data as unknown as CharacterData
@@ -167,7 +167,7 @@ export function migrateCharacterData(raw: Record<string, unknown>): CharacterDat
 
 /** 加载单个角色配置（从 data_dir 读 character.json + prompt.txt） */
 export async function loadCharacterJson(id: string): Promise<CharacterData> {
-  log.debug('加载角色配置: %s', id)
+  log.debug("char_loader.load_character_json.debug", `加载角色配置: ${id}`, { id: id })
 
   if (!_dataDirReady) {
     throw new Error(`data_dir 未就绪，无法加载角色 ${id}`)
@@ -189,7 +189,7 @@ export async function loadCharacterJson(id: string): Promise<CharacterData> {
 
   const data = migrateCharacterData(raw)
   data.prompt = await loadPrompt(id)
-  log.info('角色配置已加载: %s (%s), %d 张立绘, 提示词 %d 字符', id, data.name, data.images.length, data.prompt.length)
+  log.info("char_loader.load_character_json.info", `角色配置已加载: ${id} (${data.name}), ${data.images.length} 张立绘, 提示词 ${data.prompt.length} 字符`, { id: id, data_name: data.name, data_images: data.images.length, data_prompt: data.prompt.length })
   return data
 }
 
@@ -198,17 +198,17 @@ let cachedList: string[] | null = null
 /** 扫描可用角色列表（通过 Tauri 后端扫描目录） */
 export async function listCharacters(): Promise<string[]> {
   if (cachedList) {
-    log.debug('角色列表(缓存): %d 个', cachedList.length)
+    log.debug("char_loader.list_characters.debug", `角色列表(缓存): ${cachedList.length} 个`, { cached_list_length: cachedList.length })
     return cachedList
   }
 
   try {
     const list: string[] = await invoke('list_characters')
     cachedList = list
-    log.info('扫描到 %d 个角色: %s', list.length, list.join(', '))
+    log.info("char_loader.list_characters.info", `扫描到 ${list.length} 个角色: ${list.join(', ')}`, { list_length: list.length, list_join: list.join(', ') })
     return list
   } catch {
-    log.warn('listCharacters 失败（非 Tauri 环境?）')
+    log.warn("char_loader.list_characters.warn", "listCharacters 失败（非 Tauri 环境?）")
     return []
   }
 }

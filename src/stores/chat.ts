@@ -90,12 +90,12 @@ function debugTimer(label: string) {
       stopped = true
       const elapsed = Math.round(performance.now() - start)
       const tag = suffix ? ` ${suffix}` : ''
-      log.trace('[⏱Timer] %s%s: %dms', label, tag, elapsed)
+      log.trace("chat_store.debug_timer.trace", `[⏱Timer] ${label}${tag}: ${elapsed}ms`, { label: label, tag: tag, elapsed: elapsed })
       return elapsed
     },
     lap: (tag: string) => {
       const elapsed = Math.round(performance.now() - start)
-      log.trace('[⏱Lap] %s — %s: %dms', label, tag, elapsed)
+      log.trace("chat_store.debug_timer.trace", `[⏱Lap] ${label} — ${tag}: ${elapsed}ms`, { label: label, tag: tag, elapsed: elapsed })
       return elapsed
     },
   }
@@ -434,7 +434,7 @@ export const useChatStore = defineStore('chat', () => {
       function onAbort() { finish('reject') }
 
       timeoutId = setTimeout(() => {
-        log.warn('文件操作确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        log.warn("chat_store.wait_user_confirm.warn", `文件操作确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
         finish('reject')
       }, CONFIRM_TIMEOUT_MS)
 
@@ -479,7 +479,7 @@ export const useChatStore = defineStore('chat', () => {
       function onAbort() { finish('reject') }
 
       timeoutId = setTimeout(() => {
-        log.warn('屏幕截图确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        log.warn("chat_store.wait_screen_capture_confirm.warn", `屏幕截图确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
         finish('reject')
       }, CONFIRM_TIMEOUT_MS)
 
@@ -536,7 +536,7 @@ export const useChatStore = defineStore('chat', () => {
       function onAbort() { finish('reject') }
 
       timeoutId = setTimeout(() => {
-        log.warn('命令执行确认超时（%d 分钟），自动拒绝', CONFIRM_TIMEOUT_MS / 60000)
+        log.warn("chat_store.wait_command_confirm.warn", `命令执行确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
         finish('reject')
       }, CONFIRM_TIMEOUT_MS)
 
@@ -637,19 +637,16 @@ export const useChatStore = defineStore('chat', () => {
   let toolHideTimer: ReturnType<typeof setTimeout> | null = null
 
   function init() {
-    log.trace('[init] ▶')
+    log.trace("chat_store.init.trace", "[init] ▶")
     const timer = debugTimer('init')
     const cfg = loadConfig()
     const valid = isConfigValid(cfg)
     configReady.value = valid
-    log.info('[init] ChatStore 初始化, 配置%s就绪', valid ? '' : '未')
-    log.debug('[init] 配置详情: model=%s baseURL=%s hasKey=%s',
-      cfg.model || '(未设置)',
-      cfg.baseURL || '(默认)',
-      cfg.apiKey ? '✓' : '✗')
-    log.trace('[init] configReady → %s', valid)
+    log.info("chat_store.init.info", `[init] ChatStore 初始化, 配置${valid ? '' : '未'}就绪`, { valid: valid ? '' : '未' })
+    log.debug("chat_store.init.debug", `[init] 配置详情: model=${cfg.model || '(未设置)'} baseURL=${cfg.baseURL || '(默认)'} hasKey=${cfg.apiKey ? '✓' : '✗'}`, { cfg_model: cfg.model || '(未设置)', cfg_base_url: cfg.baseURL || '(默认)', cfg_api_key: cfg.apiKey ? '✓' : '✗' })
+    log.trace("chat_store.init.trace", `[init] configReady → ${valid}`, { valid: valid })
     timer.stop()
-    log.trace('[init] ◀')
+    log.trace("chat_store.init.trace", "[init] ◀")
   }
 
   /** 发送消息给 AI（支持工具调用循环） */
@@ -659,21 +656,21 @@ export const useChatStore = defineStore('chat', () => {
     const _timer = debugTimer(_fn)
     const rawText = typeof input === 'string' ? input : input.text
     const images = typeof input === 'string' ? [] : input.images
-    log.trace('[%s] ▶ text="%s" images=%d', _fn, rawText?.slice(0, 50), images.length)
+    log.trace("chat_store.send_message.trace", `[${_fn}] ▶ text="${rawText?.slice(0, 50)}" images=${images.length}`, { fn: _fn, raw_text_slice: rawText?.slice(0, 50), images_length: images.length })
 
     // ── 守卫条件检查 ────────────────────────────────────
     if (isProcessing.value) {
-      log.warn('[%s] ⚠ 正在处理中，忽略重复请求 (text=%s)', _fn, rawText?.slice(0, 30))
+      log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 正在处理中，忽略重复请求 (text=${rawText?.slice(0, 30)})`, undefined, { fn: _fn, raw_text_slice: rawText?.slice(0, 30) })
       return false
     }
     if ((!rawText || !rawText.trim()) && images.length === 0) {
-      log.warn('[%s] ⚠ 收到空消息，忽略', _fn)
+      log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 收到空消息，忽略`, undefined, { fn: _fn })
       return false
     }
 
     const userText = rawText.trim() || t('chat.input.imageOnlyPrompt')
     isProcessing.value = true
-    log.debug('[%s] isProcessing → true', _fn)
+    log.debug("chat_store.send_message.debug", `[${_fn}] isProcessing → true`, { fn: _fn })
 
     // 重置工具活动列表（本次请求独立展示，等首个工具调用再点亮）
     if (toolHideTimer !== null) { clearTimeout(toolHideTimer); toolHideTimer = null }
@@ -681,36 +678,43 @@ export const useChatStore = defineStore('chat', () => {
     showToolActivity.value = false
 
     // 用户发送新消息时，取消正在播放的语音
-    log.trace('[%s] 取消正在播放的语音', _fn)
+    log.trace("chat_store.send_message.trace", `[${_fn}] 取消正在播放的语音`, { fn: _fn })
     cancelSpeak()
 
     if (!navigator.onLine) {
-      log.warn('[%s] ✗ 网络不可用，无法发送消息', _fn)
-      log.debug('[%s] navigator.onLine=%s', _fn, navigator.onLine)
+      log.warn("chat_store.send_message.warn", `[${_fn}] ✗ 网络不可用，无法发送消息`, undefined, { fn: _fn })
+      log.debug("chat_store.send_message.debug", `[${_fn}] navigator.onLine=${navigator.onLine}`, { fn: _fn, navigator_on_line: navigator.onLine })
       showBubbleText(t('app.bubble.networkOff'), false)
       isProcessing.value = false
-      log.trace('[%s] ◀ (网络不可用)', _fn)
+      log.trace("chat_store.send_message.trace", `[${_fn}] ◀ (网络不可用)`, { fn: _fn })
       return false
     }
 
     const cfgCheck = loadConfig()
     if (!isConfigValid(cfgCheck)) {
-      log.warn('[%s] ✗ API 未配置 (model=%s baseURL=%s hasKey=%s)',
-        _fn, cfgCheck.model || '?', cfgCheck.baseURL || '?', cfgCheck.apiKey ? '✓' : '✗')
+      log.warn("chat_store.send_message.warn", `[${_fn}] ✗ API 未配置 (model=${cfgCheck.model || '?'} baseURL=${cfgCheck.baseURL || '?'} hasKey=${cfgCheck.apiKey ? '✓' : '✗'})`, undefined, { fn: _fn, cfg_check_model: cfgCheck.model || '?', cfg_check_base_url: cfgCheck.baseURL || '?', cfg_check_api_key: cfgCheck.apiKey ? '✓' : '✗' })
       showBubbleText(t('app.bubble.apiNotConfigured'), false)
       isProcessing.value = false
-      log.trace('[%s] ◀ (配置无效)', _fn)
+      log.trace("chat_store.send_message.trace", `[${_fn}] ◀ (配置无效)`, { fn: _fn })
       return false
     }
 
-    log.info('[%s] 用户消息: "%s"', _fn, userText.slice(0, 100))
-    log.debug('[%s] 消息长度: %d 字符, 图片: %d 张', _fn, userText.length, images.length)
+    const requestId = globalThis.crypto.randomUUID()
+    log.info("chat.request_started", "对话请求开始", {
+      requestId,
+      textLength: rawText.length,
+      imageCount: images.length,
+      model: cfgCheck.model,
+    })
+
+    log.info("chat_store.send_message.info", `[${_fn}] 用户消息: "${userText.slice(0, 100)}"`, { fn: _fn, user_text_slice: userText.slice(0, 100) })
+    log.debug("chat_store.send_message.debug", `[${_fn}] 消息长度: ${userText.length} 字符, 图片: ${images.length} 张`, { fn: _fn, user_text_length: userText.length, images_length: images.length })
 
     // ── 添加用户消息 ────────────────────────────────────
     chatContext.addUserMessage(userText, images)
     syncContextStats()
     const userMsgId = addMessage('user', userText, undefined, undefined, images)
-    log.trace('[%s] 用户消息已加入 ChatContext', _fn)
+    log.trace("chat_store.send_message.trace", `[${_fn}] 用户消息已加入 ChatContext`, { fn: _fn })
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
     const checkpointId = useSessionStore().beginCheckpoint(userMsgId)
@@ -720,26 +724,25 @@ export const useChatStore = defineStore('chat', () => {
     currentBubbleText.value = ""
     isTyping.value = false
     currentThinking.value = ''
-    log.trace('[%s] 气泡状态: showBubble=true text="" isTyping=false', _fn)
+    log.trace("chat_store.send_message.trace", `[${_fn}] 气泡状态: showBubble=true text="" isTyping=false`, { fn: _fn })
 
     // ── 同步角色数据到 agent 上下文 ─────────────────────
     {
       const charStore = useCharacterStore()
       if (charStore.data) {
         agentService.syncCharacterData(charStore.data)
-        log.trace('[%s] 角色数据已同步到 agent 上下文 (voice=%s lang=%s)',
-          _fn, charStore.data.voice || '?', charStore.data.voiceLanguage || '?')
+        log.trace("chat_store.send_message.trace", `[${_fn}] 角色数据已同步到 agent 上下文 (voice=${charStore.data.voice || '?'} lang=${charStore.data.voiceLanguage || '?'})`, { fn: _fn, char_store_data: charStore.data.voice || '?', char_store_data2: charStore.data.voiceLanguage || '?' })
       } else {
-        log.trace('[%s] 无角色数据可同步', _fn)
+        log.trace("chat_store.send_message.trace", `[${_fn}] 无角色数据可同步`, { fn: _fn })
       }
     }
 
     // ── 收集工具定义（含 say 说话工具）────────────────────
     const tools = [...agentService.getToolDefinitions(), SAY_TOOL_DEF]
-    log.debug('[%s] 工具定义数量: %d (含 say)', _fn, tools.length)
+    log.debug("chat_store.send_message.debug", `[${_fn}] 工具定义数量: ${tools.length} (含 say)`, { fn: _fn, tools_length: tools.length })
     {
       const toolNames = tools.map(t => t.function?.name || '(unnamed)').join(', ')
-      log.debug('[%s] 工具列表: [%s]', _fn, toolNames)
+      log.debug("chat_store.send_message.debug", `[${_fn}] 工具列表: [${toolNames}]`, { fn: _fn, tool_names: toolNames })
     }
 
     const config = loadConfig()
@@ -814,10 +817,10 @@ export const useChatStore = defineStore('chat', () => {
         }
         const decision = await waitScreenCaptureConfirm(tc, myAbort.signal)
         if (decision === 'reject') {
-          log.info('[%s] ✗ 用户拒绝屏幕截图: %o', _fn, tc.arguments)
+          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝屏幕截图: ${JSON.stringify(tc.arguments)}`, { fn: _fn, tc_arguments: tc.arguments })
           return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝屏幕截图，未执行。' }
         }
-        log.info('[%s] ✓ 用户允许单次屏幕截图', _fn)
+        log.info("chat_store.execute_with_policy.info", `[${_fn}] ✓ 用户允许单次屏幕截图`, { fn: _fn })
       }
       // 高风险工具（如命令执行）→ 每次都必须确认，无自动允许
       if (isDangerousTool(tc.name)) {
@@ -833,10 +836,10 @@ export const useChatStore = defineStore('chat', () => {
         }
         const decision = await waitCommandConfirm(tc, myAbort.signal, executionPlan)
         if (decision === 'reject') {
-          log.info('[%s] ✗ 用户拒绝高风险操作: %s %o', _fn, tc.name, tc.arguments)
+          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝高风险操作: ${tc.name} ${JSON.stringify(tc.arguments)}`, { fn: _fn, tc_name: tc.name, tc_arguments: tc.arguments })
           return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该操作。' }
         }
-        log.info('[%s] ✓ 用户允许高风险操作: %s', _fn, tc.name)
+        log.info("chat_store.execute_with_policy.info", `[${_fn}] ✓ 用户允许高风险操作: ${tc.name}`, { fn: _fn, tc_name: tc.name })
         try {
           const approvalToken = await approveCommandExecution(executionPlan)
           return agentService.execute({
@@ -859,12 +862,12 @@ export const useChatStore = defineStore('chat', () => {
       if (shouldConfirm(tc.name, { globalAuto: getAutoExecFiles(), sessionAuto: autoExecSession.value })) {
         const decision = await waitUserConfirm(tc, myAbort.signal)
         if (decision === 'reject') {
-          log.info('[%s] ✗ 用户拒绝文件操作: %s %o', _fn, tc.name, tc.arguments)
+          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝文件操作: ${tc.name} ${JSON.stringify(tc.arguments)}`, { fn: _fn, tc_name: tc.name, tc_arguments: tc.arguments })
           return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该文件操作，未执行。' }
         }
         if (decision === 'allow-session') {
           autoExecSession.value = true
-          log.info('[%s] 用户选择「本会话自动允许」文件操作', _fn)
+          log.info("chat_store.execute_with_policy.info", `[${_fn}] 用户选择「本会话自动允许」文件操作`, { fn: _fn })
         }
       }
       if (isMutatingTool(tc.name)) {
@@ -874,22 +877,22 @@ export const useChatStore = defineStore('chat', () => {
             await useSessionStore().backupFile(checkpointId, rel)
             useSessionStore().markCheckpointFiles(checkpointId)
           } catch (e) {
-            log.warn('[%s] ⚠ 文件备份失败（继续执行）: %s', _fn, (e as Error).message)
+            log.warn("chat_store.execute_with_policy.warn", `[${_fn}] ⚠ 文件备份失败（继续执行）: ${(e as Error).message}`, e, { fn: _fn })
           }
         }
       }
       return agentService.execute(tc)
     }
 
-    log.trace('[%s] 工具循环开始 安全上限=%d 轮 (model=%s)', _fn, toolTurns, config.model)
+    log.trace("chat_store.send_message.trace", `[${_fn}] 工具循环开始 安全上限=${toolTurns} 轮 (model=${config.model})`, { fn: _fn, tool_turns: toolTurns, config_model: config.model })
     for (let turn = 0; turn < toolTurns; turn++) {
-      log.trace('[%s] ——— 第 %d/%d 轮 ———', _fn, turn + 1, toolTurns)
+      log.trace("chat_store.send_message.trace", `[${_fn}] ——— 第 ${turn + 1}/${toolTurns} 轮 ———`, { fn: _fn, turn: turn + 1, tool_turns: toolTurns })
       const turnTimer = debugTimer(`${_fn} turn#${turn}`)
 
       try {
         let contentBuffer = ""  // 单轮缓冲区：仅用于实时提取 <think> 思考内容
         const chatTimer = debugTimer(`${_fn} chatOnce turn#${turn}`)
-        log.trace('[%s] 第%d轮 chat() 发起请求...', _fn, turn)
+        log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 chat() 发起请求...`, { fn: _fn, turn: turn })
 
         // 流式回调：实时提取 <think> 思考内容
         const streamCallbacks = {
@@ -903,22 +906,22 @@ export const useChatStore = defineStore('chat', () => {
                 const think = match[1].replace(/^<think>\s*/, '')
                 if (think) {
                   currentThinking.value = think
-                  log.debug('[%s] 第%d轮 <think> 标签检测到，提取 %d 字符', _fn, turn, think.length)
+                  log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮 <think> 标签检测到，提取 ${think.length} 字符`, { fn: _fn, turn: turn, think_length: think.length })
                 }
                 thinkSplitDone = true
-                log.trace('[%s] 第%d轮 thinkSplitDone → true', _fn, turn)
+                log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 thinkSplitDone → true`, { fn: _fn, turn: turn })
                 return
               }
               if (full.includes('<think>') && !full.includes('</think>')) {
                 currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
-                log.trace('[%s] 第%d轮 thinking 累积中 (%d 字符)', _fn, turn, currentThinking.value.length)
+                log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 thinking 累积中 (${currentThinking.value.length} 字符)`, { fn: _fn, turn: turn, current_thinking_value: currentThinking.value.length })
                 return
               }
             }
           },
           onThinking: (t: string) => {
             currentThinking.value += t
-            log.trace('[%s] onThinking 收到 %d 字符，累积 %d 字符', _fn, t.length, currentThinking.value.length)
+            log.trace("chat_store.send_message.trace", `[${_fn}] onThinking 收到 ${t.length} 字符，累积 ${currentThinking.value.length} 字符`, { fn: _fn, t_length: t.length, current_thinking_value: currentThinking.value.length })
           },
         }
 
@@ -936,13 +939,13 @@ export const useChatStore = defineStore('chat', () => {
         if (result.type === 'done') {
           const finalText = result.text
           finalTextFromLoop = finalText
-          log.info('[%s] 第%d轮 AI 纯文本回复(未走 say), 长度=%d', _fn, turn, finalText?.length || 0)
-          log.debug('[%s] AI 回复前200字: "%s"', _fn, (finalText || '').slice(0, 200))
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 AI 纯文本回复(未走 say), 长度=${finalText?.length || 0}`, { fn: _fn, turn: turn, final_text_length: finalText?.length || 0 })
+          log.debug("chat_store.send_message.debug", `[${_fn}] AI 回复前200字: "${(finalText || '').slice(0, 200)}"`, { fn: _fn, final_text_slice: (finalText || '').slice(0, 200) })
 
           // 兜底：不支持原生 FC 的模型可能把动作调用写在文字里
           const textCalls = agentService.extractTextToolCalls(finalText)
           if (textCalls.length > 0) {
-            log.info('[%s] 第%d轮 ✦ 文本动作调用: %d 个', _fn, turn, textCalls.length)
+            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 文本动作调用: ${textCalls.length} 个`, { fn: _fn, turn: turn, text_calls_length: textCalls.length })
             isUsingTools.value = true
             currentBubbleText.value = ""
             const cleanText = agentService.stripTextToolCalls(finalText)
@@ -959,7 +962,7 @@ export const useChatStore = defineStore('chat', () => {
             for (let ti = 0; ti < textCalls.length; ti++) {
               const tc = textCalls[ti]
               beginActivity(tc.id, tc.name || '?')
-              log.info('[%s] 第%d轮 ✦ 执行文本动作[%d/%d]: %s', _fn, turn, ti + 1, textCalls.length, tc.name || '?')
+              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 执行文本动作[${ti + 1}/${textCalls.length}]: ${tc.name || '?'}`, { fn: _fn, turn: turn, ti: ti + 1, text_calls_length: textCalls.length, tc_name: tc.name || '?' })
               const toolResult = await executeWithPolicy(tc)
               if (collectToolImages(toolResult, toolImages)) {
                 toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
@@ -985,9 +988,9 @@ export const useChatStore = defineStore('chat', () => {
             const { voice, display } = await resolveContentFallback(finalText, voiceLang, displayLang, translate)
             commitSyntheticSay(voice, display)
             deliver(voice, display)
-            log.info('[%s] 第%d轮 ✓ 纯正文兜底完成 (显示:%d字, TTS:%d字)', _fn, turn, display.length, voice.length)
+            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ 纯正文兜底完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
           } else {
-            log.warn('[%s] 第%d轮 ⚠ AI 返回空文本', _fn, turn)
+            log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ AI 返回空文本`, undefined, { fn: _fn, turn: turn })
           }
           turnTimer.stop('done — break')
           break
@@ -996,8 +999,7 @@ export const useChatStore = defineStore('chat', () => {
         // ── 模型走了工具通道（say 和/或动作工具）──────────
         if (result.type === 'tools') {
           const { sayCall, actionCalls } = splitSayCalls(result.calls)
-          log.info('[%s] 第%d轮 ★ 工具调用: %d 个 (say=%s, 动作=%d)',
-            _fn, turn, result.calls.length, sayCall ? '有' : '无', actionCalls.length)
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 工具调用: ${result.calls.length} 个 (say=${sayCall ? '有' : '无'}, 动作=${actionCalls.length})`, { fn: _fn, turn: turn, result_calls: result.calls.length, say_call: sayCall ? '有' : '无', action_calls_length: actionCalls.length })
 
           isUsingTools.value = actionCalls.length > 0
           currentBubbleText.value = ""
@@ -1017,9 +1019,8 @@ export const useChatStore = defineStore('chat', () => {
             const toolTimer = debugTimer(`${_fn} tool#${ti} turn#${turn}`)
             const tcName = tc.function?.name || '?'
             beginActivity(tc.id, tcName)
-            log.info('[%s] 第%d轮 ★ 执行动作[%d/%d]: %s (id=%s)',
-              _fn, turn, ti + 1, actionCalls.length, tcName, tc.id)
-            log.debug('[%s] 第%d轮 ★ 参数: %s', _fn, turn, (tc.function?.arguments || '{}').slice(0, 300))
+            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 执行动作[${ti + 1}/${actionCalls.length}]: ${tcName} (id=${tc.id})`, { fn: _fn, turn: turn, ti: ti + 1, action_calls_length: actionCalls.length, tc_name: tcName, tc_id: tc.id })
+            log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮 ★ 参数: ${(tc.function?.arguments || '{}').slice(0, 300)}`, { fn: _fn, turn: turn, tc_function: (tc.function?.arguments || '{}').slice(0, 300) })
             let toolCall: ToolCall
             try {
               toolCall = {
@@ -1028,7 +1029,7 @@ export const useChatStore = defineStore('chat', () => {
                 arguments: JSON.parse(tc.function.arguments || '{}'),
               }
             } catch (parseErr) {
-              log.error('[%s] 第%d轮 ★ 工具参数 JSON 解析失败: %s', _fn, turn, (parseErr as Error).message)
+              log.error("chat_store.send_message.error", `[${_fn}] 第${turn}轮 ★ 工具参数 JSON 解析失败: ${(parseErr as Error).message}`, parseErr, { fn: _fn, turn: turn })
               endActivity(tc.id, 'error')
               chatContext.addToolResult(tc.id, '参数解析失败')
               syncContextStats()
@@ -1040,8 +1041,7 @@ export const useChatStore = defineStore('chat', () => {
             }
             toolTimer.stop()
             endActivity(tc.id, resultStatus(toolResult?.content || ''))
-            log.debug('[%s] 第%d轮 ★ 工具结果(%s): %s', _fn, turn, tcName,
-              (toolResult?.content || '').slice(0, 200))
+            log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮 ★ 工具结果(${tcName}): ${(toolResult?.content || '').slice(0, 200)}`, { fn: _fn, turn: turn, tc_name: tcName, tool_result_content: (toolResult?.content || '').slice(0, 200) })
             chatContext.addToolResult(tc.id, toolResult.content)
             syncContextStats()
           }
@@ -1063,17 +1063,16 @@ export const useChatStore = defineStore('chat', () => {
             const translate: TranslateFn = (txt, target, opts) =>
               translateText(txt, target, { persona, signal: myAbort.signal, ttsSafe: opts?.ttsSafe })
             const raw = parseSayArgs(sayCall.function?.arguments || '{}')
-            log.info('[%s] 第%d轮 ✦ say 原始: voice=%d字 display=%d字',
-              _fn, turn, raw.voice?.length || 0, raw.display?.length || 0)
+            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ say 原始: voice=${raw.voice?.length || 0}字 display=${raw.display?.length || 0}字`, { fn: _fn, turn: turn, raw_voice: raw.voice?.length || 0, raw_display: raw.display?.length || 0 })
             const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
             chatContext.addToolResult(sayCall.id, '已说出')  // 保持上下文合法
             syncContextStats()
             finalTextFromLoop = display
             if (voice || display) {
               deliver(voice, display)
-              log.info('[%s] 第%d轮 ✓ say 完成 (显示:%d字, TTS:%d字)', _fn, turn, display.length, voice.length)
+              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
             } else {
-              log.warn('[%s] 第%d轮 ⚠ say 内容为空', _fn, turn)
+              log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn: turn })
             }
             turnTimer.stop('say — break')
             break
@@ -1092,7 +1091,7 @@ export const useChatStore = defineStore('chat', () => {
             const { voiceLang, displayLang, persona } = getLangs()
             const translate: TranslateFn = (txt, target, opts) =>
               translateText(txt, target, { persona, signal: myAbort.signal, ttsSafe: opts?.ttsSafe })
-            log.warn('[%s] 第%d轮 ⚠ 有动作但未调 say，用正文兜底', _fn, turn)
+            log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ 有动作但未调 say，用正文兜底`, undefined, { fn: _fn, turn: turn })
             const { voice, display } = await resolveContentFallback(result.text, voiceLang, displayLang, translate)
             commitSyntheticSay(voice, display)
             finalTextFromLoop = display
@@ -1101,7 +1100,7 @@ export const useChatStore = defineStore('chat', () => {
             break
           }
           turnTimer.stop('actions — continue')
-          log.info('[%s] 第%d轮 ★ 仅动作无 say，继续下一轮', _fn, turn)
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 仅动作无 say，继续下一轮`, { fn: _fn, turn: turn })
           continue
         }
       } catch (err) {
@@ -1109,11 +1108,14 @@ export const useChatStore = defineStore('chat', () => {
         const errName = (err as Error).name
         if (errName === 'AbortError') {
           wasCancelled = true
-          log.info('[%s] 第%d轮 ⏹ 请求被取消 (AbortError)', _fn, turn)
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ⏹ 请求被取消 (AbortError)`, { fn: _fn, turn: turn })
           break
         }
-        log.error('[%s] 第%d轮 ✗ 错误: [%s] %s', _fn, turn, errName, errMsg)
-        log.debug('[%s] 第%d轮 ✗ 错误堆栈: %s', _fn, turn, (err as Error).stack || '(无堆栈)')
+        log.error("chat.turn_failed", "对话执行失败", err, {
+          operation: _fn,
+          turn,
+          requestId,
+        })
         failed = true
         showBubbleText(t('app.bubble.error', { msg: errMsg }), false)
         break
@@ -1124,26 +1126,26 @@ export const useChatStore = defineStore('chat', () => {
     // 若本次请求已被取消/被新请求取代（abortController 已不是 myAbort），
     // 则跳过收尾，避免覆盖新请求的状态或弹出误导性兜底气泡。
     if (abortController !== myAbort) {
-      log.info('[%s] ◀ 本次请求已被取消或被新请求取代，跳过收尾', _fn)
+      log.info("chat.request_cancelled", "对话请求被替代或取消", { requestId })
+      log.info("chat_store.send_message.info", `[${_fn}] ◀ 本次请求已被取消或被新请求取代，跳过收尾`, { fn: _fn })
       _timer.stop()
       return true
     }
 
     if (wasCancelled) {
       // 用户主动取消：不展示兜底气泡
-      log.info('[%s] 已取消，跳过兜底提示', _fn)
+      log.info("chat_store.send_message.info", `[${_fn}] 已取消，跳过兜底提示`, { fn: _fn })
     } else if (!currentBubbleText.value) {
       // 模型始终未调 say 就触达安全上限（异常：通常是模型陷入工具死循环），展示兜底提示
-      log.warn('[%s] ⚠ 触达工具循环安全上限 %d 轮仍无 say，展示兜底提示 (finalTextFromLoop=%s)',
-        _fn, toolTurns, finalTextFromLoop ? '有' : '无')
+      log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 触达工具循环安全上限 ${toolTurns} 轮仍无 say，展示兜底提示 (finalTextFromLoop=${finalTextFromLoop ? '有' : '无'})`, undefined, { fn: _fn, tool_turns: toolTurns, final_text_from_loop: finalTextFromLoop ? '有' : '无' })
       showBubbleText(t('app.bubble.done'), false)
     } else {
-      log.debug('[%s] 循环结束，气泡已设置 (%d字)', _fn, currentBubbleText.value.length)
+      log.debug("chat_store.send_message.debug", `[${_fn}] 循环结束，气泡已设置 (${currentBubbleText.value.length}字)`, { fn: _fn, current_bubble_text_value: currentBubbleText.value.length })
     }
 
     isProcessing.value = false
     abortController = null
-    log.debug('[%s] isProcessing → false abortController → null', _fn)
+    log.debug("chat_store.send_message.debug", `[${_fn}] isProcessing → false abortController → null`, { fn: _fn })
 
     // 工具活动列表：本次有调用则保留一会儿供用户回看，再淡出；无调用则立即隐藏
     if (toolActivities.value.length > 0) {
@@ -1157,8 +1159,20 @@ export const useChatStore = defineStore('chat', () => {
     // 避免重启后完全丢失已经完成的操作事实。
     useSessionStore().saveCurrentSession()
 
+    const completedContext = {
+      requestId,
+      failed,
+      cancelled: wasCancelled,
+      toolTurnLimit: toolTurns,
+    }
+    if (failed) {
+      log.error('chat.request_completed', '对话请求结束', new Error('对话请求失败'), completedContext)
+    } else {
+      log.info('chat.request_completed', '对话请求结束', completedContext)
+    }
+
     _timer.stop()
-    log.trace('[%s] ◀ (正常结束)', _fn)
+    log.trace("chat_store.send_message.trace", `[${_fn}] ◀ (正常结束)`, { fn: _fn })
     return !failed
   }
 
@@ -1166,11 +1180,11 @@ export const useChatStore = defineStore('chat', () => {
   let lastTtsText = ''
   async function triggerTts(text: string) {
     const _fn = 'triggerTts'
-    log.trace('[%s] ▶ text="%s"', _fn, text?.slice(0, 50))
+    log.trace("chat_store.trigger_tts.trace", `[${_fn}] ▶ text="${text?.slice(0, 50)}"`, { fn: _fn, text_slice: text?.slice(0, 50) })
 
     // 去重：连续播报相同文本跳过
     if (text === lastTtsText) {
-      log.trace('[%s] 跳过重复播报: text === lastTtsText', _fn)
+      log.trace("chat_store.trigger_tts.trace", `[${_fn}] 跳过重复播报: text === lastTtsText`, { fn: _fn })
       return
     }
 
@@ -1180,35 +1194,33 @@ export const useChatStore = defineStore('chat', () => {
       const voiceId = charStore.data?.voice
 
       if (provider === 'none') {
-        log.trace('[%s] TTS 已禁用（提供者为 none），跳过', _fn)
+        log.trace("chat_store.trigger_tts.trace", `[${_fn}] TTS 已禁用（提供者为 none），跳过`, { fn: _fn })
         return
       }
       // CosyVoice 需要 voiceId；GPT-SoVITS 不需要
       if (provider === 'cosyvoice' && !voiceId) {
-        log.trace('[%s] 无 voiceId 配置，跳过 TTS', _fn)
+        log.trace("chat_store.trigger_tts.trace", `[${_fn}] 无 voiceId 配置，跳过 TTS`, { fn: _fn })
         return
       }
       const voiceLang = charStore.data?.voiceLanguage || '?'
-      log.info('[%s] 开始 TTS 播报: voiceId=%s lang=%s text=%d字',
-        _fn, voiceId, voiceLang, text.length)
-      log.debug('[%s] TTS 文本: "%s"', _fn, text.slice(0, 120))
+      log.info("chat_store.trigger_tts.info", `[${_fn}] 开始 TTS 播报: voiceId=${voiceId} lang=${voiceLang} text=${text.length}字`, { fn: _fn, voice_id: voiceId, voice_lang: voiceLang, text_length: text.length })
+      log.debug("chat_store.trigger_tts.debug", `[${_fn}] TTS 文本: "${text.slice(0, 120)}"`, { fn: _fn, text_slice: text.slice(0, 120) })
       const ttsTimer = debugTimer(_fn)
       await speakTextStreaming(text, voiceId || '')
       // 仅在成功播放后记下去重文本（失败/取消时不记录，允许重试）
       lastTtsText = text
       ttsTimer.stop()
-      log.info('[%s] ✓ TTS 播报完成', _fn)
+      log.info("chat_store.trigger_tts.info", `[${_fn}] ✓ TTS 播报完成`, { fn: _fn })
     } catch (err) {
-      log.warn('[%s] ⚠ TTS 播报失败 (静默): %s', _fn, (err as Error).message)
+      log.warn("chat_store.trigger_tts.warn", `[${_fn}] ⚠ TTS 播报失败 (静默): ${(err as Error).message}`, err, { fn: _fn })
     }
-    log.trace('[%s] ◀', _fn)
+    log.trace("chat_store.trigger_tts.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   function cancelResponse() {
     const _fn = 'cancelResponse'
-    log.trace('[%s] ▶', _fn)
-    log.debug('[%s] 取消前状态: isProcessing=%s isUsingTools=%s abortController=%s',
-      _fn, isProcessing.value, isUsingTools.value, abortController ? '存在' : 'null')
+    log.trace("chat_store.cancel_response.trace", `[${_fn}] ▶`, { fn: _fn })
+    log.debug("chat_store.cancel_response.debug", `[${_fn}] 取消前状态: isProcessing=${isProcessing.value} isUsingTools=${isUsingTools.value} abortController=${abortController ? '存在' : 'null'}`, { fn: _fn, is_processing_value: isProcessing.value, is_using_tools_value: isUsingTools.value, abort_controller: abortController ? '存在' : 'null' })
 
     // 兜底拒绝待确认的操作，解除工具循环的 await
     rejectPendingConfirm()
@@ -1216,12 +1228,12 @@ export const useChatStore = defineStore('chat', () => {
     rejectPendingScreenCaptureConfirm()
 
     if (abortController) {
-      log.trace('[%s] 调用 abortController.abort()', _fn)
+      log.trace("chat_store.cancel_response.trace", `[${_fn}] 调用 abortController.abort()`, { fn: _fn })
       abortController.abort()
       abortController = null
-      log.trace('[%s] abortController → null', _fn)
+      log.trace("chat_store.cancel_response.trace", `[${_fn}] abortController → null`, { fn: _fn })
     } else {
-      log.trace('[%s] abortController 已为 null', _fn)
+      log.trace("chat_store.cancel_response.trace", `[${_fn}] abortController 已为 null`, { fn: _fn })
     }
 
     isProcessing.value = false
@@ -1232,9 +1244,8 @@ export const useChatStore = defineStore('chat', () => {
     // 隐藏正在生成的气泡与思考过程，避免残留半截内容
     hideBubble()
     currentThinking.value = ''
-    log.info('[%s] ✓ AI 回复已取消 (isProcessing=%s isUsingTools=%s)',
-      _fn, isProcessing.value, isUsingTools.value)
-    log.trace('[%s] ◀', _fn)
+    log.info("chat_store.cancel_response.info", `[${_fn}] ✓ AI 回复已取消 (isProcessing=${isProcessing.value} isUsingTools=${isUsingTools.value})`, { fn: _fn, is_processing_value: isProcessing.value, is_using_tools_value: isUsingTools.value })
+    log.trace("chat_store.cancel_response.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   function addMessage(
@@ -1249,8 +1260,8 @@ export const useChatStore = defineStore('chat', () => {
     const msgLen = text.length
     const thinkLen = thinking?.length || 0
 
-    log.trace('[%s] ▶ role=%s text=%d字 thinking=%d字', _fn, role, msgLen, thinkLen)
-    log.debug('[%s] 消息ID=%s role=%s text="%s"', _fn, id, role, text.slice(0, 60))
+    log.trace("chat_store.add_message.trace", `[${_fn}] ▶ role=${role} text=${msgLen}字 thinking=${thinkLen}字`, { fn: _fn, role: role, msg_len: msgLen, think_len: thinkLen })
+    log.debug("chat_store.add_message.debug", `[${_fn}] 消息ID=${id} role=${role} text="${text.slice(0, 60)}"`, { fn: _fn, id: id, role: role, text_slice: text.slice(0, 60) })
 
     // assistant 消息记录当时的角色身份快照；旧会话数据无此字段，界面按当前角色回退
     const identity = role === 'assistant' ? characterIdentity?.() ?? null : null
@@ -1266,20 +1277,20 @@ export const useChatStore = defineStore('chat', () => {
       charName: identity?.name,
     })
 
-    log.debug('[%s] ✓ 已添加: 当前消息总数=%d 最新ID=%s', _fn, messages.value.length, id)
+    log.debug("chat_store.add_message.debug", `[${_fn}] ✓ 已添加: 当前消息总数=${messages.value.length} 最新ID=${id}`, { fn: _fn, messages_value: messages.value.length, id: id })
 
     // 保存到当前会话
     const saveTimer = debugTimer(`${_fn} saveSession`)
     useSessionStore().saveCurrentSession()
     saveTimer.stop()
-    log.trace('[%s] ◀', _fn)
+    log.trace("chat_store.add_message.trace", `[${_fn}] ◀`, { fn: _fn })
     return id
   }
 
   function clearMessages() {
     const _fn = 'clearMessages'
     const prevCount = messages.value.length
-    log.trace('[%s] ▶ (当前消息数=%d)', _fn, prevCount)
+    log.trace("chat_store.clear_messages.trace", `[${_fn}] ▶ (当前消息数=${prevCount})`, { fn: _fn, prev_count: prevCount })
 
     // 先取消正在进行中的 AI 请求，避免其回调写入已被清空的上下文
     if (abortController) {
@@ -1296,36 +1307,34 @@ export const useChatStore = defineStore('chat', () => {
     currentThinking.value = ''
 
     if (prevCount > 0) {
-      log.debug('[%s] 最后一条消息: role=%s text="%s"', _fn,
-        messages.value[prevCount - 1]?.role || '?',
-        (messages.value[prevCount - 1]?.text || '').slice(0, 50))
+      log.debug("chat_store.clear_messages.debug", `[${_fn}] 最后一条消息: role=${messages.value[prevCount - 1]?.role || '?'} text="${(messages.value[prevCount - 1]?.text || '').slice(0, 50)}"`, { fn: _fn, messages_value: messages.value[prevCount - 1]?.role || '?', messages_value2: (messages.value[prevCount - 1]?.text || '').slice(0, 50) })
     }
 
     messages.value = []
-    log.trace('[%s] messages → []', _fn)
+    log.trace("chat_store.clear_messages.trace", `[${_fn}] messages → []`, { fn: _fn })
 
     chatContext = createChatContext()
     currentPersona = null
     syncContextStats()
-    log.trace('[%s] chatContext → createChatContext()', _fn)
+    log.trace("chat_store.clear_messages.trace", `[${_fn}] chatContext → createChatContext()`, { fn: _fn })
 
     // 保存清空状态到当前会话
     useSessionStore().saveCurrentSession()
     // 清空本会话的回档检查点与文件备份
     void useSessionStore().clearCheckpoints()
-    log.info('[%s] ✓ 已清空 %d 条聊天记录', _fn, prevCount)
-    log.trace('[%s] ◀', _fn)
+    log.info("chat_store.clear_messages.info", `[${_fn}] ✓ 已清空 ${prevCount} 条聊天记录`, { fn: _fn, prev_count: prevCount })
+    log.trace("chat_store.clear_messages.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   function resetContext() {
     const _fn = 'resetContext'
-    log.trace('[%s] ▶', _fn)
+    log.trace("chat_store.reset_context.trace", `[${_fn}] ▶`, { fn: _fn })
     const oldContext = chatContext
     chatContext = createChatContext()
     currentPersona = null
     syncContextStats()
-    log.debug('[%s] ✓ 对话上下文已重置 (old context=%s)', _fn, oldContext.constructor.name)
-    log.trace('[%s] ◀', _fn)
+    log.debug("chat_store.reset_context.debug", `[${_fn}] ✓ 对话上下文已重置 (old context=${oldContext.constructor.name})`, { fn: _fn, old_context_constructor: oldContext.constructor.name })
+    log.trace("chat_store.reset_context.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   /**
@@ -1334,20 +1343,20 @@ export const useChatStore = defineStore('chat', () => {
    */
   function loadMessages(msgs: ChatMessage[], snapshot?: ChatContextSnapshot | null) {
     const _fn = 'loadMessages'
-    log.trace('[%s] ▶ msgs.length=%d', _fn, msgs.length)
+    log.trace("chat_store.load_messages.trace", `[${_fn}] ▶ msgs.length=${msgs.length}`, { fn: _fn, msgs_length: msgs.length })
 
     // 统计消息组成
     const userCount = msgs.filter(m => m.role === 'user').length
     const asstCount = msgs.filter(m => m.role === 'assistant').length
-    log.debug('[%s] 消息组成: user=%d assistant=%d 总计=%d', _fn, userCount, asstCount, msgs.length)
+    log.debug("chat_store.load_messages.debug", `[${_fn}] 消息组成: user=${userCount} assistant=${asstCount} 总计=${msgs.length}`, { fn: _fn, user_count: userCount, asst_count: asstCount, msgs_length: msgs.length })
 
     if (msgs.length > 0) {
-      log.debug('[%s] 首条消息: role=%s text="%s"', _fn, msgs[0].role, msgs[0].text.slice(0, 50))
-      log.debug('[%s] 末条消息: role=%s text="%s"', _fn, msgs[msgs.length - 1].role, msgs[msgs.length - 1].text.slice(0, 50))
+      log.debug("chat_store.load_messages.debug", `[${_fn}] 首条消息: role=${msgs[0].role} text="${msgs[0].text.slice(0, 50)}"`, { fn: _fn, msgs_role: msgs[0].role, msgs_text: msgs[0].text.slice(0, 50) })
+      log.debug("chat_store.load_messages.debug", `[${_fn}] 末条消息: role=${msgs[msgs.length - 1].role} text="${msgs[msgs.length - 1].text.slice(0, 50)}"`, { fn: _fn, msgs_msgs: msgs[msgs.length - 1].role, msgs_msgs2: msgs[msgs.length - 1].text.slice(0, 50) })
     }
 
     messages.value = [...msgs]
-    log.trace('[%s] messages 已替换（当前 %d 条）', _fn, messages.value.length)
+    log.trace("chat_store.load_messages.trace", `[${_fn}] messages 已替换（当前 ${messages.value.length} 条）`, { fn: _fn, messages_value: messages.value.length })
 
     // 重置气泡和 AI 上下文
     hideBubble()
@@ -1360,35 +1369,35 @@ export const useChatStore = defineStore('chat', () => {
     rejectPendingCommandConfirm()
     rejectPendingScreenCaptureConfirm()
     autoExecSession.value = false
-    log.trace('[%s] 气泡状态已重置: hideBubble showInput=false thinking=""', _fn)
+    log.trace("chat_store.load_messages.trace", `[${_fn}] 气泡状态已重置: hideBubble showInput=false thinking=""`, { fn: _fn })
 
     if (abortController) {
-      log.trace('[%s] 取消进行中的请求 (abortController.abort())', _fn)
+      log.trace("chat_store.load_messages.trace", `[${_fn}] 取消进行中的请求 (abortController.abort())`, { fn: _fn })
       abortController.abort()
       abortController = null
     }
     chatContext.reset()
     syncContextStats()
-    log.trace('[%s] ChatContext 已重置', _fn)
+    log.trace("chat_store.load_messages.trace", `[${_fn}] ChatContext 已重置`, { fn: _fn })
 
     if (snapshot && chatContext.importSnapshot(snapshot)) {
       chatContext.restoreUserImages(msgs
         .filter(msg => msg.role === 'user')
         .map(msg => ({ text: msg.text, images: msg.images })))
       syncContextStats()
-      log.info('[%s] ✓ 已恢复持久化协议上下文（%d 条）', _fn, snapshot.messages.length)
+      log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已恢复持久化协议上下文（${snapshot.messages.length} 条）`, { fn: _fn, snapshot_messages: snapshot.messages.length })
     } else {
 
     // 旧会话兼容：重放界面消息到 AI 上下文。
     // 关键：助手回合必须重建为 say 工具调用（而非纯文本）。否则恢复出的历史会呈现
     // “助手只用纯文本回复、从不调用工具”的范式，模型会模仿它而忘记调用 say/动作工具
     // （会话切走再切回后表现为“忘记使用工具”）。
-    log.trace('[%s] 开始重放 %d 条消息到 ChatContext...', _fn, msgs.length)
+    log.trace("chat_store.load_messages.trace", `[${_fn}] 开始重放 ${msgs.length} 条消息到 ChatContext...`, { fn: _fn, msgs_length: msgs.length })
     for (let i = 0; i < msgs.length; i++) {
       const msg = msgs[i]
       if (msg.role === 'user') {
         chatContext.addUserMessage(msg.text, msg.images)
-        log.trace('[%s]   [%d/%d] user → context: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
+        log.trace("chat_store.load_messages.trace", `[${_fn}]   [${i + 1}/${msgs.length}] user → context: "${msg.text.slice(0, 40)}"`, { fn: _fn, i: i + 1, msgs_length: msgs.length, msg_text: msg.text.slice(0, 40) })
       } else if (msg.role === 'assistant') {
         // 重建为 say 调用：voice 取持久化的母语台词（旧会话缺失则回退显示文本）
         const sayId = `say_replay_${i}`
@@ -1401,11 +1410,11 @@ export const useChatStore = defineStore('chat', () => {
           },
         }])
         chatContext.addToolResult(sayId, '已说出')
-        log.trace('[%s]   [%d/%d] assistant → say 调用重建: "%s"', _fn, i + 1, msgs.length, msg.text.slice(0, 40))
+        log.trace("chat_store.load_messages.trace", `[${_fn}]   [${i + 1}/${msgs.length}] assistant → say 调用重建: "${msg.text.slice(0, 40)}"`, { fn: _fn, i: i + 1, msgs_length: msgs.length, msg_text: msg.text.slice(0, 40) })
       }
     }
       syncContextStats()
-      log.debug('[%s] ✓ 旧会话消息重放完成（助手回合已重建为 say 调用）', _fn)
+      log.debug("chat_store.load_messages.debug", `[${_fn}] ✓ 旧会话消息重放完成（助手回合已重建为 say 调用）`, { fn: _fn })
     }
 
     // 会话切换后，气泡显示目标会话的最后一条 AI 消息（含思考过程）
@@ -1413,28 +1422,24 @@ export const useChatStore = defineStore('chat', () => {
     if (lastAssistant) {
       currentThinking.value = lastAssistant.thinking || ''
       showBubbleText(lastAssistant.text, false)
-      log.debug('[%s] ✓ 显示最后AI消息: text="%s" thinking=%s',
-        _fn, lastAssistant.text.slice(0, 40), lastAssistant.thinking ? `${lastAssistant.thinking.length}字` : '无')
+      log.debug("chat_store.load_messages.debug", `[${_fn}] ✓ 显示最后AI消息: text="${lastAssistant.text.slice(0, 40)}" thinking=${lastAssistant.thinking ? `${lastAssistant.thinking.length}字` : '无'}`, { fn: _fn, last_assistant_text: lastAssistant.text.slice(0, 40), last_assistant_thinking: lastAssistant.thinking ? `${lastAssistant.thinking.length}字` : '无' })
     } else {
-      log.trace('[%s] 无历史 AI 消息，气泡保持隐藏', _fn)
+      log.trace("chat_store.load_messages.trace", `[${_fn}] 无历史 AI 消息，气泡保持隐藏`, { fn: _fn })
     }
-    log.info('[%s] ✓ 已加载会话消息: %d 条 (user=%d asst=%d), 最后AI消息: %s',
-      _fn, msgs.length, userCount, asstCount,
-      lastAssistant ? `"${lastAssistant.text.slice(0, 30)}..."` : '无')
-    log.trace('[%s] ◀', _fn)
+    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已加载会话消息: ${msgs.length} 条 (user=${userCount} asst=${asstCount}), 最后AI消息: ${lastAssistant ? `"${lastAssistant.text.slice(0, 30)}..."` : '无'}`, { fn: _fn, msgs_length: msgs.length, user_count: userCount, asst_count: asstCount, last_assistant: lastAssistant ? `"${lastAssistant.text.slice(0, 30)}..."` : '无' })
+    log.trace("chat_store.load_messages.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   /** 更新角色 system prompt（含语言配置） */
   function setSystemPrompt(prompt: string, voiceLang?: string, displayLang?: string, render?: 'illustration' | 'live2d') {
     const _fn = 'setSystemPrompt'
-    log.trace('[%s] ▶ prompt=%d字 voiceLang=%s displayLang=%s',
-      _fn, prompt?.length || 0, voiceLang || '?', displayLang || '?')
-    log.debug('[%s] prompt前50字: "%s"', _fn, (prompt || '').slice(0, 50))
+    log.trace("chat_store.set_system_prompt.trace", `[${_fn}] ▶ prompt=${prompt?.length || 0}字 voiceLang=${voiceLang || '?'} displayLang=${displayLang || '?'}`, { fn: _fn, prompt_length: prompt?.length || 0, voice_lang: voiceLang || '?', display_lang: displayLang || '?' })
+    log.debug("chat_store.set_system_prompt.debug", `[${_fn}] prompt前50字: "${(prompt || '').slice(0, 50)}"`, { fn: _fn, prompt_slice: (prompt || '').slice(0, 50) })
     currentPersona = { prompt, voiceLang, displayLang, render }
     chatContext.setSystemPrompt(prompt, voiceLang, displayLang, render)
     syncContextStats()
-    log.debug('[%s] ✓ system prompt 已更新', _fn)
-    log.trace('[%s] ◀', _fn)
+    log.debug("chat_store.set_system_prompt.debug", `[${_fn}] ✓ system prompt 已更新`, { fn: _fn })
+    log.trace("chat_store.set_system_prompt.trace", `[${_fn}] ◀`, { fn: _fn })
   }
 
   /** API 模型变更后重建预算，但保留当前脱敏协议上下文与角色人格。 */
@@ -1456,7 +1461,7 @@ export const useChatStore = defineStore('chat', () => {
     configReady.value = isConfigValid(loadConfig())
     syncContextStats()
     useSessionStore().saveCurrentSession()
-    log.info('模型配置已刷新，上下文预算=%d', contextStats.value.maxContextTokens)
+    log.info("chat_store.refresh_model_context.info", `模型配置已刷新，上下文预算=${contextStats.value.maxContextTokens}`, { context_stats_value: contextStats.value.maxContextTokens })
   }
 
   function exportContext(): ChatContextSnapshot {
@@ -1502,35 +1507,35 @@ export const useChatStore = defineStore('chat', () => {
 
   function showBubbleText(text: string, typing: boolean = true) {
     const _fn = 'showBubbleText'
-    log.trace('[%s] text=%d字 typing=%s text="%s"', _fn, text.length, typing, text.slice(0, 50))
+    log.trace("chat_store.show_bubble_text.trace", `[${_fn}] text=${text.length}字 typing=${typing} text="${text.slice(0, 50)}"`, { fn: _fn, text_length: text.length, typing: typing, text_slice: text.slice(0, 50) })
     currentBubbleText.value = text
     isTyping.value = typing
     showBubble.value = true
-    log.debug('[%s] ✓ showBubble=%s isTyping=%s', _fn, showBubble.value, isTyping.value)
+    log.debug("chat_store.show_bubble_text.debug", `[${_fn}] ✓ showBubble=${showBubble.value} isTyping=${isTyping.value}`, { fn: _fn, show_bubble_value: showBubble.value, is_typing_value: isTyping.value })
   }
 
   function hideBubble() {
     const _fn = 'hideBubble'
-    log.trace('[%s] ▶ (当前文本=%d字)', _fn, currentBubbleText.value.length)
+    log.trace("chat_store.hide_bubble.trace", `[${_fn}] ▶ (当前文本=${currentBubbleText.value.length}字)`, { fn: _fn, current_bubble_text_value: currentBubbleText.value.length })
     currentBubbleText.value = ""
     isTyping.value = false
     showBubble.value = false
-    log.trace('[%s] ◀ 气泡已隐藏', _fn)
+    log.trace("chat_store.hide_bubble.trace", `[${_fn}] ◀ 气泡已隐藏`, { fn: _fn })
   }
 
   function toggleInput() {
     showInput.value = !showInput.value
-    log.trace('[toggleInput] showInput → %s', showInput.value)
+    log.trace("chat_store.toggle_input.trace", `[toggleInput] showInput → ${showInput.value}`, { show_input_value: showInput.value })
   }
 
   function openInput() {
     showInput.value = true
-    log.trace('[openInput] showInput → true')
+    log.trace("chat_store.open_input.trace", "[openInput] showInput → true")
   }
 
   function closeInput() {
     showInput.value = false
-    log.trace('[closeInput] showInput → false')
+    log.trace("chat_store.close_input.trace", "[closeInput] showInput → false")
   }
 
   return {

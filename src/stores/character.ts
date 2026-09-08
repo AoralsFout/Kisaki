@@ -71,7 +71,7 @@ export const useCharacterStore = defineStore('character', () => {
       data.value = charData
       currentId.value = id
     } catch (err) {
-      log.error('加载角色失败', err)
+      log.error("character_store.load_character.error", "加载角色失败", err)
       throw err
     } finally {
       loading.value = false
@@ -107,14 +107,14 @@ export const useCharacterStore = defineStore('character', () => {
     const list = availableList.value
     if (list.length === 0) {
       // 干净安装 / 数据被清空：无角色，UI 显示空白桌宠 + 引导用户导入角色包
-      log.warn('未发现任何角色，等待用户导入角色包')
+      log.warn("character_store.init.warn", "未发现任何角色，等待用户导入角色包")
       return
     }
     const target = list.includes('kisaki') ? 'kisaki' : list[0]
     try {
       await loadCharacter(target, true)
     } catch (err) {
-      log.error('加载角色失败', err)
+      log.error("character_store.init.error", "加载角色失败", err)
     }
   }
 

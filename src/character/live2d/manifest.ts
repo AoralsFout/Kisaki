@@ -104,8 +104,7 @@ export async function loadLive2DManifest(
   }
 
   const catalog = buildLive2DCatalog(modelJSON, live2d)
-  log.info('Live2D 清单: %s, %d 表情, %d 动作组, idle=%s, tap=%s',
-    charId, catalog.expressions.length, catalog.motions.length, catalog.idleGroup, catalog.tapGroup ?? '无')
+  log.info("live2_dmanifest.load_live2_dmanifest.info", `Live2D 清单: ${charId}, ${catalog.expressions.length} 表情, ${catalog.motions.length} 动作组, idle=${catalog.idleGroup}, tap=${catalog.tapGroup ?? '无'}`, { char_id: charId, catalog_expressions: catalog.expressions.length, catalog_motions: catalog.motions.length, catalog_idle_group: catalog.idleGroup, catalog_tap_group: catalog.tapGroup ?? '无' })
 
   return { charId, modelRel, modelRelDir, modelUrl, modelJSON, ...catalog }
 }

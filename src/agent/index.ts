@@ -32,5 +32,5 @@ export function initTools() {
     captureScreenTool,
     runProcessTool, runShellTool,
   )
-  log.info('内置工具已注册 (%d 个)', listTools().length)
+  log.info("agent.init_tools.info", `内置工具已注册 (${listTools().length} 个)`, { list_tools_length: listTools().length })
 }

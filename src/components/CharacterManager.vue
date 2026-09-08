@@ -335,7 +335,7 @@ async function reloadLive2DManifest() {
   try {
     live2dManifest.value = await loadLive2DManifest(editingId.value, { live2d: editableLive2dConfig.value })
   } catch (e) {
-    log.warn('加载 Live2D 清单失败: %s', (e as Error).message)
+    log.warn("character_mgr.reload_live2_dmanifest.warn", `加载 Live2D 清单失败: ${(e as Error).message}`, e)
   }
 }
 
@@ -372,7 +372,7 @@ async function tauriWrite(filename: string, content: string): Promise<boolean> {
     await invoke('write_character_file', { id: editingId.value, filename, content })
     return true
   } catch (e) {
-    log.error('写入失败', e)
+    log.error("character_mgr.tauri_write.error", "写入失败", e)
     return false
   }
 }
@@ -597,7 +597,7 @@ async function persistAll() {
   if (orphaned.length > 0) {
     await Promise.all(orphaned.map(f =>
       invoke('delete_character_image', { id: editingId.value, filename: f })
-        .catch(() => { log.warn('删除陈旧图片失败: %s', f) })
+        .catch(() => { log.warn("character_mgr.persist_all.warn", `删除陈旧图片失败: ${f}`, undefined, { f: f }) })
     ))
   }
 

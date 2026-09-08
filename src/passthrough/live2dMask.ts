@@ -61,12 +61,12 @@ export function startLive2DMask(): void {
   if (timer !== null) return
   timer = setInterval(() => { void snapshot() }, SNAPSHOT_INTERVAL)
   void snapshot()
-  log.info('Live2D 穿透掩码已启动 (%dms)', SNAPSHOT_INTERVAL)
+  log.info("live2_dmask.start_live2_dmask.info", `Live2D 穿透掩码已启动 (${SNAPSHOT_INTERVAL}ms)`, { snapshot_interval: SNAPSHOT_INTERVAL })
 }
 
 /** 停止快照并清空掩码（Live2DStage 卸载时调用） */
 export function stopLive2DMask(): void {
   if (timer !== null) { clearInterval(timer); timer = null }
   mask = undefined
-  log.info('Live2D 穿透掩码已停止')
+  log.info("live2_dmask.stop_live2_dmask.info", "Live2D 穿透掩码已停止")
 }

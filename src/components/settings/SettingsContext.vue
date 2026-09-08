@@ -396,7 +396,7 @@ async function copyDetail() {
             <span>{{ t('settings.context.detail.updated') }} <strong>{{ formatDate(selectedSession?.capturedAt || 0) }}</strong></span>
           </div>
           <div class="detail-label">JSON</div>
-          <pre class="detail-json" data-selectable>{{ detailJson }}</pre>
+          <pre class="code-block detail-json" data-selectable>{{ detailJson }}</pre>
         </aside>
       </div>
     </Transition>
@@ -482,7 +482,7 @@ async function copyDetail() {
 .drawer-meta { display: flex; flex-wrap: wrap; gap: 6px 15px; padding: 9px 18px; border-bottom: 1px solid var(--c-border); color: var(--c-text-muted); font-size: 10.5px; }
 .drawer-meta strong { margin-left: 4px; color: var(--c-text-secondary); font-family: var(--font-mono); }
 .detail-label { padding: 12px 18px 6px; color: var(--c-text-muted); font: 10px var(--font-mono); letter-spacing: .6px; }
-.detail-json { flex: 1; min-height: 0; overflow: auto; margin: 0 11px 12px; padding: 13px; border: 1px solid var(--c-border); border-radius: var(--radius-control); color: #c9d4ee; background: #101020; font: 11px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.detail-json { flex: 1; min-height: 0; overflow: auto; margin: 0 11px 12px; padding: 13px 15px; border: 1px solid var(--c-border); border-radius: var(--radius-control); color: #cbd5ea; background: #101020; user-select: text; }
 .drawer-enter-active, .drawer-leave-active { transition: opacity .18s ease; }
 .drawer-enter-active .detail-drawer, .drawer-leave-active .detail-drawer { transition: transform .22s cubic-bezier(.22,.85,.35,1); }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; }

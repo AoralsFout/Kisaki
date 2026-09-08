@@ -26,7 +26,7 @@ export function register(tool: RegisteredTool) {
 /** 批量注册 */
 export function registerAll(...toolList: RegisteredTool[]) {
   for (const t of toolList) register(t)
-  log.debug('批量注册 %d 个工具', toolList.length)
+  log.debug("agent_registry.register_all.debug", `批量注册 ${toolList.length} 个工具`, { tool_list_length: toolList.length })
 }
 
 /** 按名称获取工具 */

@@ -10,6 +10,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const invokeMock = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
+
 // 注意：logger 模块有模块级状态（全局变量），
 // 在每个测试文件内重置状态以避免跨测试污染
 
@@ -71,7 +74,7 @@ describe('Logger - 环形缓冲区', () => {
     const mod = await import('../logger')
     // 写入一条日志
     const log = mod.createLogger('Test')
-    log.info('hello')
+    log.info("test.module.info", "hello")
     expect(mod.getBuffer().length).toBeGreaterThan(0)
 
     mod.clearBuffer()
@@ -82,9 +85,9 @@ describe('Logger - 环形缓冲区', () => {
     const mod = await import('../logger')
     mod.clearBuffer()
     const log = mod.createLogger('Test')
-    log.info('first')
-    log.warn('second')
-    log.error('third')
+    log.info("test.module.info", "first")
+    log.warn("test.module.warn", "second")
+    log.error("test.module.error", "third", new Error("third"))
 
     const buf = mod.getBuffer()
     expect(buf.length).toBe(3)
@@ -99,7 +102,7 @@ describe('Logger - 环形缓冲区', () => {
     const mod = await import('../logger')
     mod.clearBuffer()
     const log = mod.createLogger('MyModule')
-    log.info('测试消息')
+    log.info("test.module.info", "测试消息")
 
     const buf = mod.getBuffer()
     expect(buf.length).toBe(1)
@@ -113,17 +116,15 @@ describe('Logger - 环形缓冲区', () => {
     expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
-  it('日志携带附加参数', async () => {
+  it('日志携带结构化上下文', async () => {
     const mod = await import('../logger')
     mod.clearBuffer()
     const log = mod.createLogger('ArgsTest')
-    log.info('计数: %d', 42, { key: 'val' })
+    log.info("test.module.info", `计数: ${42}`, { value1: 42, key: { key: 'val' } })
 
     const buf = mod.getBuffer()
     expect(buf.length).toBe(1)
-    expect(buf[0].args).toBeDefined()
-    // args 长度应为 2（42 和 { key: 'val' }）
-    expect(buf[0].args!.length).toBe(2)
+    expect(buf[0].context).toEqual({ value1: 42, key: { key: 'val' } })
   })
 })
 
@@ -139,14 +140,14 @@ describe('Logger - 级别过滤', () => {
     mod.clearBuffer()
 
     const log = mod.createLogger('FilterTest')
-    log.trace('不应出现')
-    log.debug('不应出现')
-    log.info('不应出现')
+    log.trace("test.module.trace", "不应出现")
+    log.debug("test.module.debug", "不应出现")
+    log.info("test.module.info", "不应出现")
 
     expect(mod.getBuffer().length).toBe(0)
 
-    log.warn('应出现')
-    log.error('应出现')
+    log.warn("test.module.warn", "应出现")
+    log.error("test.module.error", "应出现", new Error("应出现"))
     expect(mod.getBuffer().length).toBe(2)
   })
 
@@ -157,9 +158,9 @@ describe('Logger - 级别过滤', () => {
 
     // 创建 Logger 时指定只输出 warn 及以上
     const log = mod.createLogger('Strict', 'warn')
-    log.info('不应出现')
-    log.warn('应出现')
-    log.error('应出现')
+    log.info("test.module.info", "不应出现")
+    log.warn("test.module.warn", "应出现")
+    log.error("test.module.error", "应出现", new Error("应出现"))
 
     expect(mod.getBuffer().length).toBe(2)
     expect(mod.getBuffer()[0].level).toBe('warn')
@@ -181,7 +182,7 @@ describe('Logger - 级别过滤', () => {
     // 从源码看，setLogEnabled 和 disableFilePersistence 都导出了
     // 但 setLogEnabled 未导出。我们通过 setLogLevel 测试相反方向
     const log = mod.createLogger('DisabledTest')
-    log.info('消息1')
+    log.info("test.module.info", "消息1")
     expect(mod.getBuffer().length).toBe(1)
   })
 })
@@ -199,7 +200,7 @@ describe('Logger - 订阅者机制', () => {
     const unsubscribe = mod.subscribe(callback)
 
     const log = mod.createLogger('SubTest')
-    log.info('订阅测试')
+    log.info("test.module.info", "订阅测试")
 
     expect(callback).toHaveBeenCalledTimes(1)
     expect(callback).toHaveBeenCalledWith(
@@ -221,7 +222,7 @@ describe('Logger - 订阅者机制', () => {
     unsubscribe()
 
     const log = mod.createLogger('UnsubTest')
-    log.info('取消后消息')
+    log.info("test.module.info", "取消后消息")
 
     expect(callback).not.toHaveBeenCalled()
   })
@@ -235,7 +236,7 @@ describe('Logger - 订阅者机制', () => {
     mod.subscribe(cb2)
 
     const log = mod.createLogger('MultiSub')
-    log.info('多订阅者')
+    log.info("test.module.info", "多订阅者")
 
     expect(cb1).toHaveBeenCalledTimes(1)
     expect(cb2).toHaveBeenCalledTimes(1)
@@ -254,11 +255,11 @@ describe('Logger - 日志级别完整输出', () => {
     mod.clearBuffer()
 
     const log = mod.createLogger('AllLevels')
-    log.trace('trace msg')
-    log.debug('debug msg')
-    log.info('info msg')
-    log.warn('warn msg')
-    log.error('error msg')
+    log.trace("test.module.trace", "trace msg")
+    log.debug("test.module.debug", "debug msg")
+    log.info("test.module.info", "info msg")
+    log.warn("test.module.warn", "warn msg")
+    log.error("test.module.error", "error msg", new Error("error msg"))
 
     expect(mod.getBuffer().length).toBe(5)
     expect(mod.getBuffer().map(e => e.level)).toEqual([
@@ -298,6 +299,107 @@ describe('Logger - 持久化控制', () => {
     const mod = await import('../logger')
     // 非 Tauri 环境下，不会抛出异常
     await expect(mod.enableFilePersistence()).resolves.not.toThrow()
+  })
+
+  it('异常、堆栈、事件和上下文会完整持久化', async () => {
+    const mod = await import('../logger')
+    invokeMock.mockResolvedValue(undefined)
+    await mod.enableFilePersistence()
+
+    const cause = new Error('底层连接失败')
+    const error = new Error('请求失败') as Error & { code?: string; cause?: unknown }
+    error.cause = cause
+    error.code = 'ECONNRESET'
+    const log = mod.createLogger('PersistTest')
+    log.error("ai.request_failed", "调用模型失败", error, {
+      requestId: 'req-1',
+      apiKey: 'sk-should-not-leak',
+    })
+    await mod.flushLogs()
+
+    expect(invokeMock).toHaveBeenCalledWith('append_log_entries', expect.objectContaining({
+      entries: [expect.objectContaining({
+        event: 'ai.request_failed',
+        error: expect.objectContaining({
+          name: 'Error',
+          message: '请求失败',
+          code: 'ECONNRESET',
+          stack: expect.any(String),
+          cause: expect.objectContaining({ message: '底层连接失败' }),
+        }),
+        context: { requestId: 'req-1', apiKey: '[REDACTED]' },
+      })],
+    }))
+  })
+
+  it('落盘失败时保留队列并暴露健康状态', async () => {
+    const mod = await import('../logger')
+    invokeMock.mockRejectedValue(new Error('disk full'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await mod.enableFilePersistence()
+
+    mod.createLogger('PersistTest').error('logger.write_failed', '不能丢失', new Error('disk full'))
+    await mod.flushLogs()
+
+    expect(mod.getPersistenceStatus()).toEqual(expect.objectContaining({
+      enabled: true,
+      pending: 1,
+      failures: 1,
+      dropped: 0,
+      lastError: expect.objectContaining({ message: 'disk full' }),
+    }))
+  })
+})
+
+describe('Logger - 异常序列化', () => {
+  beforeEach(async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    invokeMock.mockReset()
+    vi.restoreAllMocks()
+  })
+
+  it('error 调用保留强制传入的 Error 对象', async () => {
+    const mod = await import('../logger')
+    const error = new TypeError('字段不存在')
+    mod.createLogger('AutoError').error('processing.failed', '处理失败', error)
+
+    expect(mod.getBuffer()[0].error).toEqual(expect.objectContaining({
+      name: 'TypeError',
+      message: '字段不存在',
+      stack: expect.any(String),
+    }))
+  })
+
+  it('结构化事件保留事件名与上下文', async () => {
+    const mod = await import('../logger')
+    mod.createLogger('Events').info('request.started', '请求开始', { requestId: 'req-1' })
+
+    expect(mod.getBuffer()[0]).toEqual(expect.objectContaining({
+      event: 'request.started',
+      context: { requestId: 'req-1' },
+    }))
+  })
+
+  it('拒绝不稳定或非结构化的事件名', async () => {
+    const mod = await import('../logger')
+    const log = mod.createLogger('Events')
+
+    expect(() => log.info('request started', '请求开始')).toThrow(TypeError)
+    expect(() => log.info('Request.Started', '请求开始')).toThrow(TypeError)
+    expect(() => log.info('started', '请求开始')).toThrow(TypeError)
+  })
+
+  it('循环对象和嵌套敏感字段可安全处理', async () => {
+    const mod = await import('../logger')
+    const details: Record<string, unknown> = { authorization: 'Bearer secret-token' }
+    details.self = details
+    const normalized = mod.normalizeError({ message: '失败', details })
+    const text = JSON.stringify(normalized)
+
+    expect(text).toContain('[REDACTED]')
+    expect(text).toContain('[Circular]')
+    expect(text).not.toContain('secret-token')
   })
 })
 

@@ -62,7 +62,7 @@ async function viaInvoke<T>(req: SearchHttpRequest): Promise<T> {
     // 注意：invoke 失败时 reject 的是 Rust 端 Err(String)，是「字符串」而非 Error 对象，
     // 直接读 .message 会得到 undefined。这里统一归一化为可读文本再抛出。
     const msg = typeof err === 'string' ? err : ((err as Error)?.message ?? String(err))
-    log.warn('Rust 转发失败: %s', msg)
+    log.warn("search_http.via_invoke.warn", `Rust 转发失败: ${msg}`, undefined, { msg: msg })
     throw new Error(msg)
   }
   return JSON.parse(text) as T
@@ -84,7 +84,7 @@ async function viaFetch<T>(req: SearchHttpRequest): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    log.warn('搜索请求失败: HTTP %d - %s', res.status, text.slice(0, 200))
+    log.warn("search_http.via_fetch.warn", `搜索请求失败: HTTP ${res.status} - ${text.slice(0, 200)}`, undefined, { res_status: res.status, text_slice: text.slice(0, 200) })
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
   }
 

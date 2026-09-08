@@ -64,7 +64,7 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
       <!-- 命令代码块 -->
       <div class="cc-command-wrap">
-        <pre class="cc-command" data-selectable><code>{{ commandText }}</code></pre>
+        <pre class="code-block cc-command" data-selectable><code>{{ commandText }}</code></pre>
       </div>
 
       <!-- 元信息 -->
@@ -197,19 +197,11 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 }
 
 .cc-command {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  font-family: 'Consolas', 'Courier New', monospace;
   color: #b7e6c4;
-  white-space: pre-wrap;
-  word-break: break-all;
+  word-break: break-word;
   max-height: 120px;
   overflow: auto;
 }
-
-.cc-command::-webkit-scrollbar { width: 5px; height: 5px; }
-.cc-command::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
 
 /* 元信息 */
 .cc-meta {

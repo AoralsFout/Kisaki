@@ -280,7 +280,11 @@ async fn acquire_or_connect(
         match run_task_on_connection(&mut write, model, voice).await {
             Ok(task_id) => return Ok((write, read, task_id, true)),
             Err(e) => {
-                eprintln!("连接池中现有连接不可复用，创建新连接: {}", e);
+                crate::log::write_native_log(
+                    "warn",
+                    "TTS",
+                    format!("连接池中现有连接不可复用，创建新连接: {}", e),
+                );
                 // 丢弃旧的失效连接
                 drop(write);
                 drop(read);
@@ -528,7 +532,11 @@ pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String
         "wav"
     }.to_string();
 
-    eprintln!("GPT-SoVITS 合成完成: {} bytes ({})", bytes.len(), format);
+    crate::log::write_native_log(
+        "info",
+        "TTS",
+        format!("GPT-SoVITS 合成完成: {} bytes ({})", bytes.len(), format),
+    );
 
     Ok(GptSoVitsResult { audio_base64, format })
 }
@@ -540,7 +548,11 @@ pub(crate) async fn gptsovits_tts_stream(
     stream_id: String,
     url: String,
 ) -> Result<(), String> {
-    eprintln!("GPT-SoVITS 流式请求: stream_id={}", stream_id);
+    crate::log::write_native_log(
+        "debug",
+        "TTS",
+        format!("GPT-SoVITS 流式请求: stream_id={}", stream_id),
+    );
 
     let response = gptsovits_client()?
         .get(&url)
@@ -583,6 +595,10 @@ pub(crate) async fn gptsovits_tts_stream(
         is_last: true,
     });
 
-    eprintln!("GPT-SoVITS 流式完成: stream_id={}, {} chunks", stream_id, chunk_count);
+    crate::log::write_native_log(
+        "info",
+        "TTS",
+        format!("GPT-SoVITS 流式完成: stream_id={}, {} chunks", stream_id, chunk_count),
+    );
     Ok(())
 }

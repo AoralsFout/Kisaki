@@ -88,7 +88,7 @@ function saveJSON(key: string, value: unknown): boolean {
   } catch (e) {
     // 典型原因：localStorage 配额耗尽（WebView 通常约 10MB）。
     // 不再静默忽略——否则用户会以为历史已保存，重启后才发现丢失。
-    log.error('本地存储写入失败（key=%s），数据未能持久化: %s', key, (e as Error)?.message || String(e))
+    log.error("session.local_storage_write_failed", "本地存储写入失败，数据未能持久化", e, { key })
     return false
   }
 }
@@ -122,13 +122,12 @@ async function loadFromFile(): Promise<FileLoadResult> {
     if (raw == null) return { ok: true, data: null }
     const parsed = JSON.parse(raw) as { sessions?: Session[]; currentId?: string }
     if (!Array.isArray(parsed.sessions) || typeof parsed.currentId !== 'string') {
-      log.warn('会话文件格式异常，按无数据处理（不会覆盖文件直到下次保存）')
+      log.warn("session_store.load_from_file.warn", "会话文件格式异常，按无数据处理（不会覆盖文件直到下次保存）")
       return { ok: true, data: null }
     }
     return { ok: true, data: { sessions: parsed.sessions, currentId: parsed.currentId } }
   } catch (e) {
-    log.warn('读取会话文件失败（非 Tauri 环境？），回退 localStorage: %s',
-      (e as Error)?.message || String(e))
+    log.warn("session_store.load_from_file.warn", `读取会话文件失败（非 Tauri 环境？），回退 localStorage: ${(e as Error)?.message || String(e)}`, e)
     return { ok: false }
   }
 }
@@ -246,16 +245,12 @@ export const useSessionStore = defineStore('session', () => {
           localStorage.removeItem(STORAGE_SESSIONS)
           localStorage.removeItem(STORAGE_CURRENT_SESSION)
         } catch { /* ignore */ }
-        log.info('会话数据已从 localStorage 迁移到会话文件')
+        log.info("session_store.init.info", "会话数据已从 localStorage 迁移到会话文件")
       }
     }
 
     ready.value = true
-    log.info(
-      '初始化完成: %d 个会话, 当前="%s"',
-      sessions.value.length,
-      currentSession.value?.name ?? '无',
-    )
+    log.info("session_store.init.info", `初始化完成: ${sessions.value.length} 个会话, 当前="${currentSession.value?.name ?? '无'}"`, { sessions_value: sessions.value.length, current_session_value: currentSession.value?.name ?? '无' })
 
     // 恢复当前会话绑定的角色与视觉状态（可能异步切角色，不阻塞 ready）
     if (toRestore) await restoreSessionState(toRestore)
@@ -295,7 +290,7 @@ export const useSessionStore = defineStore('session', () => {
       await invoke('sessions_save', { data: payload })
     } catch (e) {
       ok = false
-      log.error('会话写入磁盘失败，历史可能无法保存: %s', (e as Error)?.message || String(e))
+      log.error("session.file_write_failed", "会话写入磁盘失败，历史可能无法保存", e, undefined)
       persistError.value = true
     } finally {
       fileWriteRunning = false
@@ -316,7 +311,7 @@ export const useSessionStore = defineStore('session', () => {
     const ok = sessionsOk && currentOk
     persistError.value = !ok
     if (!ok) {
-      log.error('本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复')
+      log.error("session_store.persist_sessions.error", "本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复", new Error("本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复"))
     }
   }
 
@@ -342,7 +337,7 @@ export const useSessionStore = defineStore('session', () => {
     persistSessions()
     // 立即切换到新会话（角色状态会自动重置为默认）
     switchSession(session.id)
-    log.info('已创建并切换到会话: "%s"', session.name)
+    log.info("session_store.create_session.info", `已创建并切换到会话: "${session.name}"`, { session_name: session.name })
     return session
   }
 
@@ -354,7 +349,7 @@ export const useSessionStore = defineStore('session', () => {
     if (sessionId === currentSessionId.value) return
     const target = sessions.value.find(s => s.id === sessionId)
     if (!target) {
-      log.warn('目标会话不存在: %s', sessionId)
+      log.warn("session_store.switch_session.warn", `目标会话不存在: ${sessionId}`, undefined, { session_id: sessionId })
       return
     }
 
@@ -371,7 +366,7 @@ export const useSessionStore = defineStore('session', () => {
     // 恢复目标会话的角色与视觉状态（可能异步切角色）
     await restoreSessionState(target)
 
-    log.info('已切换到会话: "%s" (%d 条消息)', target.name, target.messages.length)
+    log.info("session_store.switch_session.info", `已切换到会话: "${target.name}" (${target.messages.length} 条消息)`, { target_name: target.name, target_messages: target.messages.length })
   }
 
   /**
@@ -403,7 +398,7 @@ export const useSessionStore = defineStore('session', () => {
    */
   function deleteSession(sessionId: string): boolean {
     if (sessions.value.length <= 1) {
-      log.warn('至少需要保留一个会话')
+      log.warn("session_store.delete_session.warn", "至少需要保留一个会话")
       return false
     }
     const idx = sessions.value.findIndex(s => s.id === sessionId)
@@ -428,7 +423,7 @@ export const useSessionStore = defineStore('session', () => {
     }
 
     persistSessions()
-    log.info('已删除会话')
+    log.info("session_store.delete_session.info", "已删除会话")
     return true
   }
 
@@ -465,7 +460,7 @@ export const useSessionStore = defineStore('session', () => {
     if (previousId && previousId !== grant.id) {
       void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => { /* ignore */ })
     }
-    log.info('已设置会话工作目录: %s', grant.path)
+    log.info("session_store.set_workspace.info", `已设置会话工作目录: ${grant.path}`, { grant_path: grant.path })
   }
 
   /** 取消当前会话的工作目录授权 */
@@ -479,10 +474,10 @@ export const useSessionStore = defineStore('session', () => {
     persistSessions()
     if (workspaceId) {
       void invoke('agent_revoke_workspace', { workspaceId }).catch((e) => {
-        log.warn('撤销工作目录授权失败: %s', (e as Error)?.message || String(e))
+        log.warn("session_store.clear_workspace.warn", `撤销工作目录授权失败: ${(e as Error)?.message || String(e)}`, e)
       })
     }
-    log.info('已取消会话工作目录授权')
+    log.info("session_store.clear_workspace.info", "已取消会话工作目录授权")
   }
 
   // ── 角色状态恢复 ──
@@ -505,7 +500,7 @@ export const useSessionStore = defineStore('session', () => {
           workspaceId: session.workspaceId,
         })
       } catch (e) {
-        log.warn('恢复工作目录授权失败，需重新选择: %s', (e as Error)?.message || String(e))
+        log.warn("session_store.restore_session_state.warn", `恢复工作目录授权失败，需重新选择: ${(e as Error)?.message || String(e)}`, e)
         session.workspaceId = null
         session.workspaceRoot = null
         persistSessions()
@@ -521,7 +516,7 @@ export const useSessionStore = defineStore('session', () => {
       try {
         await charStore.loadCharacter(session.characterId, true)
       } catch (err) {
-        log.warn('恢复会话角色失败（保持当前角色）: %s', (err as Error).message)
+        log.warn("session_store.restore_session_state.warn", `恢复会话角色失败（保持当前角色）: ${(err as Error).message}`, err)
       }
     }
 
@@ -613,7 +608,7 @@ export const useSessionStore = defineStore('session', () => {
       try {
         await charStore.loadCharacter(cp.characterId, true)
       } catch (err) {
-        log.warn('回档恢复角色失败（保持当前角色）: %s', (err as Error).message)
+        log.warn("session_store.restore_character_checkpoint.warn", `回档恢复角色失败（保持当前角色）: ${(err as Error).message}`, err)
       }
     }
     if (cp.visualState) charStore.applyVisualState(cp.visualState)
@@ -635,7 +630,7 @@ export const useSessionStore = defineStore('session', () => {
     const msgs = chatStore.messages
     const idx = msgs.findIndex(m => m.id === messageId)
     if (idx < 0) {
-      log.warn('回档目标消息不存在: %s', messageId)
+      log.warn("session_store.rollback_to.warn", `回档目标消息不存在: ${messageId}`, undefined, { message_id: messageId })
       return false
     }
 
@@ -655,7 +650,10 @@ export const useSessionStore = defineStore('session', () => {
           checkpointIds: fileCpIdsNewestFirst,
         })
       } catch (e) {
-        log.error('回档还原文件失败: %s', (e as Error).message)
+        log.error("session.rollback_failed", "回档还原文件失败", e, {
+          sessionId: session.id,
+          checkpointCount: fileCpIdsNewestFirst.length,
+        })
       }
     }
 
@@ -678,8 +676,7 @@ export const useSessionStore = defineStore('session', () => {
     session.context = chatStore.exportContext()
     persistSessions()
 
-    log.info('已回档到消息 %s（保留 %d 条，还原 %d 个文件检查点）',
-      messageId, kept.length, fileCpIdsNewestFirst.length)
+    log.info("session_store.rollback_to.info", `已回档到消息 ${messageId}（保留 ${kept.length} 条，还原 ${fileCpIdsNewestFirst.length} 个文件检查点）`, { message_id: messageId, kept_length: kept.length, file_cp_ids_newest_first_length: fileCpIdsNewestFirst.length })
     return true
   }
 

@@ -83,9 +83,9 @@ async function _build(url: string): Promise<void> {
     for (let i = 0; i < w * h; i++) alpha[i] = data[i * 4 + 3]
 
     cache.set(url, { w, h, data: alpha })
-    log.debug('alpha 掩码已构建 %dx%d: %s', w, h, url)
+    log.debug("alpha_mask.build.debug", `alpha 掩码已构建 ${w}x${h}: ${url}`, { w: w, h: h, url: url })
   } catch (e) {
     cache.delete(url)
-    log.warn('alpha 掩码构建失败（退回矩形命中）: %s', (e as Error).message)
+    log.warn("alpha_mask.build.warn", `alpha 掩码构建失败（退回矩形命中）: ${(e as Error).message}`, e)
   }
 }

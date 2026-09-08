@@ -112,10 +112,10 @@ export async function initWindowState(
         await win.setSize(new PhysicalSize(visible.width, visible.height))
       } catch (e) {
         // 缺少 set-position/set-size 权限时静默降级，不影响主流程
-        log.warn('恢复窗口位置/大小失败（可能缺少权限）: %s', (e as Error)?.message || String(e))
+        log.warn("window_state.init_window_state.warn", `恢复窗口位置/大小失败（可能缺少权限）: ${(e as Error)?.message || String(e)}`, e)
       }
     } else {
-      log.info('窗口状态越界（显示器已变更），跳过恢复: %s', key)
+      log.info("window_state.init_window_state.info", `窗口状态越界（显示器已变更），跳过恢复: ${key}`, { key: key })
     }
   }
 
@@ -125,7 +125,7 @@ export async function initWindowState(
     try {
       await win.show()
     } catch (e) {
-      log.warn('恢复后显示窗口失败: %s', (e as Error)?.message || String(e))
+      log.warn("window_state.init_window_state.warn", `恢复后显示窗口失败: ${(e as Error)?.message || String(e)}`, e)
     }
   }
 
@@ -151,7 +151,7 @@ export async function initWindowState(
     await win.onMoved(schedule)
     await win.onResized(schedule)
   } catch (e) {
-    log.warn('监听窗口移动/缩放失败（非 Tauri 环境?）: %s', (e as Error)?.message || String(e))
+    log.warn("window_state.init_window_state.warn", `监听窗口移动/缩放失败（非 Tauri 环境?）: ${(e as Error)?.message || String(e)}`, e)
     return
   }
 

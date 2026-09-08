@@ -66,12 +66,12 @@ onMounted(() => {
   controller.init()
   registerCharacterController(controller)
   setAgentController(controller)
-  log.info('立绘舞台已挂载')
+  log.info("illustration_stage.module.info", "立绘舞台已挂载")
 })
 
 onUnmounted(() => {
   controller.dispose()
-  log.info('立绘舞台已卸载')
+  log.info("illustration_stage.module.info", "立绘舞台已卸载")
 })
 
 /** 监听图片切换，驱动交叉淡出 */
@@ -80,7 +80,7 @@ watch(
   (newImg, oldImg) => {
     if (!oldImg || !newImg || oldImg.file === newImg.file) return
 
-    log.debug('图片切换: %s → %s', oldImg.file, newImg.file)
+    log.debug("illustration_stage.module.debug", `图片切换: ${oldImg.file} → ${newImg.file}`, { old_img_file: oldImg.file, new_img_file: newImg.file })
     fadingImage.value = null
     fading.value = false
 

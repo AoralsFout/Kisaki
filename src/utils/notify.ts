@@ -26,13 +26,13 @@ export async function notify(title: string, body: string): Promise<boolean> {
       granted = permission === 'granted'
     }
     if (!granted) {
-      log.info('通知权限未授予，跳过系统通知')
+      log.info("notify.notify.info", "通知权限未授予，跳过系统通知")
       return false
     }
     sendNotification({ title, body })
     return true
   } catch (e) {
-    log.warn('发送系统通知失败（非 Tauri 环境或插件不可用）: %s', (e as Error)?.message || String(e))
+    log.warn("notify.notify.warn", `发送系统通知失败（非 Tauri 环境或插件不可用）: ${(e as Error)?.message || String(e)}`, e)
     return false
   }
 }

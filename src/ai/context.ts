@@ -366,7 +366,7 @@ export class ChatContext {
       this.maxRounds = (typeof args[0] === 'number' ? args[0] : FALLBACK_MAX_ROUNDS)
       this.maxContextTokens = (typeof args[1] === 'number' ? args[1] : FALLBACK_MAX_CONTEXT_TOKENS)
     }
-    log.info('ChatContext 初始化: maxRounds=%d, maxContextTokens=%d', this.maxRounds, this.maxContextTokens)
+    log.info("chat_context.module.info", `ChatContext 初始化: maxRounds=${this.maxRounds}, maxContextTokens=${this.maxContextTokens}`, { this_max_rounds: this.maxRounds, this_max_context_tokens: this.maxContextTokens })
     this.reset()
   }
 
@@ -422,7 +422,7 @@ export class ChatContext {
       role: 'system',
       content: this.customPrompt + buildLangInstruction(this.voiceLang, this.displayLang) + buildToolInstructions(this.render),
     }
-    log.debug('System prompt 已重建 (语音: %s, 显示: %s)', this.voiceLang, this.displayLang)
+    log.debug("chat_context.rebuild_system_prompt.debug", `System prompt 已重建 (语音: ${this.voiceLang}, 显示: ${this.displayLang})`, { this_voice_lang: this.voiceLang, this_display_lang: this.displayLang })
   }
 
   /** 设置自定义 system prompt（自动追加语言指令和工具说明） */
@@ -436,7 +436,7 @@ export class ChatContext {
       role: 'system',
       content: prompt + langInstruction + buildToolInstructions(this.render),
     }
-    log.debug('System prompt 已设置 (语音: %s, 显示: %s)', voiceLang || '默认', displayLang || '默认')
+    log.debug("chat_context.set_system_prompt.debug", `System prompt 已设置 (语音: ${voiceLang || '默认'}, 显示: ${displayLang || '默认'})`, { voice_lang: voiceLang || '默认', display_lang: displayLang || '默认' })
   }
 
   /** 重置对话 */
@@ -450,13 +450,13 @@ export class ChatContext {
     if (this.customPrompt) {
       this.rebuildSystemPrompt()
     }
-    log.info('对话已重置 (之前 %d 条消息)', prevLen)
+    log.info("chat_context.reset.info", `对话已重置 (之前 ${prevLen} 条消息)`, { prev_len: prevLen })
   }
 
   /** 添加用户消息 */
   addUserMessage(content: string, images: readonly ImageAttachment[] = []) {
     this.messages.push({ role: 'user', content: multimodalContent(content, images) })
-    log.debug('用户消息已添加, 当前 %d 条', this.messages.length)
+    log.debug("chat_context.add_user_message.debug", `用户消息已添加, 当前 ${this.messages.length} 条`, { this_messages: this.messages.length })
   }
 
   /**
@@ -478,7 +478,7 @@ export class ChatContext {
   /** 添加助手回复（纯文本） */
   addAssistantMessage(content: string) {
     this.messages.push({ role: 'assistant', content })
-    log.debug('助手消息已添加, 回复长度: %d 字符', content.length)
+    log.debug("chat_context.add_assistant_message.debug", `助手消息已添加, 回复长度: ${content.length} 字符`, { content_length: content.length })
   }
 
   /**
@@ -492,7 +492,7 @@ export class ChatContext {
       content: content ?? '',
       tool_calls: toolCalls,
     })
-    log.debug('助手工具调用已添加: %d 个', toolCalls.length)
+    log.debug("chat_context.add_assistant_tool_call.debug", `助手工具调用已添加: ${toolCalls.length} 个`, { tool_calls_length: toolCalls.length })
   }
 
   /** 添加工具执行结果（自动截断过长内容） */
@@ -503,7 +503,7 @@ export class ChatContext {
       content: truncated,
       tool_call_id: toolCallId,
     })
-    log.debug('工具结果已添加: %s (长度: %d → %d)', toolCallId, content.length, truncated.length)
+    log.debug("chat_context.add_tool_result.debug", `工具结果已添加: ${toolCallId} (长度: ${content.length} → ${truncated.length})`, { tool_call_id: toolCallId, content_length: content.length, truncated_length: truncated.length })
   }
 
   /**
@@ -520,7 +520,7 @@ export class ChatContext {
         images,
       ),
     })
-    log.debug('工具图片已添加: %s (%d 张)', toolCallId, images.length)
+    log.debug("chat_context.add_tool_images.debug", `工具图片已添加: ${toolCallId} (${images.length} 张)`, { tool_call_id: toolCallId, images_length: images.length })
   }
 
   /**
@@ -655,7 +655,7 @@ export class ChatContext {
     this.summarizedRounds = Math.max(0, snapshot.summarizedRounds || 0)
     this.prunedMessages = 0
     this.lastToolDefinitionTokens = 0
-    log.info('协议上下文已恢复: %d 条, 摘要 %d 轮', restored.length, this.summarizedRounds)
+    log.info("chat_context.import_snapshot.info", `协议上下文已恢复: ${restored.length} 条, 摘要 ${this.summarizedRounds} 轮`, { restored_length: restored.length, this_summarized_rounds: this.summarizedRounds })
     return true
   }
 
@@ -710,8 +710,7 @@ export class ChatContext {
       this.rollingSummary = compactText(this.rollingSummary, 1200)
     }
     if (this.prunedMessages > 0) {
-      log.debug('上下文预算整理: 已移除 %d 条, 摘要 %d 轮, 当前 ~%d/%d tokens',
-        this.prunedMessages, this.summarizedRounds, totalTokens(), this.maxContextTokens)
+      log.debug("chat_context.prune.debug", `上下文预算整理: 已移除 ${this.prunedMessages} 条, 摘要 ${this.summarizedRounds} 轮, 当前 ~${totalTokens()}/${this.maxContextTokens} tokens`, { this_pruned_messages: this.prunedMessages, this_summarized_rounds: this.summarizedRounds, total_tokens: totalTokens(), this_max_context_tokens: this.maxContextTokens })
     }
   }
 

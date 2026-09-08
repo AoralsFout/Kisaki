@@ -7,36 +7,61 @@
  * - 彩色控制台输出（namespace 着色 + 级别标签）
  * - 运行时动态调整日志级别（生产/开发环境自适应）
  * - 内存环形缓冲区（保留最近 N 条日志，供崩溃诊断或 UI 查看器使用）
- * - 可扩展：预留 Tauri 文件持久化钩子，无需 Rust 侧配合即开即用
+ * - 严格结构化事件：每条日志必须包含稳定 event，错误必须携带原始异常
  *
  * 使用示例：
  *   import { createLogger } from '../utils/logger'
  *   const log = createLogger('TTS')
- *   log.info('播报完成')        // → [INF] [TTS] 播报完成
- *   log.warn('连接超时', err)   // → [WRN] [TTS] 连接超时 + Error 对象
- *   log.debug('音频帧尺寸:', buf.byteLength)
+ *   log.info('tts.completed', '播报完成', { durationMs })
+ *   log.error('tts.failed', '连接失败', error, { requestId })
  */
 
 // ─── 类型定义 ─────────────────────────────────────────
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error'
+export const LOG_SCHEMA_VERSION = 2 as const
+
+export interface SerializedError {
+  name: string
+  message: string
+  stack?: string
+  code?: string
+  cause?: SerializedError
+  details?: unknown
+}
+
+export type LogContext = Record<string, unknown>
+
+export interface LogRecord {
+  event: string
+  message: string
+  context?: LogContext
+  error?: unknown
+}
 
 export interface LogEntry {
+  schemaVersion: typeof LOG_SCHEMA_VERSION
   timestamp: string
   level: LogLevel
   namespace: string
   message: string
-  args?: unknown[]
+  event: string
+  /** 完整、可序列化的异常信息 */
+  error?: SerializedError
+  /** 与本次操作相关的结构化上下文 */
+  context?: LogContext
   /** 来源窗口标签 */
-  source?: string
+  source: string
 }
 
 export interface Logger {
-  trace: (message: string, ...args: unknown[]) => void
-  debug: (message: string, ...args: unknown[]) => void
-  info: (message: string, ...args: unknown[]) => void
-  warn: (message: string, ...args: unknown[]) => void
-  error: (message: string, ...args: unknown[]) => void
+  trace: (event: string, message: string, context?: LogContext) => void
+  debug: (event: string, message: string, context?: LogContext) => void
+  info: (event: string, message: string, context?: LogContext) => void
+  warn: (event: string, message: string, error?: unknown, context?: LogContext) => void
+  error: (event: string, message: string, error: unknown, context?: LogContext) => void
+  /** 致命错误会等待当前日志批次完成落盘。 */
+  fatal: (event: string, message: string, error: unknown, context?: LogContext) => Promise<void>
   /** 本 Logger 的命名空间 */
   ns: string
 }
@@ -169,7 +194,7 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
   /** 收到其它窗口广播的日志 → 立即展示 + 写入文件（避免源窗口崩溃丢失） */
   const handler = (event: MessageEvent) => {
     const entry = event.data as LogEntry
-    if (entry && entry.timestamp && entry.level && entry.namespace) {
+    if (entry?.schemaVersion === LOG_SCHEMA_VERSION && entry.timestamp && entry.level && entry.namespace && entry.event) {
       // 通知 UI 订阅者
       try { cb(entry) } catch { /* ignore */ }
 
@@ -189,6 +214,14 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
 let filePersistenceEnabled = false
 let fileWriteTimer: ReturnType<typeof setTimeout> | null = null
 let pendingFileEntries: LogEntry[] = []
+let flushInFlight: Promise<void> | null = null
+let persistenceFailures = 0
+let lastPersistenceError: SerializedError | undefined
+let droppedEntries = 0
+
+const NORMAL_FLUSH_DELAY = 2000
+const MAX_RETRY_DELAY = 30000
+const MAX_PENDING_ENTRIES = 5000
 
 /** 获取今日日志文件名（前端侧计算，与 Rust 侧约定） */
 function todayLogFilename(): string {
@@ -196,7 +229,7 @@ function todayLogFilename(): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `app-${y}-${m}-${day}.jsonl`
+  return `app-v${LOG_SCHEMA_VERSION}-${y}-${m}-${day}.jsonl`
 }
 
 // ─── 内部工具 ─────────────────────────────────────────
@@ -229,32 +262,107 @@ export function clearBuffer() {
   bufferFull = false
 }
 
-/** 展开 printf 风格格式占位符（%s / %d / %o / %O / %f） */
-function formatMessage(template: string, args?: unknown[]): string {
-  if (!args || args.length === 0) return template
-  let argIndex = 0
-  return template.replace(/%[sdfoO]/g, (match) => {
-    if (argIndex >= args.length) return match
-    const val = args[argIndex++]
-    switch (match) {
-      case '%s': return String(val)
-      case '%d':
-      case '%f': return String(Number(val) || 0)
-      case '%o':
-      case '%O': {
-        try { return JSON.stringify(val, null, 0) } catch { return String(val) }
-      }
-      default: return match
-    }
-  })
+const SENSITIVE_KEY = /^(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|secret)$/i
+
+function serializeUnknown(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
+  if (typeof value === 'string') return redactSensitiveText(value)
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value === 'bigint') return `${value}n`
+  if (typeof value === 'symbol' || typeof value === 'function') return String(value)
+  if (value instanceof Error) return normalizeError(value, seen, depth)
+  if (value instanceof Date) return value.toISOString()
+  if (depth >= 6) return '[MaxDepth]'
+  if (typeof value !== 'object') return String(value)
+  if (seen.has(value)) return '[Circular]'
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    const result = value.slice(0, 100).map(item => serializeUnknown(item, seen, depth + 1))
+    if (value.length > 100) result.push(`[Truncated ${value.length - 100} items]`)
+    return result
+  }
+
+  const result: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value).slice(0, 100)) {
+    result[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(child, seen, depth + 1)
+  }
+  if (Object.keys(value).length > 100) result.__truncated__ = true
+  return result
 }
 
-/** 获取结构的消息文本（含展开后的参数），用于文件持久化 */
-function formattedMessage(entry: LogEntry): string {
-  const message = entry.args && entry.args.length > 0
-    ? formatMessage(entry.message, entry.args)
-    : entry.message
-  return redactSensitiveText(message)
+/** 将浏览器、Tauri 和第三方库抛出的任意值统一成可持久化异常。 */
+export function normalizeError(
+  error: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): SerializedError {
+  if (error instanceof Error) {
+    if (seen.has(error)) return { name: error.name || 'Error', message: '[Circular error]' }
+    seen.add(error)
+    const withExtras = error as Error & { code?: unknown; cause?: unknown }
+    const serialized: SerializedError = {
+      name: error.name || 'Error',
+      message: redactSensitiveText(error.message || String(error)),
+    }
+    if (error.stack) serialized.stack = redactSensitiveText(error.stack)
+    if (withExtras.code != null) serialized.code = String(withExtras.code)
+    if (withExtras.cause != null && depth < 5) {
+      serialized.cause = normalizeError(withExtras.cause, seen, depth + 1)
+    }
+    const extras: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(error)) {
+      if (!['name', 'message', 'stack', 'code', 'cause'].includes(key)) {
+        extras[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(value, seen, depth + 1)
+      }
+    }
+    if (Object.keys(extras).length) serialized.details = extras
+    return serialized
+  }
+
+  if (typeof error === 'string') {
+    return { name: 'Error', message: redactSensitiveText(error) }
+  }
+
+  const details = serializeUnknown(error, seen, depth + 1)
+  let message = '未知错误'
+  if (error && typeof error === 'object' && 'message' in error) {
+    message = redactSensitiveText(String((error as { message?: unknown }).message ?? message))
+  } else if (details != null) {
+    try { message = JSON.stringify(details) } catch { message = String(details) }
+  }
+  return { name: 'Error', message, details }
+}
+
+function serializeEntry(entry: LogEntry): LogEntry {
+  return {
+    ...entry,
+    message: redactSensitiveText(entry.message),
+    error: entry.error ? serializeUnknown(entry.error) as SerializedError : undefined,
+    context: entry.context ? serializeUnknown(entry.context) as LogContext : undefined,
+  }
+}
+
+function publishInternalDiagnostic(
+  level: LogLevel,
+  message: string,
+  error?: unknown,
+  context?: LogContext,
+) {
+  const entry: LogEntry = {
+    schemaVersion: LOG_SCHEMA_VERSION,
+    timestamp: getTimestamp(),
+    level,
+    namespace: 'Logger',
+    event: level === 'error' ? 'logger.persistence_failed' : 'logger.persistence_recovered',
+    message,
+    error: error === undefined ? undefined : normalizeError(error),
+    context,
+    source: detectWindowSource(),
+  }
+  pushToBuffer(entry)
+  subscribers.forEach(cb => { try { cb(entry) } catch { /* ignore */ } })
+  ensureBroadcastChannel()
+  try { bc?.postMessage(serializeEntry(entry)) } catch { /* ignore */ }
 }
 
 /**
@@ -264,52 +372,102 @@ function formattedMessage(entry: LogEntry): string {
 export function redactSensitiveText(text: string): string {
   return text
     .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
-    .replace(/(["']?(?:api[_-]?key|authorization|access[_-]?token)["']?\s*[:=]\s*["']?)([^"'\s,}]+)/gi, '$1[REDACTED]')
+    .replace(/(["']?(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|secret)["']?\s*[:=]\s*["']?)([^"'\s,}]+)/gi, '$1[REDACTED]')
     .replace(/\bsk-[A-Za-z0-9_-]{6,}\b/g, '[REDACTED]')
 }
 
 // ─── 文件持久化 ──────────────────────────────────────
 
-async function flushFileEntries() {
-  if (pendingFileEntries.length === 0) return
+async function flushFileEntries(): Promise<void> {
+  if (flushInFlight) return flushInFlight
+  if (!filePersistenceEnabled || pendingFileEntries.length === 0) return
+
   const batch = pendingFileEntries.splice(0)
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('append_log_entries', {
-      filename: todayLogFilename(),
-      entries: batch.map(e => ({
-        timestamp: e.timestamp,
-        level: e.level,
-        namespace: e.namespace,
-        message: formattedMessage(e),
-        source: e.source || '',
-      })),
-    })
-  } catch {
-    // 文件写入静默失败：Tauri 命令未注册或非 Tauri 环境
-    filePersistenceEnabled = false
-  }
+  flushInFlight = (async () => {
+    try {
+      const recoveredFailures = persistenceFailures
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('append_log_entries', {
+        filename: todayLogFilename(),
+        entries: batch.map(serializeEntry),
+      })
+      persistenceFailures = 0
+      lastPersistenceError = undefined
+      if (recoveredFailures > 0) {
+        publishInternalDiagnostic('info', '日志写入已恢复', undefined, { recoveredFailures })
+      }
+    } catch (error) {
+      // 写失败时恢复批次，避免最需要诊断的日志被永久丢弃。
+      pendingFileEntries.unshift(...batch)
+      persistenceFailures++
+      lastPersistenceError = normalizeError(error)
+      console.error('[Logger] 日志落盘失败，将自动重试:', error)
+      if (persistenceFailures === 1 || (persistenceFailures & (persistenceFailures - 1)) === 0) {
+        publishInternalDiagnostic('error', '日志写入失败，诊断文件可能不完整；系统将自动重试', error, {
+          failures: persistenceFailures,
+          pending: pendingFileEntries.length,
+        })
+      }
+    } finally {
+      flushInFlight = null
+      if (pendingFileEntries.length > 0 && filePersistenceEnabled) {
+        const delay = persistenceFailures > 0
+          ? Math.min(NORMAL_FLUSH_DELAY * (2 ** (persistenceFailures - 1)), MAX_RETRY_DELAY)
+          : NORMAL_FLUSH_DELAY
+        scheduleFileFlush(delay)
+      }
+    }
+  })()
+  return flushInFlight
 }
 
-function scheduleFileFlush() {
+function scheduleFileFlush(delay = NORMAL_FLUSH_DELAY) {
   if (!filePersistenceEnabled) return
   if (fileWriteTimer) return
   fileWriteTimer = setTimeout(() => {
     fileWriteTimer = null
-    flushFileEntries()
-  }, 2000)
+    void flushFileEntries()
+  }, delay)
 }
 
 /** 添加日志条目到待写入队列 */
 function enqueueFileWrite(entry: LogEntry) {
   if (!filePersistenceEnabled) return
   pendingFileEntries.push(entry)
+  if (pendingFileEntries.length > MAX_PENDING_ENTRIES) {
+    const overflow = pendingFileEntries.length - MAX_PENDING_ENTRIES
+    pendingFileEntries.splice(0, overflow)
+    droppedEntries += overflow
+  }
+}
+
+/** 立即尝试写完当前队列，供错误处理、导出和窗口关闭前调用。 */
+export async function flushLogs(): Promise<void> {
+  if (fileWriteTimer) {
+    clearTimeout(fileWriteTimer)
+    fileWriteTimer = null
+  }
+  await flushFileEntries()
+  // 若等待既有写入期间又产生了日志，成功后继续排空；失败则交给退避重试。
+  if (pendingFileEntries.length > 0 && persistenceFailures === 0) {
+    await flushFileEntries()
+  }
+}
+
+export function getPersistenceStatus() {
+  return {
+    enabled: filePersistenceEnabled,
+    pending: pendingFileEntries.length,
+    failures: persistenceFailures,
+    dropped: droppedEntries,
+    lastError: lastPersistenceError,
+  }
 }
 
 /**
  * 启用 Tauri 文件持久化。
  * 日志会以 2 秒为间隔批量写入 Tauri 后端日志文件。
- * 若 Rust 端未实现 append_log_entries 命令，自动静默降级。
+ * 持久化失败会进入有界重试队列，并在状态中显式暴露。
  *
  * 模块初始化时会自动检测 Tauri 环境并调用此方法。
  */
@@ -335,13 +493,8 @@ function isTauri(): boolean {
 }
 
 // 模块加载时自动检测并启用文件持久化
-if (typeof window !== 'undefined') {
-  // 延迟到微任务队列，等 import 链稳定后再检测
-  queueMicrotask(() => {
-    if (isTauri()) {
-      enableFilePersistence()
-    }
-  })
+if (typeof window !== 'undefined' && isTauri()) {
+  void enableFilePersistence()
 }
 
 /** 关闭文件持久化 */
@@ -375,6 +528,10 @@ export function resetConfig() {
   globalConfig = { ...DEFAULT_CONFIG }
   clearBuffer()
   disableFilePersistence()
+  pendingFileEntries = []
+  persistenceFailures = 0
+  lastPersistenceError = undefined
+  droppedEntries = 0
 }
 
 /** 获取当前配置（外部只读快照） */
@@ -385,6 +542,7 @@ export function getConfig(): LoggerConfig {
 // ─── Logger 工厂 ──────────────────────────────────────
 
 const nsColorCache = new Map<string, string>()
+const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/
 
 /**
  * 创建一个命名空间 Logger。
@@ -407,7 +565,10 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     return [lvlStyle, nsStyle, resetStyle]
   }
 
-  function log(lvl: LogLevel, message: string, ...args: unknown[]) {
+  function log(lvl: LogLevel, record: LogRecord) {
+    if (!EVENT_NAME_PATTERN.test(record.event)) {
+      throw new TypeError(`无效的日志事件名: ${record.event}`)
+    }
     if (!globalConfig.enabled) return
     if (level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
     if (!meetsLevel(lvl)) return
@@ -415,34 +576,41 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     const ts = getTimestamp()
     const label = formatLabel(lvl)
     const styles = formatStyles(lvl)
-    const fullMsg = `${message}`
+    const fullMsg = `${record.message}`
+    const consoleDetails = {
+      ...(record.context ? { context: record.context } : {}),
+      ...(record.error !== undefined ? { error: record.error } : {}),
+    }
 
     // 控制台输出
     switch (lvl) {
       case 'trace':
-        console.debug(label + fullMsg, ...styles, ...args)
+        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
         break
       case 'debug':
-        console.debug(label + fullMsg, ...styles, ...args)
+        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
         break
       case 'info':
-        console.info(label + fullMsg, ...styles, ...args)
+        console.info(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
         break
       case 'warn':
-        console.warn(label + fullMsg, ...styles, ...args)
+        console.warn(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
         break
       case 'error':
-        console.error(label + fullMsg, ...styles, ...args)
+        console.error(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
         break
     }
 
     // 入环形缓冲
     const entry: LogEntry = {
+      schemaVersion: LOG_SCHEMA_VERSION,
       timestamp: ts,
       level: lvl,
       namespace,
       message: fullMsg,
-      args: args.length > 0 ? args : undefined,
+      event: record.event,
+      error: record.error !== undefined ? normalizeError(record.error) : undefined,
+      context: record.context,
       source: detectWindowSource(),
     }
     pushToBuffer(entry)
@@ -453,24 +621,56 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     // 跨窗口广播（让日志窗口实时看到其它窗口的日志）
     ensureBroadcastChannel()
     try {
-      bc?.postMessage({
-        ...entry,
-        message: formattedMessage(entry), // 广播展开后的完整消息
-        source: entry.source || detectWindowSource(),
-      })
+      bc?.postMessage(serializeEntry(entry))
     } catch { /* ignore */ }
 
     // 文件持久化（全部级别写入文件，2 秒节流批量写入）
     enqueueFileWrite(entry)
-    scheduleFileFlush()
+    if (lvl === 'error') void flushLogs()
+    else scheduleFileFlush()
   }
 
   return {
-    trace: (msg, ...args) => log('trace', msg, ...args),
-    debug: (msg, ...args) => log('debug', msg, ...args),
-    info: (msg, ...args) => log('info', msg, ...args),
-    warn: (msg, ...args) => log('warn', msg, ...args),
-    error: (msg, ...args) => log('error', msg, ...args),
+    trace: (event, message, context) => log('trace', { event, message, context }),
+    debug: (event, message, context) => log('debug', { event, message, context }),
+    info: (event, message, context) => log('info', { event, message, context }),
+    warn: (event, message, error, context) => log('warn', { event, message, error, context }),
+    error: (event, message, error, context) => log('error', { event, message, error, context }),
+    fatal: async (event, message, error, context) => {
+      log('error', { event, message, error, context })
+      await flushLogs()
+    },
     ns: namespace,
+  }
+}
+
+/** 安装一次当前 WebView 的全局错误采集，返回卸载函数。 */
+export function installGlobalErrorHandlers(logger: Logger): () => void {
+  if (typeof window === 'undefined') return () => {}
+
+  const onError = (event: ErrorEvent) => {
+    void logger.fatal(
+      'javascript.uncaught_error',
+      '未捕获的 JavaScript 异常',
+      event.error ?? event.message,
+      { filename: event.filename, line: event.lineno, column: event.colno },
+    )
+  }
+  const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+    void logger.fatal(
+      'javascript.unhandled_rejection',
+      '未处理的 Promise rejection',
+      event.reason,
+    )
+  }
+  const onPageHide = () => { void flushLogs() }
+
+  window.addEventListener('error', onError)
+  window.addEventListener('unhandledrejection', onUnhandledRejection)
+  window.addEventListener('pagehide', onPageHide)
+  return () => {
+    window.removeEventListener('error', onError)
+    window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    window.removeEventListener('pagehide', onPageHide)
   }
 }

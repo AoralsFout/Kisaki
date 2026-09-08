@@ -53,7 +53,7 @@ async function onAutoStartChange() {
     if (autoStart.value) await enable()
     else await disable()
   } catch (e) {
-    log.warn('开机自启切换失败', e)
+    log.warn("settings_general.on_auto_start_change.warn", "开机自启切换失败", e)
     await refreshAutoStart()
   }
 }

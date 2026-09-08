@@ -84,7 +84,7 @@ export function useCharacterController() {
     const byDefault = selectCurrentImage()
     if (byDefault) return byDefault
     // 仍无匹配 → 用首图兜底
-    log.warn('立绘兜底：标签无匹配，回退首图 %s', d.images[0].file)
+    log.warn("character_ctrl.select_image_with_fallback.warn", `立绘兜底：标签无匹配，回退首图 ${d.images[0].file}`, undefined, { d_images: d.images[0].file })
     return d.images[0]
   }
 
@@ -109,8 +109,7 @@ export function useCharacterController() {
           exclude: currentImage.value?.file,
         })
         if (img) {
-          log.info('情绪"%s"在当前姿势"%s"中无匹配，自动切换到姿势"%s"',
-            emotion, currentPoseTag.value, pose)
+          log.info("character_ctrl.set_emotion.info", `情绪"${emotion}"在当前姿势"${currentPoseTag.value}"中无匹配，自动切换到姿势"${pose}"`, { emotion: emotion, current_pose_tag_value: currentPoseTag.value, pose: pose })
           currentPoseTag.value = pose
           break
         }
@@ -118,13 +117,13 @@ export function useCharacterController() {
     }
 
     if (!img) {
-      log.warn('未找到匹配情绪"%s"的图片（所有姿势均无匹配）', emotion)
+      log.warn("character_ctrl.set_emotion.warn", `未找到匹配情绪"${emotion}"的图片（所有姿势均无匹配）`, undefined, { emotion: emotion })
       return
     }
     currentEmotion.value = emotion
     currentImage.value = img
     syncToStore()
-    log.debug('情绪切换: %s, 图片: %s', emotion, img.file)
+    log.debug("character_ctrl.set_emotion.debug", `情绪切换: ${emotion}, 图片: ${img.file}`, { emotion: emotion, img_file: img.file })
   }
 
   function setPoseTag(pose: string) {
@@ -134,13 +133,13 @@ export function useCharacterController() {
       exclude: currentImage.value?.file,
     })
     if (!img) {
-      log.warn('未找到匹配姿势"%s"的图片', pose)
+      log.warn("character_ctrl.set_pose_tag.warn", `未找到匹配姿势"${pose}"的图片`, undefined, { pose: pose })
       return
     }
     currentPoseTag.value = pose
     currentImage.value = img
     syncToStore()
-    log.debug('姿势切换: %s, 图片: %s', pose, img.file)
+    log.debug("character_ctrl.set_pose_tag.debug", `姿势切换: ${pose}, 图片: ${img.file}`, { pose: pose, img_file: img.file })
   }
 
   function setCostume(costume: string) {
@@ -150,13 +149,13 @@ export function useCharacterController() {
       exclude: currentImage.value?.file,
     })
     if (!img) {
-      log.warn('未找到匹配服装"%s"的图片', costume)
+      log.warn("character_ctrl.set_costume.warn", `未找到匹配服装"${costume}"的图片`, undefined, { costume: costume })
       return
     }
     currentCostume.value = costume
     currentImage.value = img
     syncToStore()
-    log.debug('服装切换: %s, 图片: %s', costume, img.file)
+    log.debug("character_ctrl.set_costume.debug", `服装切换: ${costume}, 图片: ${img.file}`, { costume: costume, img_file: img.file })
   }
 
   function setLook(look: {
@@ -181,7 +180,7 @@ export function useCharacterController() {
         if (p === pose) continue
         img = pickRandomImage(d, { pose: p, emotion, costume, exclude: currentImage.value?.file })
         if (img) {
-          log.info('setLook 情绪"%s"在姿势"%s"中无匹配，自动切换到姿势"%s"', emotion, pose, p)
+          log.info("character_ctrl.set_look.info", `setLook 情绪"${emotion}"在姿势"${pose}"中无匹配，自动切换到姿势"${p}"`, { emotion: emotion, pose: pose, p: p })
           pose = p
           break
         }
@@ -189,7 +188,7 @@ export function useCharacterController() {
     }
 
     if (!img) {
-      log.warn('setLook 未找到匹配图片: %o', look)
+      log.warn("character_ctrl.set_look.warn", `setLook 未找到匹配图片: ${JSON.stringify(look)}`, undefined, { look: look })
       return
     }
     if (look.pose) currentPoseTag.value = pose
@@ -197,20 +196,20 @@ export function useCharacterController() {
     if (look.costume) currentCostume.value = costume
     currentImage.value = img
     syncToStore()
-    log.info('外观批量更新: %o', look)
+    log.info("character_ctrl.set_look.info", `外观批量更新: ${JSON.stringify(look)}`, { look: look })
   }
 
   function setScreenPose(key: PoseKey) {
     if (ALL_POSE_KEYS.includes(key)) {
       currentScreenPose.value = key
       syncToStore()
-      log.debug('屏幕位置切换: %s', key)
+      log.debug("character_ctrl.set_screen_pose.debug", `屏幕位置切换: ${key}`, { key: key })
     }
   }
 
   // ======== 角色切换 ========
   async function switchCharacter(charId: string) {
-    log.info('切换角色: %s', charId)
+    log.info("character_ctrl.switch_character.info", `切换角色: ${charId}`, { char_id: charId })
     await charStore.loadCharacter(charId)
     currentPoseTag.value = ''
     currentEmotion.value = ''
@@ -220,7 +219,7 @@ export function useCharacterController() {
     syncToStore()
     // 将新角色写回当前会话（切回该会话时能恢复此角色）
     useSessionStore().saveCurrentSession()
-    log.info('角色切换完成: %s (%s)', charId, charStore.name)
+    log.info("character_ctrl.switch_character.info", `角色切换完成: ${charId} (${charStore.name})`, { char_id: charId, char_store_name: charStore.name })
   }
 
   // ======== 监听 characterStore 视觉状态变化（会话恢复触发） ========
@@ -231,8 +230,7 @@ export function useCharacterController() {
       if (emotion === currentEmotion.value && stance === currentPoseTag.value &&
           costume === currentCostume.value && screenPose === currentScreenPose.value) return
 
-      log.info('检测到外部视觉状态变更, 同步控制器: 情绪=%s 姿势=%s 服装=%s 位置=%s',
-        emotion, stance, costume, screenPose)
+      log.info("character_ctrl.use_character_controller.info", `检测到外部视觉状态变更, 同步控制器: 情绪=${emotion} 姿势=${stance} 服装=${costume} 位置=${screenPose}`, { emotion: emotion, stance: stance, costume: costume, screen_pose: screenPose })
 
       // 更新本地状态
       const changed = { emotion: false, stance: false, costume: false }
@@ -284,8 +282,7 @@ export function useCharacterController() {
     }
     currentImage.value = selectImageWithFallback()
     ready.value = true
-    log.info('控制器初始化完成, 角色: %s (%s预制状态)',
-      charStore.name, hasStoredState ? '有' : '无')
+    log.info("character_ctrl.init.info", `控制器初始化完成, 角色: ${charStore.name} (${hasStoredState ? '有' : '无'}预制状态)`, { char_store_name: charStore.name, has_stored_state: hasStoredState ? '有' : '无' })
   }
 
   function dispose() {}

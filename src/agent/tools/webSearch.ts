@@ -65,12 +65,12 @@ export const webSearchTool: Tool = {
     const count = Math.min(Math.max(Number(args.count) || 3, 1), 5)
     const timeRange = normalizeTimeRange(args.time_range)
 
-    log.debug('联网搜索: "%s" (provider=%s, count=%d, time=%s)', query, config.provider, count, timeRange)
+    log.debug("tool_web_search.module.debug", `联网搜索: "${query}" (provider=${config.provider}, count=${count}, time=${timeRange})`, { query: query, config_provider: config.provider, count: count, time_range: timeRange })
 
     try {
       const hits = await search(config, query, count, timeRange)
       if (!hits.length) {
-        log.info('搜索无结果: %s', query)
+        log.info("tool_web_search.module.info", `搜索无结果: ${query}`, { query: query })
         return `未找到关于 "${query}" 的结果`
       }
 
@@ -79,15 +79,15 @@ export const webSearchTool: Tool = {
         .map((h, i) => `${i + 1}. ${h.title}\n   ${h.snippet}\n   来源: ${h.url}`)
         .join('\n\n')
 
-      log.info('搜索成功: "%s" - %d 条结果', query, hits.length)
+      log.info("tool_web_search.module.info", `搜索成功: "${query}" - ${hits.length} 条结果`, { query: query, hits_length: hits.length })
       return text.slice(0, RESULT_MAX)
     } catch (err) {
       const e = err as Error
       if (e.name === 'TimeoutError' || e.name === 'AbortError') {
-        log.warn('搜索超时: %s', query)
+        log.warn("tool_web_search.module.warn", `搜索超时: ${query}`, undefined, { query: query })
         return `搜索 "${query}" 超时，请稍后重试`
       }
-      log.warn('搜索失败: %s - %s', query, e.message)
+      log.warn("tool_web_search.module.warn", `搜索失败: ${query} - ${e.message}`, e, { query: query, e_message: e.message })
       return `搜索失败: ${e.message}`
     }
   },

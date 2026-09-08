@@ -55,6 +55,41 @@
   transition-delay: 0ms !important;
 }
 
+/* ===== 代码与诊断文本 ===== */
+.code-block {
+  box-sizing: border-box;
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: var(--fs-code);
+  font-weight: 400;
+  line-height: var(--lh-code);
+  letter-spacing: 0.012em;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border-strong) transparent;
+}
+
+.code-block code {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.code-block::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.code-block::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--c-border-strong);
+  background-clip: padding-box;
+}
+
 /* ===== 分区 ===== */
 .section-title {
   font-size: var(--fs-title);

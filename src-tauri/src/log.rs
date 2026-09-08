@@ -1,14 +1,21 @@
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::{Mutex, OnceLock, TryLockError};
 
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 
-use crate::path::log_dir;
+use crate::path::{initialized_log_dir, log_dir};
 
 /// 单个日志文件大小上限（超过则轮转）
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 /// 保留的轮转日志数量（.1 ~ .N，外加当前文件）
 const MAX_LOG_ROTATIONS: u32 = 3;
+
+fn log_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// 轮转日志文件：当前文件超过大小上限时，
 /// 依次后移（.1 → .2 → …），最旧的删除，当前文件改为 .1 后重新创建。
@@ -31,23 +38,60 @@ fn rotate_log_if_needed(path: &std::path::Path) {
 
 /// 日志条目结构（与前端约定）
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct LogEntryPayload {
-    timestamp: String,
-    level: String,
-    namespace: String,
-    message: String,
-    source: Option<String>,
-}
-
-/// 日志条目（含行号，返回给前端显示）
-#[derive(Serialize, Clone)]
-pub(crate) struct LogEntry {
-    line: usize,
+    schema_version: u8,
     timestamp: String,
     level: String,
     namespace: String,
     message: String,
     source: String,
+    event: String,
+    #[serde(default)]
+    error: Option<serde_json::Value>,
+    #[serde(default)]
+    context: Option<serde_json::Value>,
+}
+
+impl LogEntryPayload {
+    fn is_valid(&self) -> bool {
+        self.schema_version == 2
+            && matches!(self.level.as_str(), "trace" | "debug" | "info" | "warn" | "error")
+            && !self.timestamp.trim().is_empty()
+            && !self.namespace.trim().is_empty()
+            && !self.message.trim().is_empty()
+            && !self.source.trim().is_empty()
+            && is_valid_event_name(&self.event)
+    }
+}
+
+fn is_valid_event_name(event: &str) -> bool {
+    let mut segments = event.split('.');
+    let valid_segment = |segment: &str| {
+        let mut chars = segment.chars();
+        chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    };
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    valid_segment(first) && segments.clone().next().is_some() && segments.all(valid_segment)
+}
+
+/// 日志条目（含行号，返回给前端显示）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LogEntry {
+    line: usize,
+    schema_version: u8,
+    timestamp: String,
+    level: String,
+    namespace: String,
+    message: String,
+    source: String,
+    event: String,
+    error: Option<serde_json::Value>,
+    context: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -68,7 +112,7 @@ fn is_log_filename(filename: &str) -> bool {
     let Some((stem, rotation)) = filename.split_once(".jsonl") else {
         return false;
     };
-    let date = match stem.strip_prefix("app-") {
+    let date = match stem.strip_prefix("app-v2-") {
         Some(date) if date.len() == 10 => date.as_bytes(),
         _ => return false,
     };
@@ -99,22 +143,30 @@ fn parse_log_entry(line: &[u8], line_number: usize) -> LogEntry {
     let text = String::from_utf8_lossy(line)
         .trim_end_matches('\r')
         .to_string();
-    match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(val) => LogEntry {
+    match serde_json::from_str::<LogEntryPayload>(&text) {
+        Ok(val) if val.is_valid() => LogEntry {
             line: line_number,
-            timestamp: val["timestamp"].as_str().unwrap_or("").to_string(),
-            level: val["level"].as_str().unwrap_or("").to_string(),
-            namespace: val["namespace"].as_str().unwrap_or("").to_string(),
-            message: val["message"].as_str().unwrap_or("").to_string(),
-            source: val["source"].as_str().unwrap_or("主窗口").to_string(),
+            schema_version: val.schema_version,
+            timestamp: val.timestamp,
+            level: val.level,
+            namespace: val.namespace,
+            message: val.message,
+            source: val.source,
+            event: val.event,
+            error: val.error,
+            context: val.context,
         },
-        Err(_) => LogEntry {
+        _ => LogEntry {
             line: line_number,
+            schema_version: 2,
             timestamp: String::new(),
             level: "warn".to_string(),
             namespace: "System".to_string(),
             message: format!("[日志解析失败] {}", text),
             source: String::new(),
+            event: "logger.parse_failed".to_string(),
+            error: None,
+            context: None,
         },
     }
 }
@@ -203,10 +255,16 @@ pub(crate) fn append_log_entries(
     entries: Vec<LogEntryPayload>,
 ) -> Result<(), String> {
     // 验证文件名安全（只允许字母、数字、连字符、点）
-    if !is_safe_filename(&filename) {
+    if !is_safe_filename(&filename) || !is_log_filename(&filename) {
         return Err("无效的文件名".to_string());
     }
+    if entries.iter().any(|entry| !entry.is_valid()) {
+        return Err("日志条目不符合 v2 schema".to_string());
+    }
 
+    let _guard = log_write_lock()
+        .lock()
+        .map_err(|_| "日志写入锁已损坏".to_string())?;
     let path = log_dir().join(&filename);
     // 超过大小上限先轮转，避免单文件无限增长
     rotate_log_if_needed(&path);
@@ -217,18 +275,85 @@ pub(crate) fn append_log_entries(
         .open(&path)
         .map_err(|e| format!("打开日志文件失败: {}", e))?;
 
+    let mut output = String::new();
     for entry in &entries {
         let line = serde_json::json!({
+            "schemaVersion": entry.schema_version,
             "timestamp": entry.timestamp,
             "level": entry.level,
             "namespace": entry.namespace,
             "message": entry.message,
             "source": entry.source,
+            "event": entry.event,
+            "error": entry.error,
+            "context": entry.context,
         });
-        writeln!(file, "{}", line).map_err(|e| format!("写入日志失败: {}", e))?;
+        output.push_str(&line.to_string());
+        output.push('\n');
     }
+    file.write_all(output.as_bytes())
+        .map_err(|e| format!("写入日志失败: {}", e))?;
 
     Ok(())
+}
+
+fn write_native_log_file(level: &str, namespace: &str, message: String, event: &str) {
+    let Some(dir) = initialized_log_dir() else {
+        return;
+    };
+    let now = Local::now();
+    let path = dir.join(format!("app-v2-{}.jsonl", now.format("%Y-%m-%d")));
+    rotate_log_if_needed(&path);
+    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) else {
+        return;
+    };
+    let line = serde_json::json!({
+        "schemaVersion": 2,
+        "timestamp": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "level": level,
+        "namespace": namespace,
+        "message": message,
+        "source": "Rust",
+        "event": event
+    });
+    let _ = writeln!(file, "{}", line);
+}
+
+/// 写入 Rust 原生侧日志，与 WebView 日志共用 JSONL、轮转和写入锁。
+pub(crate) fn write_native_log(level: &str, namespace: &str, message: String) {
+    let _guard = log_write_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_native_log_file(level, namespace, message, "native.runtime_log");
+}
+
+fn try_write_panic_log(message: String) {
+    // panic 可能发生在持有日志锁时；try_lock 可避免 panic hook 自锁死。
+    let _guard = match log_write_lock().try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        Err(TryLockError::WouldBlock) => return,
+    };
+    write_native_log_file("error", "RustPanic", message, "native.panic");
+}
+
+/// 把未捕获 Rust panic 记入当日日志，同时保留默认 panic 输出。
+pub(crate) fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("未知 panic");
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "未知位置".to_string());
+        try_write_panic_log(format!("{} ({})", payload, location));
+        previous(info);
+    }));
 }
 
 /// 读取日志文件内容
@@ -347,27 +472,28 @@ mod tests {
 
     #[test]
     fn only_application_jsonl_files_are_log_files() {
-        assert!(is_log_filename("app-2026-08-30.jsonl"));
-        assert!(is_log_filename("app-2026-08-30.jsonl.2"));
+        assert!(is_log_filename("app-v2-2026-08-30.jsonl"));
+        assert!(is_log_filename("app-v2-2026-08-30.jsonl.2"));
+        assert!(!is_log_filename("app-2026-08-30.jsonl"));
         assert!(!is_log_filename("sessions.json"));
         assert!(!is_log_filename("__export_temp.jsonl"));
-        assert!(!is_log_filename("app-2026-8-30.jsonl"));
-        assert!(!is_log_filename("app-2026-08-30.jsonl.backup"));
+        assert!(!is_log_filename("app-v2-2026-8-30.jsonl"));
+        assert!(!is_log_filename("app-v2-2026-08-30.jsonl.backup"));
 
         let mut files = [
-            "app-2026-08-29.jsonl".to_string(),
-            "app-2026-08-30.jsonl.2".to_string(),
-            "app-2026-08-30.jsonl".to_string(),
-            "app-2026-08-30.jsonl.1".to_string(),
+            "app-v2-2026-08-29.jsonl".to_string(),
+            "app-v2-2026-08-30.jsonl.2".to_string(),
+            "app-v2-2026-08-30.jsonl".to_string(),
+            "app-v2-2026-08-30.jsonl.1".to_string(),
         ];
         files.sort_by(|a, b| {
             let (a_date, a_rotation) = log_sort_parts(a);
             let (b_date, b_rotation) = log_sort_parts(b);
             b_date.cmp(a_date).then(a_rotation.cmp(&b_rotation))
         });
-        assert_eq!(files[0], "app-2026-08-30.jsonl");
-        assert_eq!(files[1], "app-2026-08-30.jsonl.1");
-        assert_eq!(files[3], "app-2026-08-29.jsonl");
+        assert_eq!(files[0], "app-v2-2026-08-30.jsonl");
+        assert_eq!(files[1], "app-v2-2026-08-30.jsonl.1");
+        assert_eq!(files[3], "app-v2-2026-08-29.jsonl");
     }
 
     #[test]
@@ -384,11 +510,13 @@ mod tests {
         for i in 0..450 {
             content.push_str(
                 &serde_json::json!({
+                    "schemaVersion": 2,
                     "timestamp": "2026-08-30T00:00:00.000Z",
                     "level": "info",
                     "namespace": "Test",
                     "message": format!("entry-{i}"),
-                    "source": "test"
+                    "source": "test",
+                    "event": "test.entry"
                 })
                 .to_string(),
             );
@@ -416,5 +544,67 @@ mod tests {
         assert!(!oldest.has_more);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn preserves_structured_diagnostic_fields() {
+        let line = serde_json::json!({
+            "schemaVersion": 2,
+            "timestamp": "2026-09-08T01:02:03.000Z",
+            "level": "error",
+            "namespace": "API",
+            "message": "request failed",
+            "source": "主窗口",
+            "event": "ai.request_failed",
+            "error": { "name": "Error", "message": "timeout", "stack": "stack" },
+            "context": { "requestId": "req-1" }
+        })
+        .to_string();
+
+        let entry = parse_log_entry(line.as_bytes(), 1);
+        assert_eq!(entry.schema_version, 2);
+        assert_eq!(entry.event, "ai.request_failed");
+        assert_eq!(entry.error.as_ref().unwrap()["message"], "timeout");
+        assert_eq!(entry.context.as_ref().unwrap()["requestId"], "req-1");
+    }
+
+    #[test]
+    fn rejects_non_v2_or_unknown_log_fields() {
+        let legacy = serde_json::json!({
+            "timestamp": "2026-09-08T01:02:03.000Z",
+            "level": "info",
+            "namespace": "Test",
+            "message": "legacy",
+            "source": "test",
+            "event": "test.entry",
+            "args": []
+        });
+        assert!(serde_json::from_value::<LogEntryPayload>(legacy).is_err());
+
+        let unknown = serde_json::json!({
+            "schemaVersion": 2,
+            "timestamp": "2026-09-08T01:02:03.000Z",
+            "level": "info",
+            "namespace": "Test",
+            "message": "entry",
+            "source": "test",
+            "event": "test.entry",
+            "extra": true
+        });
+        assert!(serde_json::from_value::<LogEntryPayload>(unknown).is_err());
+
+        let invalid_level = serde_json::json!({
+            "schemaVersion": 2,
+            "timestamp": "2026-09-08T01:02:03.000Z",
+            "level": "notice",
+            "namespace": "Test",
+            "message": "entry",
+            "source": "test",
+            "event": "test.entry"
+        });
+        let payload = serde_json::from_value::<LogEntryPayload>(invalid_level).unwrap();
+        assert!(!payload.is_valid());
+        assert!(!is_valid_event_name("legacy"));
+        assert!(!is_valid_event_name("Request.Started"));
     }
 }

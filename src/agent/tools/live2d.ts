@@ -35,7 +35,7 @@ export const setExpressionTool: Tool = {
       return `不支持的表情「${id}」。可用: ${mf.expressions.map(e => e.id).join('、') || '（无）'}`
     }
     const ok = ctrl.setExpression(id)
-    log.info('set_expression: %s → %s', id, ok ? 'ok' : 'fail')
+    log.info("tool_live2_d.module.info", `set_expression: ${id} → ${ok ? 'ok' : 'fail'}`, { id: id, ok: ok ? 'ok' : 'fail' })
     return ok ? `表情已切换为「${id}」` : `切换表情失败: ${id}`
   },
 }
@@ -68,7 +68,7 @@ export const playMotionTool: Tool = {
       return `不支持的动作组「${group}」。可用: ${mf.motions.map(m => m.group).join('、') || '（无）'}`
     }
     const ok = ctrl.playMotion(group, no)
-    log.info('play_motion: %s[%d] → %s', group, no, ok ? 'ok' : 'fail')
+    log.info("tool_live2_d.module.info", `play_motion: ${group}[${no}] → ${ok ? 'ok' : 'fail'}`, { group: group, no: no, ok: ok ? 'ok' : 'fail' })
     return ok ? `已播放动作「${group}」` : `播放动作失败: ${group}`
   },
 }

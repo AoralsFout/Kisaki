@@ -66,7 +66,7 @@ export function loadSearchConfig(): SearchConfig {
 
 export function saveSearchConfig(config: SearchConfig) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-  log.debug('搜索配置已保存 (provider: %s, enabled: %s)', config.provider, config.enabled)
+  log.debug("search_config.save_search_config.debug", `搜索配置已保存 (provider: ${config.provider}, enabled: ${config.enabled})`, { config_provider: config.provider, config_enabled: config.enabled })
 }
 
 /** 配置是否可用：已启用 且 (searxng 有 baseURL / 其它有 apiKey) */
@@ -108,10 +108,10 @@ export async function loadSearchConfigSecure(): Promise<SearchConfig> {
   )
   if (resolved.key === null) {
     if (resolved.readError) {
-      log.error('搜索 API Key 读取失败（瞬时），保留配置待重试')
+      log.error("search_config.load_search_config_secure.error", "搜索 API Key 读取失败（瞬时），保留配置待重试", new Error("搜索 API Key 读取失败（瞬时），保留配置待重试"))
       return { ...config, apiKey: '' }
     }
-    log.error('搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    log.error("search_config.load_search_config_secure.error", "搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
     const { keyStorage: _marker, ...rest } = config
     saveSearchConfig({ ...rest, apiKey: '' })
     return { ...rest, apiKey: '' }

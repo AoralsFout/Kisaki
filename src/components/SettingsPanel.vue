@@ -14,6 +14,7 @@ import type { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen } from '@tauri-apps/api/event'
 import { QUERY_SETTINGS, EVENT_SETTINGS_NAVIGATE } from '../constants'
 import { initWindowState } from '../utils/windowState'
+import { createLogger } from '../utils/logger'
 import DevPanel from './settings/DevPanel.vue'
 import CharacterManager from './CharacterManager.vue'
 import SettingsGeneral from './settings/SettingsGeneral.vue'
@@ -27,6 +28,7 @@ import SettingsDiagnostics from './settings/SettingsDiagnostics.vue'
 import SettingsContext from './settings/SettingsContext.vue'
 
 const { t } = useI18n()
+const log = createLogger('SettingsPanel')
 
 const isSettingsWindow = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
 const isDevelopment = import.meta.env.DEV
@@ -80,7 +82,8 @@ async function installCloseGuard() {
       unlistenClose = undefined
       window.removeEventListener('beforeunload', beforeUnload)
       await selfWindow.value?.close()
-    } catch {
+    } catch (error) {
+      log.error('settings.window_close_failed', '关闭设置窗口失败', error)
       closeError.value = true
       window.addEventListener('beforeunload', beforeUnload)
       await installCloseGuard()
@@ -109,7 +112,9 @@ onMounted(async () => {
   }
   if (isSettingsWindow) {
     selfWindow.value = getCurrentWebviewWindow()
-    await installCloseGuard().catch(() => {})
+    await installCloseGuard().catch(error => {
+      log.error('settings.close_guard_install_failed', '安装设置窗口关闭保护失败', error)
+    })
     // 已有设置窗口时，主窗口通过事件请求定位标签（如引导的「去配置」）。
     // 走 selectTab 以复用未保存更改确认。
     try {
@@ -117,21 +122,32 @@ onMounted(async () => {
         const tab = e.payload?.tab
         if (tab && (VALID_TABS as string[]).includes(tab)) void selectTab(tab as Tab)
       })
-    } catch { /* 浏览器预览环境无 Tauri 事件总线 */ }
+    } catch (error) {
+      // 浏览器预览环境无 Tauri 事件总线是预期降级，但仍保留可诊断记录。
+      log.debug('settings.navigation_listener_unavailable', '设置导航事件监听不可用', { error })
+    }
     // 隐藏创建，恢复位置/大小后再显示，避免白窗闪现和瞬移。
-    await initWindowState('settings', { showAfterRestore: true }).catch(() => {})
+    await initWindowState('settings', { showAfterRestore: true }).catch(error => {
+      log.warn('settings.window_state_restore_failed', '恢复设置窗口状态失败', error)
+    })
   }
 })
 
 async function minimizeWindow() {
-  try { await selfWindow.value?.minimize() } catch { }
+  try {
+    await selfWindow.value?.minimize()
+  } catch (error) {
+    log.warn('settings.window_minimize_failed', '最小化设置窗口失败', error)
+  }
 }
 async function maximizeWindow() {
   try {
     const isMax = await selfWindow.value?.isMaximized()
     if (isMax) await selfWindow.value?.unmaximize()
     else await selfWindow.value?.maximize()
-  } catch { }
+  } catch (error) {
+    log.warn('settings.window_maximize_toggle_failed', '切换设置窗口最大化状态失败', error)
+  }
 }
 function closeWindow() {
   selfWindow.value?.close()

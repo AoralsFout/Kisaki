@@ -29,7 +29,7 @@ async function keychainAvailable(): Promise<boolean> {
     await invoke<string | null>('secure_store_get', { key: '__probe__' })
     _keychainOk = true
   } catch (e) {
-    log.warn('系统密钥链不可用，回退本地加密存储: %s', (e as Error)?.message || String(e))
+    log.warn("secret_store.keychain_available.warn", `系统密钥链不可用，回退本地加密存储: ${(e as Error)?.message || String(e)}`, e)
     _keychainOk = false
   }
   return _keychainOk
@@ -42,7 +42,7 @@ export async function keychainSet(kind: SecretKind, value: string): Promise<bool
     await invoke('secure_store_set', { key: kind, value })
     return true
   } catch (e) {
-    log.error('写入密钥链失败（%s），回退本地存储', (e as Error)?.message || String(e))
+    log.error("secret_store.write_failed", "写入密钥链失败，回退本地存储", e, { kind })
     _keychainOk = false // 写入失败视为不可用，避免每次重试
     return false
   }
@@ -61,7 +61,7 @@ export async function keychainGet(kind: SecretKind): Promise<KeychainGetResult> 
     const v = await invoke<string | null>('secure_store_get', { key: kind })
     return v ? { status: 'ok', value: v } : { status: 'missing' }
   } catch (e) {
-    log.error('读取密钥链失败（%s）', (e as Error)?.message || String(e))
+    log.error("secret_store.read_failed", "读取密钥链失败", e, { kind })
     return { status: 'error' }
   }
 }
@@ -110,7 +110,7 @@ export async function resolveSecret(
       return { key: null, needsResave: false, storage: 'keychain', readError: true }
     }
     // 条目确实不存在
-    log.error('密钥链中找不到 %s（可能被清理或换机），需要重新配置', kind)
+    log.error("secret_store.resolve_secret.error", `密钥链中找不到 ${kind}（可能被清理或换机），需要重新配置`, new Error(`密钥链中找不到 ${kind}（可能被清理或换机），需要重新配置`), { kind: kind })
     return { key: null, needsResave: false, storage: 'keychain' }
   }
 

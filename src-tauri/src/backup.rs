@@ -201,10 +201,10 @@ fn prune_old_checkpoints(cp: &Path) {
         let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
         if let Some(age) = checkpoint_age_seconds(name) {
             if age > max_age {
-                eprintln!(
-                    "[kisaki] 清理过期检查点（{} 天前）: {}",
-                    age / 86400,
-                    p.display()
+                crate::log::write_native_log(
+                    "info",
+                    "Backup",
+                    format!("清理过期检查点（{} 天前）: {}", age / 86400, p.display()),
                 );
                 let _ = fs::remove_dir_all(&p);
             }

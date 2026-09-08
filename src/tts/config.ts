@@ -67,7 +67,7 @@ export function loadCosyVoiceConfig(): CosyVoiceConfig {
 
 export function saveCosyVoiceConfig(config: CosyVoiceConfig) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-  log.debug('CosyVoice 配置已保存 (模型: %s, 地域: %s)', config.model, config.region)
+  log.debug("ttsconfig.save_cosy_voice_config.debug", `CosyVoice 配置已保存 (模型: ${config.model}, 地域: ${config.region})`, { config_model: config.model, config_region: config.region })
 }
 
 export function isCosyVoiceConfigValid(config: CosyVoiceConfig): boolean {
@@ -108,10 +108,10 @@ export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
   )
   if (resolved.key === null) {
     if (resolved.readError) {
-      log.error('CosyVoice API Key 读取失败（瞬时），保留配置待重试')
+      log.error("ttsconfig.load_cosy_voice_config_secure.error", "CosyVoice API Key 读取失败（瞬时），保留配置待重试", new Error("CosyVoice API Key 读取失败（瞬时），保留配置待重试"))
       return { ...config, apiKey: '' }
     }
-    log.error('CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置')
+    log.error("ttsconfig.load_cosy_voice_config_secure.error", "CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
     const { keyStorage: _marker, ...rest } = config
     saveCosyVoiceConfig({ ...rest, apiKey: '' })
     return { ...rest, apiKey: '' }
@@ -182,7 +182,7 @@ export function loadGptSoVitsConfig(): GptSoVitsConfig {
 
 export function saveGptSoVitsConfig(config: GptSoVitsConfig) {
   localStorage.setItem(GPTSOVITS_KEY, JSON.stringify(config))
-  log.debug('GPT-SoVITS 配置已保存 (apiUrl: %s)', config.apiUrl)
+  log.debug("ttsconfig.save_gpt_so_vits_config.debug", `GPT-SoVITS 配置已保存 (apiUrl: ${config.apiUrl})`, { config_api_url: config.apiUrl })
 }
 
 export function isGptSoVitsConfigValid(config: GptSoVitsConfig): boolean {
@@ -201,5 +201,5 @@ export function getTtsProvider(): TtsProvider {
 /** 设置当前 TTS 提供者 */
 export function setTtsProvider(provider: TtsProvider) {
   localStorage.setItem(PROVIDER_KEY, provider)
-  log.debug('TTS 提供者已切换: %s', provider)
+  log.debug("ttsconfig.set_tts_provider.debug", `TTS 提供者已切换: ${provider}`, { provider: provider })
 }

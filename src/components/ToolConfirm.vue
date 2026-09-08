@@ -98,7 +98,7 @@ watch(
     void nextTick(() => rejectRef.value?.focus())
     loadingDiff.value = true
     loadPreview(p)
-      .catch(e => log.warn('生成 diff 预览失败: %s', (e as Error).message))
+      .catch(e => log.warn("tool_confirm.module.warn", `生成 diff 预览失败: ${(e as Error).message}`, e))
       .finally(() => { loadingDiff.value = false })
   },
   { immediate: true },
@@ -134,7 +134,7 @@ watch(
             <span class="tc-add">+{{ diff.added }}</span>
             <span class="tc-del">-{{ diff.removed }}</span>
           </div>
-          <pre class="tc-diff" data-selectable><code v-for="(r, i) in diff.rows" :key="i" :class="['tc-row', r.type]">{{ (r.type === 'add' ? '+ ' : r.type === 'del' ? '- ' : '  ') + r.text }}</code></pre>
+          <pre class="code-block tc-diff" data-selectable><code v-for="(r, i) in diff.rows" :key="i" :class="['tc-row', r.type]">{{ (r.type === 'add' ? '+ ' : r.type === 'del' ? '- ' : '  ') + r.text }}</code></pre>
           <div v-if="diff.truncated" class="tc-diff-hint">{{ t('app.confirm.truncated') }}</div>
         </template>
         <div v-else class="tc-diff-hint">{{ t('app.confirm.noDiff') }}</div>
@@ -244,18 +244,14 @@ watch(
 .tc-del { color: #e06464; }
 
 .tc-diff {
-  margin: 0;
   max-height: 180px;
   overflow: auto;
-  font-size: var(--fs-aux);
-  line-height: 1.45;
-  font-family: 'Consolas', 'Courier New', monospace;
   white-space: pre;
 }
 
 .tc-row {
   display: block;
-  padding: 0 4px;
+  padding: 1px 5px;
   border-radius: 2px;
   color: rgba(255, 255, 255, 0.75);
   white-space: pre-wrap;
@@ -271,9 +267,6 @@ watch(
   color: rgba(255, 255, 255, 0.68);
   padding: 4px 0;
 }
-
-.tc-diff::-webkit-scrollbar { width: 5px; height: 5px; }
-.tc-diff::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
 
 /* 动作 */
 .tc-actions {

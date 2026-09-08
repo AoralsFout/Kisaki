@@ -134,10 +134,10 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
         ));
     }
 
-    eprintln!(
-        "[kisaki] 导入角色包: {}（{} 个条目）",
-        src_path,
-        archive.len()
+    crate::log::write_native_log(
+        "info",
+        "Pack",
+        format!("导入角色包: {}（{} 个条目）", src_path, archive.len()),
     );
 
     // 第一遍：找出所有 character.json。角色 id 以其内部的 `id` 字段为权威来源
@@ -151,7 +151,11 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
         let enclosed = match entry.enclosed_name() {
             Some(p) => p.to_path_buf(),
             None => {
-                eprintln!("[kisaki]   跳过不安全条目: {}", raw_name);
+                crate::log::write_native_log(
+                    "warn",
+                    "Pack",
+                    format!("跳过不安全条目: {}", raw_name),
+                );
                 continue;
             }
         };
@@ -170,7 +174,11 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
         let content = match read_entry_limited(&mut entry, MAX_MANIFEST_JSON_BYTES as u64) {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(e) => {
-                eprintln!("[kisaki]   character.json 读取失败，跳过: {}", e);
+                crate::log::write_native_log(
+                    "warn",
+                    "Pack",
+                    format!("character.json 读取失败，跳过: {}", e),
+                );
                 continue;
             }
         };
@@ -186,14 +194,18 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
         }) {
             Some(id) => id,
             None => {
-                eprintln!("[kisaki]   {} 无 id 字段且位于包根，跳过", raw_name);
+                crate::log::write_native_log(
+                    "warn",
+                    "Pack",
+                    format!("{} 无 id 字段且位于包根，跳过", raw_name),
+                );
                 continue;
             }
         };
-        eprintln!(
-            "[kisaki]   发现角色: id={} 前缀=\"{}\"",
-            id,
-            prefix.display()
+        crate::log::write_native_log(
+            "debug",
+            "Pack",
+            format!("发现角色: id={} 前缀=\"{}\"", id, prefix.display()),
         );
         roots.insert(id, prefix);
     }
@@ -274,9 +286,10 @@ pub(crate) fn import_character_pack(src_path: String) -> Result<ImportResult, St
     }
     imported.sort();
     skipped.sort();
-    eprintln!(
-        "[kisaki] 导入完成: imported={:?} skipped={:?}",
-        imported, skipped
+    crate::log::write_native_log(
+        "info",
+        "Pack",
+        format!("导入完成: imported={:?} skipped={:?}", imported, skipped),
     );
     Ok(ImportResult { imported, skipped })
 }

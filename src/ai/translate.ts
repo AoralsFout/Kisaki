@@ -62,13 +62,13 @@ export async function translateText(
     )
     const result = out.trim()
     if (!result) {
-      log.warn('翻译返回空，回退原文')
+      log.warn("translate.translate_text.warn", "翻译返回空，回退原文")
       return trimmed
     }
-    log.debug('翻译完成 → %s (%d→%d 字)', targetLang, trimmed.length, result.length)
+    log.debug("translate.translate_text.debug", `翻译完成 → ${targetLang} (${trimmed.length}→${result.length} 字)`, { target_lang: targetLang, trimmed_length: trimmed.length, result_length: result.length })
     return result
   } catch (err) {
-    log.warn('翻译失败，回退原文: %s', (err as Error).message)
+    log.warn("translate.translate_text.warn", `翻译失败，回退原文: ${(err as Error).message}`, err)
     return trimmed
   }
 }

@@ -183,10 +183,7 @@ export async function resolveStoredSecret(
     try {
       return { key: await decrypt(stored), needsResave: false }
     } catch (e) {
-      log.error(
-        '存储的密钥无法解密（主密钥丢失或数据损坏），将清除该配置: %s',
-        (e as Error).message,
-      )
+      log.error("crypto.resolve_stored_secret.error", `存储的密钥无法解密（主密钥丢失或数据损坏），将清除该配置: ${(e as Error).message}`, e)
       return { key: null, needsResave: false }
     }
   }

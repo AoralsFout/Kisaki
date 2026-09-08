@@ -97,8 +97,7 @@ export async function synthesizeWithGptSoVits(
   const baseUrl = config.apiUrl.replace(/\/+$/, '')
   const url = `${baseUrl}/tts?${searchParams.toString()}`
 
-  log.debug('GPT-SoVITS 请求: %s (text=%s..., lang=%s, ref=%s)',
-    baseUrl, params.text.slice(0, 30), textLang, refAudioPath)
+  log.debug("gpt_so_vits.synthesize_with_gpt_so_vits.debug", `GPT-SoVITS 请求: ${baseUrl} (text=${params.text.slice(0, 30)}..., lang=${textLang}, ref=${refAudioPath})`, { base_url: baseUrl, params_text: params.text.slice(0, 30), text_lang: textLang, ref_audio_path: refAudioPath })
 
   // 通过 Rust 后端代理请求（绕过 webview CORS 限制）
   const result = await invoke<{ audio_base64: string; format: string }>('gptsovits_tts', { url })
@@ -118,8 +117,7 @@ export async function synthesizeWithGptSoVits(
   for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
   const blob = new Blob([bytes], { type: mimeType })
 
-  log.info('GPT-SoVITS 合成完成: %d 字符 → %d bytes (%s)',
-    params.text.length, blob.size, format)
+  log.info("gpt_so_vits.synthesize_with_gpt_so_vits.info", `GPT-SoVITS 合成完成: ${params.text.length} 字符 → ${blob.size} bytes (${format})`, { params_text: params.text.length, blob_size: blob.size, format: format })
 
   return { blob, format: mimeType }
 }

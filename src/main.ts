@@ -9,7 +9,7 @@ import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
 import "./utils/motionPreference";
-import { createLogger } from "./utils/logger";
+import { createLogger, installGlobalErrorHandlers } from "./utils/logger";
 import i18n from "./i18n";
 
 // 正式模式禁用 WebView 默认右键菜单（透明无边框桌宠不应弹出浏览器菜单）。
@@ -19,10 +19,14 @@ if (import.meta.env.PROD) {
 }
 
 const log = createLogger('Main')
+installGlobalErrorHandlers(log)
 
 const app = createApp(App);
 app.use(createPinia());
 app.use(i18n);
+app.config.errorHandler = (error, _instance, info) => {
+  void log.fatal("vue.unhandled_error", "Vue 组件未处理异常", error, { info })
+}
 app.mount("#app");
 
-log.info('应用已启动')
+log.info("main.module.info", "应用已启动")

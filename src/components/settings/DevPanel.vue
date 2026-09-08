@@ -23,7 +23,11 @@ const charStore = useCharacterStore()
 
 // ── BroadcastChannel（向主窗口发指令） ──
 let devChannel: BroadcastChannel | null = null
-try { devChannel = new BroadcastChannel(CHANNEL_DESKPET_DEV) } catch { }
+try {
+  devChannel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
+} catch (error) {
+  log.debug('dev_panel.broadcast_channel_unavailable', '开发者跨窗口通道不可用', { error })
+}
 
 function sendToMain(type: string, payload: any) {
   devChannel?.postMessage({ type, payload })
@@ -78,9 +82,9 @@ async function loadMainCharData(id: string) {
     if (data?.render === 'live2d' && data.live2d) {
       l2dManifest.value = await loadLive2DManifest(id, data)
     }
-    log.info('调试角色已加载: %s', id)
+    log.info("dev_panel.load_main_char_data.info", `调试角色已加载: ${id}`, { id: id })
   } catch (e) {
-    log.warn('调试角色加载失败: %s', (e as Error).message)
+    log.warn("dev_panel.load_main_char_data.warn", `调试角色加载失败: ${(e as Error).message}`, e)
   }
 }
 
@@ -91,7 +95,7 @@ onMounted(() => {
     selfWindow.value = getCurrentWebviewWindow()
   }
 
-  log.info('DevPanel 挂载 %s', isDevWindow.value ? '(独立窗口)' : '(嵌入式)')
+  log.info("dev_panel.module.info", `DevPanel 挂载 ${isDevWindow.value ? '(独立窗口)' : '(嵌入式)'}`, { is_dev_window_value: isDevWindow.value ? '(独立窗口)' : '(嵌入式)' })
 
   // 监听主窗口发来的状态更新（含 currentId：主窗口当前角色 ID）
   devChannel?.addEventListener('message', (event) => {
@@ -108,7 +112,7 @@ onMounted(() => {
   // 退而读本地 charStore 的内容（至少让面板有东西可显示）
   setTimeout(() => {
     if (!stateSynced.value) {
-      log.warn('未收到主窗口状态同步，回退到本地 charStore')
+      log.warn("dev_panel.module.warn", "未收到主窗口状态同步，回退到本地 charStore")
       const id = charStore.currentId
       if (id) {
         void loadMainCharData(id)

@@ -15,17 +15,17 @@ export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Prom
   // 如果调用方传入了解密后的 apiKey，优先使用
   const apiKey = overrides?.apiKey ?? config.apiKey
   if (!apiKey) {
-    log.warn('fetchVoiceList: API Key 未配置')
+    log.warn("ttsapi.fetch_voice_list.warn", "fetchVoiceList: API Key 未配置")
     throw new Error('请先配置 CosyVoice API Key')
   }
 
   const url = getHttpUrl(config)
   if (url.includes('{WorkspaceId}')) {
-    log.warn('fetchVoiceList: 新加坡地域须填写 WorkspaceId')
+    log.warn("ttsapi.fetch_voice_list.warn", "fetchVoiceList: 新加坡地域须填写 WorkspaceId")
     throw new Error('新加坡地域需要填写 WorkspaceId')
   }
 
-  log.debug('获取音色列表...')
+  log.debug("ttsapi.fetch_voice_list.debug", "获取音色列表...")
 
   const payload = {
     model: 'voice-enrollment',
@@ -64,7 +64,7 @@ export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Prom
       prefix: v.prefix ?? '',
     }))
 
-  log.info('获取到 %d 个可用音色', voices.length)
+  log.info("ttsapi.fetch_voice_list.info", `获取到 ${voices.length} 个可用音色`, { voices_length: voices.length })
   return voices
 }
 
@@ -72,10 +72,10 @@ export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Prom
 export async function testApiKey(): Promise<boolean> {
   try {
     const list = await fetchVoiceList()
-    log.debug('API Key 测试通过（%d 个音色）', list.length)
+    log.debug("ttsapi.test_api_key.debug", `API Key 测试通过（${list.length} 个音色）`, { list_length: list.length })
     return true
   } catch {
-    log.warn('API Key 测试失败')
+    log.warn("ttsapi.test_api_key.warn", "API Key 测试失败")
     return false
   }
 }

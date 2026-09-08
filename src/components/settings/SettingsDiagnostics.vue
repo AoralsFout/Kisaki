@@ -34,7 +34,7 @@ async function openLogWindow() {
       visible: false,
     })
   } catch (e) {
-    log.error('无法打开日志窗口', e)
+    log.error("settings_diagnostics.open_log_window.error", "无法打开日志窗口", e)
   }
 }
 </script>

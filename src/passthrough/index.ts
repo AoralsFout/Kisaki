@@ -91,7 +91,7 @@ async function setIgnore(v: boolean) {
   try {
     await getCurrentWindow().setIgnoreCursorEvents(v)
   } catch (e) {
-    log.warn('setIgnoreCursorEvents 失败: %s', (e as Error).message)
+    log.warn("passthrough.set_ignore.warn", `setIgnoreCursorEvents 失败: ${(e as Error).message}`, e)
   }
 }
 
@@ -108,7 +108,7 @@ export async function initPassthrough(): Promise<void> {
     await w.onMoved(({ payload }) => { winPos = { x: payload.x, y: payload.y } })
     await w.onScaleChanged(({ payload }) => { scale = payload.scaleFactor })
   } catch (e) {
-    log.warn('窗口几何初始化失败（非 Tauri 环境?）: %s', (e as Error).message)
+    log.warn("passthrough.init_passthrough.warn", `窗口几何初始化失败（非 Tauri 环境?）: ${(e as Error).message}`, e)
     return
   }
 
@@ -126,7 +126,7 @@ export async function initPassthrough(): Promise<void> {
     void setIgnore(!hitTest(cx, cy))
   })
 
-  log.info('鼠标穿透已初始化 (enabled=%s)', enabled)
+  log.info("passthrough.init_passthrough.info", `鼠标穿透已初始化 (enabled=${enabled})`, { enabled: enabled })
 }
 
 /** 设置穿透开关并持久化（关闭时立即恢复普通交互，防 bug 锁死无法操作） */
@@ -134,7 +134,7 @@ export function setPassthroughEnabled(on: boolean): void {
   enabled = on
   localStorage.setItem(STORAGE_PASSTHROUGH_ENABLED, on ? '1' : '0')
   if (!on) void setIgnore(false)
-  log.info('鼠标穿透开关: %s', on)
+  log.info("passthrough.set_passthrough_enabled.info", `鼠标穿透开关: ${on}`, { on: on })
 }
 
 export function isPassthroughEnabled(): boolean {
