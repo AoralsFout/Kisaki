@@ -365,15 +365,29 @@ function publishInternalDiagnostic(
   try { bc?.postMessage(serializeEntry(entry)) } catch { /* ignore */ }
 }
 
+/** Windows 绝对路径（含 Tauri `\\?\` 长路径前缀），脱敏到仅剩末级文件名。 */
+const WINDOWS_ABS_PATH = /(?:\\\\\?\\[A-Za-z]:\\|[A-Za-z]:\\|\\[A-Za-z]:\\)([^ \t"'`,;{}<>|)]+)/g
+
+/** 把 Windows 绝对路径替换为 `[PATH:basename]`，只保留末级文件名。 */
+export function redactWindowsPath(text: string): string {
+  return text.replace(WINDOWS_ABS_PATH, (_, rest: string) => {
+    const base = rest.split(/[\\/]/).filter(Boolean).pop() || '?'
+    return `[PATH:${base}]`
+  })
+}
+
 /**
- * 写入磁盘或跨窗口广播前移除常见密钥形态。
+ * 写入磁盘或跨窗口广播前移除常见敏感形态：密钥、用户原文与本地路径。
  * 仅处理字符串表示层，不修改调用方持有的原始对象。
+ * 用户原文的消息体本身由各调用方只记录长度/ID，此处兜底移除残留的绝对路径。
  */
 export function redactSensitiveText(text: string): string {
-  return text
+  let out = text
     .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
     .replace(/(["']?(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|secret)["']?\s*[:=]\s*["']?)([^"'\s,}]+)/gi, '$1[REDACTED]')
     .replace(/\bsk-[A-Za-z0-9_-]{6,}\b/g, '[REDACTED]')
+  out = redactWindowsPath(out)
+  return out
 }
 
 // ─── 文件持久化 ──────────────────────────────────────
