@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 const request = vi.hoisted(() => vi.fn())
+const translate = vi.hoisted(() => vi.fn())
 vi.mock('../../ai', async original => ({
   ...await original<typeof import('../../ai')>(),
   loadConfig: () => ({ baseURL: 'http://localhost/v1', apiKey: 'test-only', model: 'test-model' }),
   chat: request,
+  translateText: translate,
 }))
 beforeEach(() => {
   setActivePinia(createPinia())
   request.mockReset()
+  translate.mockReset()
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
 })
 afterEach(() => vi.restoreAllMocks())
@@ -113,5 +116,32 @@ describe('send result contract', () => {
     expect(await store.sendMessage('draft')).toBe(true)
     expect(snapshots).toEqual(['你', '你好'])
     expect(store.currentBubbleText).toBe('你好')
+  })
+
+  it('unlocks input after display is delivered without waiting for voice preparation', async () => {
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
+    let finishTranslation!: (value: string) => void
+    translate.mockImplementation(() => new Promise<string>((resolve) => {
+      finishTranslation = resolve
+    }))
+    request.mockImplementation((_messages, callbacks) => callbacks.onTools([{
+      id: 'say-voice-later',
+      type: 'function',
+      function: {
+        name: 'say',
+        arguments: JSON.stringify({ display: '你好' }),
+      },
+    }]))
+
+    expect(await store.sendMessage('draft')).toBe(true)
+    expect(store.isProcessing).toBe(false)
+    expect(store.currentBubbleText).toBe('你好')
+    expect(translate).toHaveBeenCalled()
+
+    finishTranslation('こんにちは')
+    await vi.waitFor(() => {
+      expect(store.messages.find(message => message.role === 'assistant')?.voice).toBe('こんにちは')
+    })
   })
 })

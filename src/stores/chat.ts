@@ -693,6 +693,8 @@ export const useChatStore = defineStore('chat', () => {
 
   syncContextStats()
   let abortController: AbortController | null = null
+  /** 可见回复已提交后仍在后台准备语音的请求控制器 */
+  let backgroundVoiceController: AbortController | null = null
   /** 工具活动列表淡出延时器（处理结束后保留一会儿再隐藏） */
   let toolHideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -726,6 +728,11 @@ export const useChatStore = defineStore('chat', () => {
     if ((!rawText || !rawText.trim()) && images.length === 0) {
       log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 收到空消息，忽略`, undefined, { fn: _fn })
       return false
+    }
+    // 新消息到来时取消上一轮尚未完成的语音清洗/TTS 准备，避免旧语音覆盖新回复。
+    if (backgroundVoiceController) {
+      backgroundVoiceController.abort()
+      backgroundVoiceController = null
     }
 
     const userText = rawText.trim() || t('chat.input.imageOnlyPrompt')
@@ -840,17 +847,68 @@ export const useChatStore = defineStore('chat', () => {
     // 而不 say，循环就一直继续；MAX_TOOL_TURNS 仅为防失控的安全护栏。
     const toolTurns = MAX_TOOL_TURNS
 
+    /** 把最终可见文本落地：写气泡、入 UI 历史。 */
+    const commitAssistantMessage = (display: string, voice?: string): string | null => {
+      // 已取消：翻译兜底期间被用户中止时，不交付、不落盘、不播报
+      if (myAbort.signal.aborted) return null
+      currentBubbleText.value = display
+      isTyping.value = false
+      const messageId = addMessage('assistant', display, currentThinking.value, voice)
+      deliveredFinal = true
+      return messageId
+    }
+
     /** 把最终台词落地：写气泡、入 UI 历史、触发 TTS */
     const deliver = (voice: string, display: string) => {
-      // 已取消：翻译兜底期间被用户中止时，不交付、不落盘、不播报
-      if (myAbort.signal.aborted) return
-      currentBubbleText.value = display
-      isTyping.value = true
-      addMessage('assistant', display, currentThinking.value, voice)
-      deliveredFinal = true
+      const messageId = commitAssistantMessage(display, voice)
+      if (!messageId) return
       // 气泡立即可见；TTS 用独立、带 requestId 的终态事件收尾。
       ttsRequested = true
       void triggerTts(voice, requestId)
+    }
+
+    /**
+     * 可见文本已流式显示后，在后台继续完成语音清洗、历史回填和 TTS。
+     * 这样语音模型尚未返回时，输入框可以立即解锁。
+     */
+    const finalizeVoiceInBackground = (
+      messageId: string,
+      raw: { voice?: string; display?: string },
+      voiceLang: string,
+      displayLang: string,
+      translate: TranslateFn,
+      displayPreview: string,
+    ) => {
+      const sessionId = useSessionStore().currentSessionId
+      ttsRequested = true
+      backgroundVoiceController = myAbort
+      void (async () => {
+        try {
+          const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
+          if (myAbort.signal.aborted || useSessionStore().currentSessionId !== sessionId) return
+          log.sensitiveDebug("chat_store.say_resolved_sensitive.debug", `[${_fn}] say 后台最终文本`, {
+            requestId,
+            voice,
+            display,
+          })
+          const message = messages.value.find(item => item.id === messageId)
+          if (message) {
+            if (voice) message.voice = voice
+            if (display && display !== message.text) message.text = display
+            useSessionStore().saveCurrentSession()
+          }
+          if (currentBubbleText.value === displayPreview && display && display !== displayPreview) {
+            currentBubbleText.value = display
+          }
+          ttsRequested = true
+          void triggerTts(voice, requestId)
+          log.info("chat_store.send_message.info", `[${_fn}] ✓ say 后台语音准备完成 (显示:${display.length}字, TTS:${voice.length}字)`, { display_length: display.length, voice_length: voice.length })
+        } catch (err) {
+          log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 后台语音准备失败: ${(err as Error).message}`, err)
+        } finally {
+          if (backgroundVoiceController === myAbort) backgroundVoiceController = null
+        }
+      })()
     }
 
     /**
@@ -1229,22 +1287,30 @@ export const useChatStore = defineStore('chat', () => {
             const displayPreview = raw.display?.trim() || (voiceLang === displayLang ? raw.voice?.trim() : '')
             if (displayPreview) {
               currentBubbleText.value = displayPreview
-              isTyping.value = true
+              isTyping.value = false
             }
-            const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
-            log.sensitiveDebug("chat_store.say_resolved_sensitive.debug", `[${_fn}] 第${turn}轮 say 最终文本`, {
-              requestId,
-              turn,
-              voice,
-              display,
-            })
             chatContext.addToolResult(sayCall.id, '已说出')  // 保持上下文合法
             syncContextStats()
-            if (voice || display) {
-              deliver(voice, display)
-              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
+            if (displayPreview) {
+              // 可见文本已经流式完成：先提交并释放输入，语音清洗和 TTS 转入后台。
+              const messageId = commitAssistantMessage(displayPreview, raw.voice)
+              if (messageId) finalizeVoiceInBackground(messageId, raw, voiceLang, displayLang, translate, displayPreview)
+              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 可见文本完成 (显示:${displayPreview.length}字)`, { fn: _fn, turn: turn, display_length: displayPreview.length })
             } else {
-              log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn: turn })
+              // 没有可见文本（例如只有 voice 且语言不同），只能等待翻译生成 display。
+              const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
+              log.sensitiveDebug("chat_store.say_resolved_sensitive.debug", `[${_fn}] 第${turn}轮 say 最终文本`, {
+                requestId,
+                turn,
+                voice,
+                display,
+              })
+              if (voice || display) {
+                deliver(voice, display)
+                log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
+              } else {
+                log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn: turn })
+              }
             }
             turnTimer.stop('say — break')
             break
