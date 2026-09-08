@@ -124,6 +124,45 @@ describe('ChatHistory 历史列表', () => {
     wrapper.unmount()
   })
 
+  it('折叠高度同时扣除历史上下两侧的实体控件', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.messages.push({ id: 'm-tall', role: 'assistant', text: '占满可用空间的消息', timestamp: 0 })
+
+    const host = document.createElement('div')
+    const controls: {
+      before: HTMLElement
+      after: HTMLElement
+    } = {
+      before: document.createElement('div'),
+      after: document.createElement('div'),
+    }
+    controls.before.dataset.layoutHeight = '40'
+    controls.after.dataset.layoutHeight = '60'
+    document.body.append(host)
+
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const height = this.classList.contains('history-item')
+        ? 444
+        : Number(this.dataset.layoutHeight || 0)
+      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
+    })
+    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(300)
+    const wrapper = mount(ChatHistory, { attachTo: host, props: { visible: true } })
+    const layoutParent = wrapper.get('.chat-history').element.parentElement!
+    layoutParent.prepend(controls.before)
+    layoutParent.append(controls.after)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 200px')
+
+    rectSpy.mockRestore()
+    viewportSpy.mockRestore()
+    wrapper.unmount()
+    host.remove()
+  })
+
   it('切换会话时直接跳到底部，同一会话的新消息才平滑滚动', async () => {
     const { useChatStore } = await import('../stores/chat')
     const { useSessionStore } = await import('../stores/session')

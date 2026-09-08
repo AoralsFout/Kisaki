@@ -130,6 +130,14 @@ describe('resolveSayContent', () => {
     expect(r).toEqual({ voice: '版本2.6,完成率50%', display: '版本2.6，完成率50%' })
   })
 
+  it('网址和文件路径不能伪装成数字表达式绕过 TTS 安全改写', async () => {
+    const { normalizeTtsSafeVoice } = await import('../chat')
+    expect(normalizeTtsSafeVoice('https://example.com', 'zh-CN')).toBeNull()
+    expect(normalizeTtsSafeVoice('C:/Users/alice/file.txt', 'zh-CN')).toBeNull()
+    expect(normalizeTtsSafeVoice('版本2.6,完成率50%,时间12:30,日期2026/09/09', 'zh-CN'))
+      .toBe('版本2.6,完成率50%,时间12:30,日期2026/09/09')
+  })
+
   it('voice 含括号等其他符号时触发 TTS 安全改写', async () => {
     const { resolveSayContent } = await import('../chat')
     let ttsSafe: boolean | undefined

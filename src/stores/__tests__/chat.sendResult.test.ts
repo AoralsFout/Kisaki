@@ -67,7 +67,9 @@ describe('send result contract', () => {
     const store = useChatStore()
     const snapshots: string[] = []
     request.mockImplementation((_messages, callbacks) => {
-      callbacks.onChunk('<think>分析中')
+      callbacks.onChunk('<thi')
+      snapshots.push(store.currentBubbleText)
+      callbacks.onChunk('nk>分析中')
       snapshots.push(store.currentBubbleText)
       callbacks.onChunk('</think>你')
       snapshots.push(store.currentBubbleText)
@@ -84,9 +86,45 @@ describe('send result contract', () => {
     })
 
     expect(await store.sendMessage('draft')).toBe(true)
-    expect(snapshots).toEqual(['', '你', '你好'])
+    expect(snapshots).toEqual(['', '', '你', '你好'])
     expect(store.currentBubbleText).toBe('你好')
     expect(store.isProcessing).toBe(false)
+  })
+
+  it('每个工具轮次都重新隐藏 think 内容', async () => {
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
+    const secondTurnSnapshots: string[] = []
+    let turn = 0
+    request.mockImplementation((_messages, callbacks) => {
+      if (turn++ === 0) {
+        callbacks.onChunk('<think>第一轮分析</think>')
+        callbacks.onTools([{
+          id: 'calc-1',
+          type: 'function',
+          function: { name: 'calculator', arguments: '{"expression":"1+1"}' },
+        }])
+        return
+      }
+
+      callbacks.onChunk('<thi')
+      secondTurnSnapshots.push(store.currentBubbleText)
+      callbacks.onChunk('nk>第二轮分析')
+      secondTurnSnapshots.push(store.currentBubbleText)
+      callbacks.onChunk('</think>')
+      secondTurnSnapshots.push(store.currentBubbleText)
+      callbacks.onTools([{
+        id: 'say-after-tool',
+        type: 'function',
+        function: { name: 'say', arguments: '{"voice":"完成","display":"完成"}' },
+      }])
+    })
+
+    expect(await store.sendMessage('draft')).toBe(true)
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(secondTurnSnapshots).toEqual(['', '', ''])
+    expect(store.currentBubbleText).toBe('完成')
+    expect(store.currentThinking).toBe('第二轮分析')
   })
 
   it('renders streamed say arguments before the tool call completes', async () => {
@@ -142,6 +180,45 @@ describe('send result contract', () => {
     finishTranslation('こんにちは')
     await vi.waitFor(() => {
       expect(store.messages.find(message => message.role === 'assistant')?.voice).toBe('こんにちは')
+    })
+  })
+
+  it('清空消息会取消仍在准备中的后台语音', async () => {
+    const { useChatStore } = await import('../chat')
+    const { clearBuffer, getBuffer } = await import('../../utils/logger')
+    const store = useChatStore()
+    clearBuffer()
+    let finishTranslation!: (value: string) => void
+    let translationSignal: AbortSignal | undefined
+    translate.mockImplementation((_text, _target, options) => {
+      translationSignal = options?.signal
+      return new Promise<string>((resolve) => { finishTranslation = resolve })
+    })
+    request.mockImplementation((_messages, callbacks) => callbacks.onTools([{
+      id: 'say-cleared-before-voice',
+      type: 'function',
+      function: {
+        name: 'say',
+        arguments: JSON.stringify({ display: '稍后清空' }),
+      },
+    }]))
+
+    expect(await store.sendMessage('draft')).toBe(true)
+    expect(translationSignal?.aborted).toBe(false)
+    store.clearMessages()
+    expect(translationSignal?.aborted).toBe(true)
+
+    finishTranslation('あとで消去')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(store.messages).toHaveLength(0)
+    expect(store.currentBubbleText).toBe('')
+    await vi.waitFor(() => {
+      expect(getBuffer().some(entry => (
+        entry.event === 'tts.playback_completed'
+        && entry.context?.status === 'cancelled'
+        && entry.context?.reason === 'voice_preparation_cancelled'
+      ))).toBe(true)
     })
   })
 })

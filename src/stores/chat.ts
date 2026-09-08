@@ -195,7 +195,19 @@ type TranslateFn = (
 
 /** voice 允许 Unicode 文字、数字、普通空格、半角逗号和数字常用符号。 */
 function isTtsSafeVoice(text: string): boolean {
-  return /^[\p{L}\p{M}\p{Nd} .,%:+\/\-]*$/u.test(text)
+  if (!/^[\p{L}\p{M}\p{Nd} .,%:+\/\-]*$/u.test(text)) return false
+
+  // 点号、百分号、冒号、斜杠和正负号仅用于数字表达式。
+  // 若符号两侧都没有数字，则更可能是 URL、文件路径、代码或缩写，必须交给模型
+  // 做语义改写，而不能直接送入 TTS。
+  const chars = Array.from(text)
+  const numericSymbols = new Set(['.', '%', ':', '+', '/', '-'])
+  const isDigit = (value?: string) => Boolean(value && /^\p{Nd}$/u.test(value))
+  return chars.every((char, index) => (
+    !numericSymbols.has(char)
+    || isDigit(chars[index - 1])
+    || isDigit(chars[index + 1])
+  ))
 }
 
 /**
@@ -695,6 +707,13 @@ export const useChatStore = defineStore('chat', () => {
   let abortController: AbortController | null = null
   /** 可见回复已提交后仍在后台准备语音的请求控制器 */
   let backgroundVoiceController: AbortController | null = null
+
+  function cancelBackgroundVoicePreparation() {
+    if (!backgroundVoiceController) return
+    const controller = backgroundVoiceController
+    backgroundVoiceController = null
+    controller.abort()
+  }
   /** 工具活动列表淡出延时器（处理结束后保留一会儿再隐藏） */
   let toolHideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -730,10 +749,7 @@ export const useChatStore = defineStore('chat', () => {
       return false
     }
     // 新消息到来时取消上一轮尚未完成的语音清洗/TTS 准备，避免旧语音覆盖新回复。
-    if (backgroundVoiceController) {
-      backgroundVoiceController.abort()
-      backgroundVoiceController = null
-    }
+    cancelBackgroundVoicePreparation()
 
     const userText = rawText.trim() || t('chat.input.imageOnlyPrompt')
     isProcessing.value = true
@@ -837,7 +853,6 @@ export const useChatStore = defineStore('chat', () => {
     // 改写的模块级 abortController），避免并发请求互相干扰。
     const myAbort = new AbortController()
     abortController = myAbort
-    let thinkSplitDone = false
     let wasCancelled = false                      // 用户主动取消标记（跳过兜底气泡）
 
     // ── 工具调用循环 ─────────────────────────────────────
@@ -880,31 +895,58 @@ export const useChatStore = defineStore('chat', () => {
       displayPreview: string,
     ) => {
       const sessionId = useSessionStore().currentSessionId
+      const voiceStartedAt = performance.now()
+      let playbackStarted = false
+      const completeBeforePlayback = (status: 'cancelled' | 'failed', reason: string) => {
+        const context = {
+          requestId,
+          status,
+          reason,
+          durationMs: Math.round(performance.now() - voiceStartedAt),
+        }
+        if (status === 'failed') log.warn('tts.playback_completed', 'TTS 播放结束', undefined, context)
+        else log.info('tts.playback_completed', 'TTS 播放结束', context)
+      }
       ttsRequested = true
       backgroundVoiceController = myAbort
       void (async () => {
         try {
           const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
-          if (myAbort.signal.aborted || useSessionStore().currentSessionId !== sessionId) return
+          if (myAbort.signal.aborted) {
+            completeBeforePlayback('cancelled', 'voice_preparation_cancelled')
+            return
+          }
+          if (useSessionStore().currentSessionId !== sessionId) {
+            completeBeforePlayback('cancelled', 'session_changed')
+            return
+          }
           log.sensitiveDebug("chat_store.say_resolved_sensitive.debug", `[${_fn}] say 后台最终文本`, {
             requestId,
             voice,
             display,
           })
           const message = messages.value.find(item => item.id === messageId)
-          if (message) {
-            if (voice) message.voice = voice
-            if (display && display !== message.text) message.text = display
-            useSessionStore().saveCurrentSession()
+          if (!message) {
+            completeBeforePlayback('cancelled', 'message_removed')
+            return
           }
+          if (voice) message.voice = voice
+          if (display && display !== message.text) message.text = display
+          useSessionStore().saveCurrentSession()
           if (currentBubbleText.value === displayPreview && display && display !== displayPreview) {
             currentBubbleText.value = display
           }
-          ttsRequested = true
+          playbackStarted = true
           void triggerTts(voice, requestId)
           log.info("chat_store.send_message.info", `[${_fn}] ✓ say 后台语音准备完成 (显示:${display.length}字, TTS:${voice.length}字)`, { display_length: display.length, voice_length: voice.length })
         } catch (err) {
           log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 后台语音准备失败: ${(err as Error).message}`, err)
+          if (!playbackStarted) {
+            completeBeforePlayback(
+              myAbort.signal.aborted ? 'cancelled' : 'failed',
+              myAbort.signal.aborted ? 'voice_preparation_cancelled' : (err as Error).message,
+            )
+          }
         } finally {
           if (backgroundVoiceController === myAbort) backgroundVoiceController = null
         }
@@ -1033,13 +1075,14 @@ export const useChatStore = defineStore('chat', () => {
         let contentBuffer = ""  // 单轮缓冲区：仅用于实时提取 <think> 思考内容
         let streamVisibleText = ""  // 单轮已渲染的可见正文
         let streamSawThink = false  // 本轮是否出现过 <think> 标签
+        let thinkSplitDone = false  // 每次模型调用都要重新解析自己的思考标签
         const chatTimer = debugTimer(`${_fn} chatOnce turn#${turn}`)
         log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 chat() 发起请求...`, { fn: _fn, turn: turn })
 
         const renderStreamText = (text: string) => {
           if (myAbort.signal.aborted) return
           if (currentBubbleText.value !== text) currentBubbleText.value = text
-          if (text) isTyping.value = true
+          isTyping.value = Boolean(text)
         }
 
         // 流式回调：实时提取 <think> 思考内容，并直接渲染可见正文
@@ -1065,9 +1108,13 @@ export const useChatStore = defineStore('chat', () => {
               if (full.includes('<think>') && !full.includes('</think>')) {
                 streamSawThink = true
                 currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
+                // 起始标签可能跨 chunk 到达；清掉上一帧已经显示的 `<thi` 等前缀。
+                renderStreamText('')
                 log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 thinking 累积中 (${currentThinking.value.length} 字符)`, { fn: _fn, turn: turn, current_thinking_value: currentThinking.value.length })
                 return
               }
+              const possibleOpeningTag = full.trimStart()
+              if (possibleOpeningTag && '<think>'.startsWith(possibleOpeningTag)) return
               streamVisibleText = full
               renderStreamText(streamVisibleText)
               return
@@ -1540,6 +1587,7 @@ export const useChatStore = defineStore('chat', () => {
     } else {
       log.trace("chat_store.cancel_response.trace", `[${_fn}] abortController 已为 null`, { fn: _fn })
     }
+    cancelBackgroundVoicePreparation()
 
     isProcessing.value = false
     isUsingTools.value = false
@@ -1598,11 +1646,14 @@ export const useChatStore = defineStore('chat', () => {
     const prevCount = messages.value.length
     log.trace("chat_store.clear_messages.trace", `[${_fn}] ▶ (当前消息数=${prevCount})`, { fn: _fn, prev_count: prevCount })
 
-    // 先取消正在进行中的 AI 请求，避免其回调写入已被清空的上下文
+    // 先取消正在进行中的 AI 请求和后台语音，避免其回调写入已被清空的上下文。
     if (abortController) {
       abortController.abort()
       abortController = null
     }
+    cancelBackgroundVoicePreparation()
+    cancelSpeak()
+    lastTtsText = ''
     rejectPendingConfirm()
     rejectPendingCommandConfirm()
     rejectPendingScreenCaptureConfirm()
@@ -1637,6 +1688,9 @@ export const useChatStore = defineStore('chat', () => {
   function resetContext() {
     const _fn = 'resetContext'
     log.trace("chat_store.reset_context.trace", `[${_fn}] ▶`, { fn: _fn })
+    cancelBackgroundVoicePreparation()
+    cancelSpeak()
+    lastTtsText = ''
     const oldContext = chatContext
     chatContext = createChatContext()
     currentPersona = null
@@ -1652,6 +1706,11 @@ export const useChatStore = defineStore('chat', () => {
   function loadMessages(msgs: ChatMessage[], snapshot?: ChatContextSnapshot | null) {
     const _fn = 'loadMessages'
     log.trace("chat_store.load_messages.trace", `[${_fn}] ▶ msgs.length=${msgs.length}`, { fn: _fn, msgs_length: msgs.length })
+
+    // 切换、回档或恢复历史时，旧回复的后台语音不得继续写回或播放。
+    cancelBackgroundVoicePreparation()
+    cancelSpeak()
+    lastTtsText = ''
 
     // 统计消息组成
     const userCount = msgs.filter(m => m.role === 'user').length

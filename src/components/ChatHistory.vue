@@ -41,9 +41,15 @@ const expanded = computed(() => chat.showInput)
 
 /** 挂载后下一帧再置位，让折叠高度从 0 过渡生长（入场动画） */
 const entered = ref(false)
+let layoutResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   requestAnimationFrame(() => { entered.value = true })
   window.addEventListener('resize', onViewportResize)
+  const bottomArea = historyRef.value?.parentElement
+  if (typeof ResizeObserver !== 'undefined' && bottomArea) {
+    layoutResizeObserver = new ResizeObserver(onViewportResize)
+    layoutResizeObserver.observe(bottomArea)
+  }
 })
 
 /** 助手消息展示名：优先消息内的角色身份快照，旧数据回退当前角色名/品牌名 */
@@ -101,20 +107,24 @@ function measureCollapsed() {
   collapsedHeight.value = Math.min(Math.ceil(h), maxHeight)
 }
 
-/** 历史列表可用的最大收起高度 = 窗口高度 - 其下方工具栏/输入区占用的高度。 */
+/** 历史列表可用的最大收起高度 = 窗口高度 - 同层其它实体控件占用的高度。 */
 function collapsedAvailableHeight(): number {
   const history = historyRef.value
   if (!history) return viewportHeight()
-  let belowHeight = 0
-  for (let sibling = history.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+  const parent = history.parentElement
+  if (!parent) return viewportHeight()
+  let occupiedHeight = 0
+  for (const sibling of Array.from(parent.children)) {
+    if (sibling === history) continue
     const el = sibling as HTMLElement
     const rect = el.getBoundingClientRect()
     const style = getComputedStyle(el)
-    belowHeight += rect.height
+    if (style.display === 'none' || style.position === 'absolute' || style.position === 'fixed') continue
+    occupiedHeight += rect.height
       + (parseFloat(style.marginTop) || 0)
       + (parseFloat(style.marginBottom) || 0)
   }
-  return Math.max(1, viewportHeight() - belowHeight)
+  return Math.max(1, viewportHeight() - occupiedHeight)
 }
 
 function onViewportResize() {
@@ -205,6 +215,8 @@ function onHistoryImageLoad() {
 onUnmounted(() => {
   sessionSettleVersion++
   cancelCollapseScroll()
+  layoutResizeObserver?.disconnect()
+  layoutResizeObserver = null
   window.removeEventListener('resize', onViewportResize)
 })
 
