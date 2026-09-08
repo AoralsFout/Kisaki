@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 语音合成设置 - TTS 引擎选择、配置、显示语言、打字速度
+ * 语音合成设置 - TTS 引擎选择、配置、显示语言
  *
  * 支持两种引擎：
  *   - 阿里云 CosyVoice（云端 WebSocket）
@@ -19,7 +19,6 @@ import {
 import { fetchVoiceList } from '../../tts/api'
 import type { CosyVoiceConfig, GptSoVitsConfig, VoiceInfo, TtsProvider } from '../../tts/types'
 import { getDisplayLanguage, setDisplayLanguage, SUPPORTED_LANGUAGES } from '../../stores/language'
-import { getTypingSpeed, setTypingSpeed } from '../../stores/language'
 import SaveBar from '../ui/SaveBar.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import ToggleRow from '../ui/ToggleRow.vue'
@@ -54,7 +53,6 @@ const showAdvanced = ref(false)
 
 const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
-const typingSpeed = ref(getTypingSpeed())
 const ttsPreflightWarning = computed(() => {
   if (!ttsEnabled.value || provider.value === 'none') return ''
   if (provider.value === 'cosyvoice') {
@@ -77,12 +75,6 @@ onMounted(async () => {
   cvForm.reset()
   gsForm.reset()
 })
-
-function onTypingSpeedInput(e: Event) {
-  const val = parseInt((e.target as HTMLInputElement).value, 10)
-  typingSpeed.value = val
-  setTypingSpeed(val)
-}
 
 // ── Provider 切换 ──
 
@@ -280,20 +272,6 @@ async function handleGsSave() { return gsForm.save() }
       <p class="form-hint">{{ t('settings.tts.displayLangHint') }}</p>
     </div>
 
-    <!-- 打字机速度 -->
-    <div class="form-group">
-      <label class="form-label">{{ t('settings.tts.typingSpeed') }}</label>
-      <div class="speed-slider-row">
-        <input type="range" min="10" max="200" step="5" :value="typingSpeed" @input="onTypingSpeedInput"
-          class="speed-slider" />
-        <span class="speed-value">{{ typingSpeed }}ms</span>
-        <span class="speed-tag"
-          :class="{ fast: typingSpeed <= 20, medium: typingSpeed > 20 && typingSpeed <= 60, slow: typingSpeed > 60 }">
-          {{ typingSpeed <= 20 ? t('settings.tts.speedFast') : typingSpeed <= 60 ? t('settings.tts.speedMedium') : t('settings.tts.speedSlow') }}
-        </span>
-      </div>
-      <p class="form-hint">{{ t('settings.tts.typingSpeedHint') }}</p>
-    </div>
   </div>
 </template>
 

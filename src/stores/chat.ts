@@ -919,33 +919,49 @@ export const useChatStore = defineStore('chat', () => {
 
       try {
         let contentBuffer = ""  // 单轮缓冲区：仅用于实时提取 <think> 思考内容
+        let streamVisibleText = ""  // 单轮已渲染的可见正文
+        let streamSawThink = false  // 本轮是否出现过 <think> 标签
         const chatTimer = debugTimer(`${_fn} chatOnce turn#${turn}`)
         log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 chat() 发起请求...`, { fn: _fn, turn: turn })
 
-        // 流式回调：实时提取 <think> 思考内容
+        const renderStreamText = (text: string) => {
+          if (myAbort.signal.aborted) return
+          if (currentBubbleText.value !== text) currentBubbleText.value = text
+          if (text) isTyping.value = true
+        }
+
+        // 流式回调：实时提取 <think> 思考内容，并直接渲染可见正文
         const streamCallbacks = {
           onChunk: (delta: string) => {
             contentBuffer += delta
-            // 仍从内容中提取 thinking（如 <think> 标签）用于实时显示
             if (!thinkSplitDone) {
               const full = contentBuffer
               const match = full.match(/^([\s\S]*?)<\/think>\s*([\s\S]*)$/)
               if (match) {
                 const think = match[1].replace(/^<think>\s*/, '')
+                streamSawThink = true
                 if (think) {
                   currentThinking.value = think
                   log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮 <think> 标签检测到，提取 ${think.length} 字符`, { fn: _fn, turn: turn, think_length: think.length })
                 }
                 thinkSplitDone = true
                 log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 thinkSplitDone → true`, { fn: _fn, turn: turn })
+                streamVisibleText = match[2]
+                renderStreamText(streamVisibleText)
                 return
               }
               if (full.includes('<think>') && !full.includes('</think>')) {
+                streamSawThink = true
                 currentThinking.value = full.replace(/^[\s\S]*?<think>\s*/, '')
                 log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 thinking 累积中 (${currentThinking.value.length} 字符)`, { fn: _fn, turn: turn, current_thinking_value: currentThinking.value.length })
                 return
               }
+              streamVisibleText = full
+              renderStreamText(streamVisibleText)
+              return
             }
+            streamVisibleText += delta
+            renderStreamText(streamVisibleText)
           },
           onThinking: (t: string) => {
             currentThinking.value += t
@@ -974,16 +990,17 @@ export const useChatStore = defineStore('chat', () => {
         // ── 模型走了纯文本通道（没用 say = 兜底路径）────────
         if (result.type === 'done') {
           const finalText = result.text
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 AI 纯文本回复(未走 say), 长度=${finalText?.length || 0}`, { fn: _fn, turn: turn, final_text_length: finalText?.length || 0 })
+          const visibleFinalText = streamSawThink ? streamVisibleText : finalText
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 AI 纯文本回复(未走 say), 长度=${visibleFinalText?.length || 0}`, { fn: _fn, turn: turn, final_text_length: visibleFinalText?.length || 0 })
           log.sensitiveDebug("chat_store.send_message_sensitive.debug", `[${_fn}] AI 回复片段`, { fn: _fn, final_text_slice: (finalText || '').slice(0, 200) })
 
           // 兜底：不支持原生 FC 的模型可能把动作调用写在文字里
-          const textCalls = agentService.extractTextToolCalls(finalText)
+          const textCalls = agentService.extractTextToolCalls(visibleFinalText)
           if (textCalls.length > 0) {
             log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 文本动作调用: ${textCalls.length} 个`, { fn: _fn, turn: turn, text_calls_length: textCalls.length })
             isUsingTools.value = true
             currentBubbleText.value = ""
-            const cleanText = agentService.stripTextToolCalls(finalText)
+            const cleanText = agentService.stripTextToolCalls(visibleFinalText)
             // 与 FC 路径同范式：assistant 消息带 tool_calls（正文附剥离工具调用后的文本），
             // 随后逐个写 tool 回执。避免「无 tool_calls 的孤儿 tool 结果」导致下次请求 400。
             const textToolCallsData = textCalls.map(tc => ({
@@ -1018,7 +1035,7 @@ export const useChatStore = defineStore('chat', () => {
           }
 
           // 纯正文兜底：正文当显示文本，生成 TTS 安全的母语台词
-          if (finalText && finalText.trim()) {
+          if (visibleFinalText && visibleFinalText.trim()) {
             fallbackUsed = true
             const { voiceLang, displayLang, persona } = getLangs()
             const translate: TranslateFn = (txt, target, opts) =>
@@ -1030,9 +1047,9 @@ export const useChatStore = defineStore('chat', () => {
                 turn,
               })
             // 立即展示正文，voice 翻译异步进行，避免二次翻译阻塞文字回复。
-            currentBubbleText.value = finalText
+            currentBubbleText.value = visibleFinalText
             isTyping.value = true
-            const { voice, display } = await resolveContentFallback(finalText, voiceLang, displayLang, translate)
+            const { voice, display } = await resolveContentFallback(visibleFinalText, voiceLang, displayLang, translate)
             commitSyntheticSay(voice, display)
             deliver(voice, display)
             log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ 纯正文兜底完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })

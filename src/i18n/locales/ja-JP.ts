@@ -259,11 +259,6 @@ export default {
       // 共通
       displayLang: '表示言語',
       displayLangHint: 'AI の返信テキストは選択した言語に翻訳して表示されます。キャラクターの音声は常にその母語で合成されます。',
-      typingSpeed: 'タイプライター速度',
-      speedFast: '高速',
-      speedMedium: '中速',
-      speedSlow: '低速',
-      typingSpeedHint: '1 文字ずつ表示する間隔。（10ms=最速、200ms=最遅、既定50ms）',
     },
     general: {
       title: '一般',

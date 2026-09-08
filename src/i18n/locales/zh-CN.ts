@@ -262,11 +262,6 @@ export default {
       // 共用
       displayLang: '显示语言',
       displayLangHint: 'AI 回复的文本将翻译为你选择的语言显示。角色语音始终使用其母语合成。',
-      typingSpeed: '打字机速度',
-      speedFast: '快速',
-      speedMedium: '中等',
-      speedSlow: '慢速',
-      typingSpeedHint: '每显示一个字符的间隔时间。（10ms=极快，200ms=极慢，默认50ms）',
     },
     general: {
       title: '通用',

@@ -58,4 +58,31 @@ describe('send result contract', () => {
     expect(store.messages.some(m => m.role === 'assistant' && m.text === '你好')).toBe(true)
     expect(store.isProcessing).toBe(false)
   })
+
+  it('renders visible streamed text immediately and hides think content', async () => {
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
+    const snapshots: string[] = []
+    request.mockImplementation((_messages, callbacks) => {
+      callbacks.onChunk('<think>分析中')
+      snapshots.push(store.currentBubbleText)
+      callbacks.onChunk('</think>你')
+      snapshots.push(store.currentBubbleText)
+      callbacks.onChunk('好')
+      snapshots.push(store.currentBubbleText)
+      callbacks.onTools([{
+        id: 'say-stream-1',
+        type: 'function',
+        function: {
+          name: 'say',
+          arguments: JSON.stringify({ voice: '你好', display: '你好' }),
+        },
+      }])
+    })
+
+    expect(await store.sendMessage('draft')).toBe(true)
+    expect(snapshots).toEqual(['', '你', '你好'])
+    expect(store.currentBubbleText).toBe('你好')
+    expect(store.isProcessing).toBe(false)
+  })
 })

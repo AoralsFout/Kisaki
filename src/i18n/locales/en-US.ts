@@ -259,11 +259,6 @@ export default {
       // Common
       displayLang: 'Display language',
       displayLangHint: 'AI reply text will be translated and shown in the language you choose. Character voice is always synthesized in its native language.',
-      typingSpeed: 'Typewriter speed',
-      speedFast: 'Fast',
-      speedMedium: 'Medium',
-      speedSlow: 'Slow',
-      typingSpeedHint: 'Interval between each displayed character. (10ms = very fast, 200ms = very slow, default 50ms)',
     },
     general: {
       title: 'General',
