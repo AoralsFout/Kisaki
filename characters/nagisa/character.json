@@ -2,7 +2,8 @@
   "id": "nagisa",
   "name": "Nagisa",
   "description": "Nagisa",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing"
   ],

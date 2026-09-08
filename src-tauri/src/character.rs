@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 
 use crate::path::{characters_dir, log_dir, safe_join, sanitize_path_component};
 
@@ -84,6 +85,54 @@ pub(crate) fn list_characters() -> Result<Vec<String>, String> {
         }
     }
     result.sort();
+    Ok(result)
+}
+
+/// 角色列表所需的轻量元数据。列表页不需要提示词、图片清单等完整配置。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CharacterSummary {
+    id: String,
+    name: Option<String>,
+    render: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CharacterSummaryConfig {
+    name: Option<String>,
+    render: Option<String>,
+}
+
+/// 一次扫描返回角色 ID 及列表元数据，避免前端为每个角色分别读取完整配置和 prompt.txt。
+#[tauri::command]
+pub(crate) fn list_character_summaries() -> Result<Vec<CharacterSummary>, String> {
+    let dir = characters_dir();
+    let mut result: Vec<CharacterSummary> = Vec::new();
+    if dir.exists() {
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let Some(id) = entry.file_name().to_str().map(str::to_owned) else {
+                    continue;
+                };
+                let config_path = entry.path().join("character.json");
+                if !config_path.exists() {
+                    continue;
+                }
+                let config = fs::read_to_string(config_path)
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<CharacterSummaryConfig>(&text).ok());
+                result.push(CharacterSummary {
+                    id,
+                    name: config.as_ref().and_then(|data| data.name.clone()),
+                    render: config.and_then(|data| data.render),
+                });
+            }
+        }
+    }
+    result.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(result)
 }
 

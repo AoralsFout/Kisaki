@@ -165,7 +165,8 @@ export const useSessionStore = defineStore('session', () => {
    * 加载数据并恢复上次会话。
    * 优先读 Rust 管理的会话文件（Tauri），不可用时回退 localStorage；
    * 旧 localStorage 数据会在文件可用时自动迁移（成功后清除旧副本）。
-   * 应在 ChatStore 初始化且 system prompt 设定后调用
+   * 应在 ChatStore 初始化后调用。启动时可先读取会话，再据此选择首个角色；
+   * 角色 system prompt 后续设定时会保留这里恢复的历史上下文。
    */
   async function init() {
     const file = await loadFromFile()

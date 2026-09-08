@@ -2,7 +2,8 @@
   "id": "kanata",
   "name": "Kanata",
   "description": "Kanata",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing",
     "sitting"

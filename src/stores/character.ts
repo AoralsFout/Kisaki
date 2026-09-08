@@ -7,7 +7,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { loadCharacterJson, listCharacters, imageUrl } from '../character/loader'
+import { loadCharacterJson, listCharacterSummaries, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
 import { DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
@@ -82,26 +82,24 @@ export const useCharacterStore = defineStore('character', () => {
   async function refreshList() {
     const { clearCache } = await import('../character/loader')
     clearCache()
-    availableList.value = await listCharacters()
-    // 异步加载每个角色的名称（静默失败，fallback 到 id）
+    const summaries = await listCharacterSummaries()
+    availableList.value = summaries.map(item => item.id)
     const names: Record<string, string> = {}
     const renders: Record<string, string> = {}
-    await Promise.allSettled(availableList.value.map(async (id) => {
-      try {
-        const charData = await loadCharacterJson(id)
-        names[id] = charData.name
-        renders[id] = charData.render ?? 'illustration'
-      } catch {
-        names[id] = id.charAt(0).toUpperCase() + id.slice(1)
-        renders[id] = 'illustration'
-      }
-    }))
+    for (const summary of summaries) {
+      const id = summary.id
+      names[id] = summary.name || id.charAt(0).toUpperCase() + id.slice(1)
+      renders[id] = summary.render || 'illustration'
+    }
     charNames.value = names
     charRenders.value = renders
   }
 
-  /** 初始化（扫描列表 + 加载一个角色；零角色时保持 data=null 不崩） */
-  async function init() {
+  /**
+   * 初始化（扫描列表 + 加载一个角色；零角色时保持 data=null 不崩）。
+   * preferredId 用于启动时直接加载上次会话的角色，避免先加载默认角色再切换。
+   */
+  async function init(preferredId?: string) {
     // 先扫描可用角色，再决定加载哪个
     await refreshList()
     const list = availableList.value
@@ -110,7 +108,9 @@ export const useCharacterStore = defineStore('character', () => {
       log.warn("character_store.init.warn", "未发现任何角色，等待用户导入角色包")
       return
     }
-    const target = list.includes('kisaki') ? 'kisaki' : list[0]
+    const target = preferredId && list.includes(preferredId)
+      ? preferredId
+      : (list.includes('kisaki') ? 'kisaki' : list[0])
     try {
       await loadCharacter(target, true)
     } catch (err) {

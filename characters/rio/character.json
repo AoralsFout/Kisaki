@@ -2,7 +2,8 @@
   "id": "rio",
   "name": "Rio",
   "description": "Rio",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing",
     "sitting"

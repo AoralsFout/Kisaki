@@ -2,7 +2,8 @@
   "id": "kanade",
   "name": "Kanade",
   "description": "Kanade",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing"
   ],

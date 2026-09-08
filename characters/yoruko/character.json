@@ -2,7 +2,8 @@
   "id": "yoruko",
   "name": "Yoruko",
   "description": "Yoruko",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing",
     "sitting"

@@ -193,27 +193,44 @@ export async function loadCharacterJson(id: string): Promise<CharacterData> {
   return data
 }
 
-let cachedList: string[] | null = null
+export interface CharacterSummary {
+  id: string
+  name?: string | null
+  render?: RenderKind | null
+}
 
-/** 扫描可用角色列表（通过 Tauri 后端扫描目录） */
-export async function listCharacters(): Promise<string[]> {
-  if (cachedList) {
-    log.debug("char_loader.list_characters.debug", `角色列表(缓存): ${cachedList.length} 个`, { cached_list_length: cachedList.length })
-    return cachedList
+let cachedSummaries: CharacterSummary[] | null = null
+
+/**
+ * 扫描可用角色及列表元数据。后端在一次 IPC 中只读取 character.json，
+ * 不加载 prompt.txt，也不对每个角色执行完整数据迁移。
+ */
+export async function listCharacterSummaries(): Promise<CharacterSummary[]> {
+  if (cachedSummaries) {
+    log.debug("char_loader.list_character_summaries.debug", `角色列表(缓存): ${cachedSummaries.length} 个`, { cached_list_length: cachedSummaries.length })
+    return cachedSummaries
   }
 
   try {
-    const list: string[] = await invoke('list_characters')
-    cachedList = list
-    log.info("char_loader.list_characters.info", `扫描到 ${list.length} 个角色: ${list.join(', ')}`, { list_length: list.length, list_join: list.join(', ') })
-    return list
+    const summaries = await invoke<CharacterSummary[]>('list_character_summaries')
+    cachedSummaries = summaries
+    log.info("char_loader.list_character_summaries.info", `扫描到 ${summaries.length} 个角色: ${summaries.map(item => item.id).join(', ')}`, {
+      list_length: summaries.length,
+      list_join: summaries.map(item => item.id).join(', '),
+    })
+    return summaries
   } catch {
-    log.warn("char_loader.list_characters.warn", "listCharacters 失败（非 Tauri 环境?）")
+    log.warn("char_loader.list_character_summaries.warn", "listCharacterSummaries 失败（非 Tauri 环境?）")
     return []
   }
 }
 
+/** 扫描可用角色列表（通过 Tauri 后端扫描目录） */
+export async function listCharacters(): Promise<string[]> {
+  return (await listCharacterSummaries()).map(item => item.id)
+}
+
 /** 清空角色缓存 */
 export function clearCache() {
-  cachedList = null
+  cachedSummaries = null
 }

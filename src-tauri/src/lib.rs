@@ -130,6 +130,7 @@ pub fn run() {
             character::delete_character_image,
             character::delete_character,
             character::list_characters,
+            character::list_character_summaries,
             character::list_data_dir_characters,
             character::get_data_dirs,
             character::read_character_file,

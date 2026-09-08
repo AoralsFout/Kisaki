@@ -2,7 +2,8 @@
   "id": "misaki",
   "name": "Misaki",
   "description": "Misaki",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing"
   ],

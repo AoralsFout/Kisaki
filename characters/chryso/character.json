@@ -2,7 +2,8 @@
   "id": "chryso",
   "name": "Chryso",
   "description": "Chryso",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "站立"
   ],

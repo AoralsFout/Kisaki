@@ -2,7 +2,8 @@
   "id": "yamiko",
   "name": "Yamiko",
   "description": "Yamiko",
-  "version": 1,
+  "version": 2,
+  "render": "illustration",
   "poses": [
     "standing"
   ],

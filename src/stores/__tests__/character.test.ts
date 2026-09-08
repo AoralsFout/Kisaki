@@ -1,0 +1,53 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useCharacterStore } from '../character'
+import { listCharacterSummaries, loadCharacterJson } from '../../character/loader'
+
+vi.mock('../../character/loader', () => ({
+  listCharacterSummaries: vi.fn(),
+  loadCharacterJson: vi.fn(),
+  imageUrl: vi.fn((id: string, file: string) => `${id}/${file}`),
+  clearCache: vi.fn(),
+}))
+
+const character = (id: string) => ({
+  id,
+  name: id.toUpperCase(),
+  description: '',
+  version: 2,
+  prompt: `${id} prompt`,
+  render: 'illustration' as const,
+  poses: ['default'],
+  emotions: ['normal'],
+  costumes: ['default'],
+  images: [],
+})
+
+describe('useCharacterStore init', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(listCharacterSummaries).mockResolvedValue([
+      { id: 'chryso', name: 'Chryso', render: 'illustration' },
+      { id: 'kisaki', name: 'Kisaki', render: 'illustration' },
+    ])
+    vi.mocked(loadCharacterJson).mockImplementation(async id => character(id))
+  })
+
+  it('启动时直接加载会话指定的角色', async () => {
+    const store = useCharacterStore()
+
+    await store.init('chryso')
+
+    expect(store.currentId).toBe('chryso')
+    expect(vi.mocked(loadCharacterJson).mock.calls.map(([id]) => id)).toEqual(['chryso'])
+  })
+
+  it('会话角色不存在时回退到 kisaki', async () => {
+    const store = useCharacterStore()
+
+    await store.init('missing')
+
+    expect(store.currentId).toBe('kisaki')
+  })
+})

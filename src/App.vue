@@ -177,11 +177,11 @@ async function onCharactersChanged() {
   const cur = charStore.currentId
   const target = list.includes(cur) ? cur : (list.includes('kisaki') ? 'kisaki' : list[0])
   await charStore.loadCharacter(target, true).catch((e) => log.error("app.on_characters_changed.error", "刷新角色失败", e))
-  applyCharacterPersona()
 }
 
-// 角色切换后（UI / 会话恢复任一路径）统一刷新人设（system prompt）
-watch(() => charStore.currentId, () => applyCharacterPersona())
+// 角色首次加载、切换或同 ID 配置刷新后，统一同步一次人设。
+// 监听 data 而非 currentId，既能覆盖启动时 ID 未变的默认角色，也能覆盖同角色热刷新。
+watch(() => charStore.data, () => applyCharacterPersona(), { flush: 'sync' })
 
 // ── 首次运行引导 ──
 const showOnboarding = ref(false)
@@ -262,8 +262,13 @@ onMounted(async () => {
   // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
   await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
   chat.init()
-  await charStore.init().catch((e) => log.error("app.module.error", "角色初始化失败", e))
-  charReady.value = true
+  // 先读取上次会话，再直接加载该会话绑定的角色。
+  // 如果反过来先初始化角色，Store 会默认加载 kisaki，会话恢复时又切到
+  // 真正的角色，导致启动闪现和不必要的两次配置/图片加载。
+  await sessionStore.init()
+    .catch((e) => log.error("app.module.error", "会话初始化失败", e))
+  await charStore.init(sessionStore.currentSession?.characterId)
+    .catch((e) => log.error("app.module.error", "角色初始化失败", e))
   // 首次运行：无完成标记时显示引导；已被「稍后」搁置则不再整层弹出，
   // 改以主窗口的配置待办入口恢复（仅主窗口）。
   if (!isSettings) {
@@ -271,13 +276,10 @@ onMounted(async () => {
     onboardingDismissed.value = isOnboardingDismissed()
     showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
   }
-  if (charStore.prompt) {
-    applyCharacterPersona()
-  }
   // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
   setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
-  // 初始化会话管理（system prompt 设定后加载历史消息）
-  await sessionStore.init()
+  // 角色和会话状态均已恢复，此时再挂载渲染器，首帧即为正确角色。
+  charReady.value = true
 
   // Dev 面板通信：仅主窗口响应，避免设置窗口/日志窗口的 handler 干扰
   if (!isDev && !isSettings && !isLogs) {
@@ -394,6 +396,7 @@ async function handleSelectCharacter(charId: string) {
     sessionStore.saveCurrentSession()
   }
   chat.resetContext()
+  // resetContext 会清除旧角色人设；切换完成后将新角色人设写入新上下文。
   applyCharacterPersona()
 }
 </script>
@@ -410,7 +413,7 @@ async function handleSelectCharacter(charId: string) {
     <!-- 角色区 -->
     <!-- 边框跟随穿透模式（而非光标瞬时命中）：实体态常显作状态指示，穿透态始终隐藏 -->
     <div class="character-area" :class="{ 'is-passthrough': passthroughOn }">
-      <Character ref="characterRef" @click="handleCharacterClick" />
+      <Character v-if="charReady && !noCharacter" ref="characterRef" @click="handleCharacterClick" />
 
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
       <div v-if="noCharacter" class="no-char-guide" data-pet-solid>
