@@ -27,6 +27,13 @@ export function toolErrorMessage(error: unknown): string {
   return '未知错误'
 }
 
+/** 从 Error 或 Tauri 风格对象中读取稳定错误码。 */
+function toolErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined
+  const code = String((error as { code?: unknown }).code ?? '').trim()
+  return code || undefined
+}
+
 /** LLM 响应 choice 结构中的 tool_calls 字段 */
 interface LLMChoice {
   delta?: { tool_calls?: Array<Record<string, unknown>> }
@@ -62,10 +69,18 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
       role: 'tool',
       tool_call_id: tc.id,
       content: `错误: 未知工具 "${tc.name}"`,
+      ok: false,
+      code: 'UNKNOWN_TOOL',
+      retryable: false,
     }
   }
 
-  log.debug("agent_exec.execute_tool_call.debug", `执行工具: ${tc.name}, 参数: ${JSON.stringify(tc.arguments)}`, { tc_name: tc.name, tc_arguments: tc.arguments })
+  const argumentKeys = Object.keys(tc.arguments ?? {})
+  log.debug("agent_exec.execute_tool_call.debug", `执行工具: ${tc.name} (${argumentKeys.length} 个参数)`, {
+    tc_name: tc.name,
+    argument_count: argumentKeys.length,
+    argument_keys: argumentKeys,
+  })
   try {
     const output = await tool.handler(tc.arguments)
     const result = typeof output === 'string' ? { content: output } : output
@@ -74,19 +89,30 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
       role: 'tool',
       tool_call_id: tc.id,
       content: result.content,
+      ok: true,
       images: result.images,
     }
   } catch (err) {
     const message = toolErrorMessage(err)
-    log.error("agent.tool_failed", "工具执行失败", err, {
+    const code = toolErrorCode(err)
+    const context = {
       toolName: tc.name,
       toolCallId: tc.id,
       message,
-    })
+      code,
+    }
+    if (code === 'WORKSPACE_NOT_SET') {
+      log.warn("agent.tool_precondition_failed", "工具前置条件不满足", undefined, context)
+    } else {
+      log.error("agent.tool_failed", "工具执行失败", err, context)
+    }
     return {
       role: 'tool',
       tool_call_id: tc.id,
       content: `工具执行错误: ${message}`,
+      ok: false,
+      code: code ?? 'TOOL_EXECUTION_FAILED',
+      retryable: code === 'WORKSPACE_NOT_SET',
     }
   }
 }

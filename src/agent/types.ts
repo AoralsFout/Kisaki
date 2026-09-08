@@ -62,6 +62,12 @@ export interface ToolResult {
   role: 'tool'
   tool_call_id: string
   content: string
+  /** 结构化执行状态；旧调用方可省略，消费者再回退到文本判断。 */
+  ok?: boolean
+  /** 稳定错误码，供流程控制和遥测使用，避免解析本地化错误文本。 */
+  code?: string
+  /** 当前条件变化后是否值得重试。 */
+  retryable?: boolean
   /** 由上层在全部 tool 回执写完后，以多模态消息交给模型观察。 */
   images?: ToolImage[]
 }

@@ -21,9 +21,11 @@ async function requireWorkspaceId(): Promise<string> {
   const { useSessionStore } = await import('../../stores/session')
   const workspaceId = useSessionStore().currentSession?.workspaceId
   if (!workspaceId) {
-    throw new Error(
+    const error = new Error(
       '当前会话尚未设置工作目录。请提示用户点击界面下方的「工作区」按钮选择一个目录后再重试。',
     )
+    Object.assign(error, { code: 'WORKSPACE_NOT_SET' })
+    throw error
   }
   return workspaceId
 }
