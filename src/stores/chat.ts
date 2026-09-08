@@ -302,6 +302,55 @@ export function parseSayArgs(argStr: string): { voice?: string; display?: string
 }
 
 /**
+ * 从可能尚未闭合的 say JSON 参数中提取字符串字段，供流式渲染使用。
+ * 完整值优先用 JSON.parse 解码；未闭合或非法转义时按常见 JSON 转义回退。
+ *
+ * @internal 导出以支持单元测试
+ */
+export function extractPartialSayArgs(argStr: string): { voice?: string; display?: string } {
+  return {
+    voice: extractPartialStringField(argStr, 'voice'),
+    display: extractPartialStringField(argStr, 'display'),
+  }
+}
+
+function extractPartialStringField(json: string, field: string): string | undefined {
+  const keyPattern = new RegExp(`(?:^|[,{])\\s*"${field}"\\s*:\\s*"`, 'g')
+  const match = keyPattern.exec(json)
+  if (!match) return undefined
+
+  let raw = ''
+  let escaped = false
+  for (let i = keyPattern.lastIndex; i < json.length; i++) {
+    const ch = json[i]
+    if (escaped) {
+      raw += `\\${ch}`
+      escaped = false
+      continue
+    }
+    if (ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (ch === '"') break
+    raw += ch
+  }
+  if (escaped) raw += '\\'
+
+  try {
+    return JSON.parse(`"${raw}"`) as string
+  } catch {
+    return raw
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+  }
+}
+
+/**
  * say 内容字段级兜底：缺失的语言版本由系统翻译补出。
  * - voice 只有句读问题时本地修复；缺失或需要语义改写时才调用翻译兜底
  * - display 缺失且语言不同时，翻译 voice 补出
@@ -353,7 +402,11 @@ function chatOnce(
   messages: ReturnType<ChatContext['getMessages']>,
   tools: any[],
   signal: AbortSignal,
-  callbacks: { onThinking: (t: string) => void; onChunk: (t: string) => void },
+  callbacks: {
+    onThinking: (t: string) => void
+    onChunk: (t: string) => void
+    onToolCallDelta?: (calls: ToolCallData[]) => void
+  },
   telemetry: { requestId: string; turn: number },
 ): Promise<ChatResult> {
   return new Promise((resolve, reject) => {
@@ -362,6 +415,7 @@ function chatOnce(
       {
         onChunk: callbacks.onChunk,
         onThinking: callbacks.onThinking,
+        onToolCallDelta: callbacks.onToolCallDelta,
         onTools: (calls, textWithTools) => {
           resolve({ type: 'tools', calls, text: textWithTools })
         },
@@ -963,6 +1017,15 @@ export const useChatStore = defineStore('chat', () => {
             streamVisibleText += delta
             renderStreamText(streamVisibleText)
           },
+          onToolCallDelta: (calls: ToolCallData[]) => {
+            const sayCall = calls.find(call => call.function?.name === SAY_TOOL_NAME)
+            if (!sayCall) return
+            const partial = extractPartialSayArgs(sayCall.function.arguments || '')
+            const { voiceLang, displayLang } = getLangs()
+            const visible = partial.display?.trim()
+              || (voiceLang === displayLang ? partial.voice?.trim() : '')
+            if (visible) renderStreamText(visible)
+          },
           onThinking: (t: string) => {
             currentThinking.value += t
             log.trace("chat_store.send_message.trace", `[${_fn}] onThinking 收到 ${t.length} 字符，累积 ${currentThinking.value.length} 字符`, { fn: _fn, t_length: t.length, current_thinking_value: currentThinking.value.length })
@@ -1075,7 +1138,6 @@ export const useChatStore = defineStore('chat', () => {
           }
 
           isUsingTools.value = actionCalls.length > 0
-          currentBubbleText.value = ""
 
           // 只把「会写回执」的调用入上下文：动作工具 + 第一条 say。
           // 多余的 say 直接丢弃，否则会产生无回执的孤儿 tool_call id（下次请求 400）。
@@ -1136,6 +1198,8 @@ export const useChatStore = defineStore('chat', () => {
           // 同批调用 say 时，模型尚未见到刚读取的图片，不能把预先生成的 say 当作读图结论。
           // 先为 say 写入回执以保持协议完整，再把图片交给下一轮模型观察。
           if (sayCall && (toolImages.length || actionBatchNeedsFollowup)) {
+            currentBubbleText.value = ""
+            isTyping.value = false
             const reason = actionBatchFailed
               ? '未说出：需要先读取并处理刚才的工具失败结果，再生成最终答复。'
               : toolImages.length
@@ -1195,6 +1259,8 @@ export const useChatStore = defineStore('chat', () => {
 
           // ── 仅动作、无 say ──────────────────────────────
           // 动作后的正文不是最终答复，忽略并继续下一轮，让模型收尾调用 say 提交。
+          currentBubbleText.value = ""
+          isTyping.value = false
           if (result.text?.trim()) {
             log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮忽略工具执行前正文并继续`, {
               fn: _fn,

@@ -75,6 +75,8 @@ export interface StreamCallbacks {
   onChunk: (chunk: string) => void
   /** 收到思考内容增量（如 DeepSeek 的 reasoning_content） */
   onThinking?: (chunk: string) => void
+  /** 收到工具调用增量（已累积到当前时刻的完整快照） */
+  onToolCallDelta?: (tools: ToolCallData[]) => void
   /** 检测到工具调用（流式累积完成后触发）。text 为同条回复里一并产出的正文（可能为空），供兜底使用 */
   onTools?: (tools: ToolCallData[], text?: string) => void
   /** 流式结束 */

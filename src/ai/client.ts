@@ -291,8 +291,7 @@ export async function chat(
       // 累积 tool_calls (index → partial data)
       const toolCallMap = new Map<number, { id: string; name: string; args: string }>()
 
-      function flushToolCalls() {
-        if (toolCallMap.size === 0) return
+      function snapshotToolCalls(): ToolCallData[] {
         const calls: ToolCallData[] = []
         for (const [, tc] of toolCallMap) {
           calls.push({
@@ -301,7 +300,12 @@ export async function chat(
             function: { name: tc.name, arguments: tc.args },
           })
         }
-        callbacks.onTools?.(calls, fullText)
+        return calls
+      }
+
+      function flushToolCalls() {
+        if (toolCallMap.size === 0) return
+        callbacks.onTools?.(snapshotToolCalls(), fullText)
         toolCallMap.clear()
       }
 
@@ -352,6 +356,7 @@ export async function chat(
                 if (tcDelta.function?.name) entry.name += tcDelta.function.name
                 if (tcDelta.function?.arguments) entry.args += tcDelta.function.arguments
               }
+              callbacks.onToolCallDelta?.(snapshotToolCalls())
             }
 
             // ---- 普通内容 ----

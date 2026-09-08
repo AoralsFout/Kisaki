@@ -85,4 +85,33 @@ describe('send result contract', () => {
     expect(store.currentBubbleText).toBe('你好')
     expect(store.isProcessing).toBe(false)
   })
+
+  it('renders streamed say arguments before the tool call completes', async () => {
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
+    const snapshots: string[] = []
+    request.mockImplementation((_messages, callbacks) => {
+      callbacks.onToolCallDelta?.([{
+        id: 'say-stream-args-1',
+        type: 'function',
+        function: { name: 'say', arguments: '{"voice":"こんにちは","display":"你' },
+      }])
+      snapshots.push(store.currentBubbleText)
+      callbacks.onToolCallDelta?.([{
+        id: 'say-stream-args-1',
+        type: 'function',
+        function: { name: 'say', arguments: '{"voice":"こんにちは","display":"你好"}' },
+      }])
+      snapshots.push(store.currentBubbleText)
+      callbacks.onTools([{
+        id: 'say-stream-args-1',
+        type: 'function',
+        function: { name: 'say', arguments: '{"voice":"こんにちは","display":"你好"}' },
+      }])
+    })
+
+    expect(await store.sendMessage('draft')).toBe(true)
+    expect(snapshots).toEqual(['你', '你好'])
+    expect(store.currentBubbleText).toBe('你好')
+  })
 })

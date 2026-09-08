@@ -76,6 +76,24 @@ describe('parseSayArgs', () => {
   })
 })
 
+describe('extractPartialSayArgs', () => {
+  it('从未闭合的 JSON 参数中提取已到达的字段', async () => {
+    const { extractPartialSayArgs } = await import('../chat')
+    expect(extractPartialSayArgs('{"voice":"こんにちは","display":"你')).toEqual({
+      voice: 'こんにちは',
+      display: '你',
+    })
+  })
+
+  it('解码常见的 JSON 转义', async () => {
+    const { extractPartialSayArgs } = await import('../chat')
+    expect(extractPartialSayArgs('{"display":"第一行\\n第二行\\"引号\\""}')).toEqual({
+      voice: undefined,
+      display: '第一行\n第二行"引号"',
+    })
+  })
+})
+
 describe('resolveSayContent', () => {
   it('两者齐全：不调翻译', async () => {
     const { resolveSayContent } = await import('../chat')
