@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Mutex, OnceLock, TryLockError};
 
-use chrono::Local;
+use chrono::{Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::path::{initialized_log_dir, log_dir};
@@ -56,7 +56,10 @@ pub(crate) struct LogEntryPayload {
 impl LogEntryPayload {
     fn is_valid(&self) -> bool {
         self.schema_version == 2
-            && matches!(self.level.as_str(), "trace" | "debug" | "info" | "warn" | "error")
+            && matches!(
+                self.level.as_str(),
+                "trace" | "debug" | "info" | "warn" | "error"
+            )
             && !self.timestamp.trim().is_empty()
             && !self.namespace.trim().is_empty()
             && !self.message.trim().is_empty()
@@ -137,6 +140,51 @@ fn log_sort_parts(filename: &str) -> (&str, u32) {
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
     (stem, rotation)
+}
+
+fn log_file_date(filename: &str) -> Option<NaiveDate> {
+    let (stem, _) = filename.split_once(".jsonl")?;
+    NaiveDate::parse_from_str(stem.strip_prefix("app-v2-")?, "%Y-%m-%d").ok()
+}
+
+fn retention_cutoff(today: NaiveDate, retention_days: u32) -> NaiveDate {
+    let retention_days = retention_days.clamp(1, 365);
+    today - Duration::days(i64::from(retention_days.saturating_sub(1)))
+}
+
+/// 删除超过保留期的应用日志；仅处理经过严格文件名校验的 app-v2 日志。
+#[tauri::command]
+pub(crate) fn prune_log_files(retention_days: u32) -> Result<u32, String> {
+    // “保留 N 天”包含今天，因此 14 天表示今天 + 之前 13 个自然日。
+    let cutoff = retention_cutoff(Local::now().date_naive(), retention_days);
+    let dir = log_dir();
+    if !dir.exists() {
+        return Ok(0);
+    }
+
+    let _guard = log_write_lock()
+        .lock()
+        .map_err(|_| "日志写入锁已损坏".to_string())?;
+    let mut removed = 0;
+    for entry in fs::read_dir(&dir).map_err(|e| format!("读取日志目录失败: {}", e))? {
+        let entry = entry.map_err(|e| format!("读取日志条目失败: {}", e))?;
+        if !entry
+            .file_type()
+            .map_err(|e| format!("读取日志类型失败: {}", e))?
+            .is_file()
+        {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !is_log_filename(&name) || !log_file_date(&name).is_some_and(|date| date < cutoff) {
+            continue;
+        }
+        fs::remove_file(entry.path()).map_err(|e| format!("删除过期日志失败: {}", e))?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 fn parse_log_entry(line: &[u8], line_number: usize) -> LogEntry {
@@ -479,6 +527,14 @@ mod tests {
         assert!(!is_log_filename("__export_temp.jsonl"));
         assert!(!is_log_filename("app-v2-2026-8-30.jsonl"));
         assert!(!is_log_filename("app-v2-2026-08-30.jsonl.backup"));
+        assert_eq!(
+            log_file_date("app-v2-2026-08-30.jsonl.2"),
+            NaiveDate::from_ymd_opt(2026, 8, 30),
+        );
+        assert_eq!(
+            retention_cutoff(NaiveDate::from_ymd_opt(2026, 9, 8).unwrap(), 14),
+            NaiveDate::from_ymd_opt(2026, 8, 26).unwrap(),
+        );
 
         let mut files = [
             "app-v2-2026-08-29.jsonl".to_string(),

@@ -97,7 +97,8 @@ export async function synthesizeWithGptSoVits(
   const baseUrl = config.apiUrl.replace(/\/+$/, '')
   const url = `${baseUrl}/tts?${searchParams.toString()}`
 
-  log.debug("gpt_so_vits.synthesize_with_gpt_so_vits.debug", `GPT-SoVITS 请求: ${baseUrl} (text=${params.text.slice(0, 30)}..., lang=${textLang}, ref=${refAudioPath})`, { base_url: baseUrl, params_text: params.text.slice(0, 30), text_lang: textLang, ref_audio_path: refAudioPath })
+  log.debug("gpt_so_vits.synthesize_with_gpt_so_vits.debug", `GPT-SoVITS 请求: text=${params.text.length}字 lang=${textLang}`, { text_length: params.text.length, text_lang: textLang })
+  log.sensitiveDebug("gpt_so_vits.request_sensitive.debug", "GPT-SoVITS 敏感请求参数", { base_url: baseUrl, text: params.text.slice(0, 100), ref_audio_path: refAudioPath })
 
   // 通过 Rust 后端代理请求（绕过 webview CORS 限制）
   const result = await invoke<{ audio_base64: string; format: string }>('gptsovits_tts', { url })
@@ -165,6 +166,7 @@ export function buildGptSoVitsStreamUrl(
 export function playAudioBlob(
   blob: Blob,
   signal?: AbortSignal,
+  onFirstAudio?: () => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
@@ -196,10 +198,12 @@ export function playAudioBlob(
         }, { once: true })
       }
 
-      audio.play().catch((err) => {
-        URL.revokeObjectURL(url)
-        reject(err)
-      })
+      audio.play()
+        .then(() => onFirstAudio?.())
+        .catch((err) => {
+          URL.revokeObjectURL(url)
+          reject(err)
+        })
     } catch (err) {
       reject(err)
     }

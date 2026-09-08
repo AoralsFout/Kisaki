@@ -55,6 +55,13 @@ export const EXPERIMENTAL_COMMAND_AVAILABLE = import.meta.env.DEV
 /** 联网搜索配置（provider, apiKey, baseURL, enabled） */
 export const STORAGE_SEARCH_CONFIG = 'deskpet-search-config'
 
+/** 是否允许诊断日志记录对话片段、工具参数等敏感原文（默认关闭） */
+export const STORAGE_SENSITIVE_DIAGNOSTICS = 'deskpet-sensitive-diagnostics'
+
+/** 诊断日志保留天数 */
+export const STORAGE_LOG_RETENTION_DAYS = 'deskpet-log-retention-days'
+export const DEFAULT_LOG_RETENTION_DAYS = 14
+
 // ─── Tauri Webview 窗口标签 ──────────────────────────
 
 /** 主窗口 */

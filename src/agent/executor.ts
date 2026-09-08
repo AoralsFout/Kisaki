@@ -64,7 +64,11 @@ export function parseToolCalls(choice: LLMChoice): ToolCall[] {
 export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
   const tool = getTool(tc.name)
   if (!tool) {
-    log.warn("agent_exec.execute_tool_call.warn", `未知工具调用: ${tc.name}`, undefined, { tc_name: tc.name })
+    log.warn("agent_exec.execute_tool_call.warn", `未知工具调用: ${tc.name}`, undefined, {
+      requestId: tc.requestId,
+      turn: tc.turn,
+      tc_name: tc.name,
+    })
     return {
       role: 'tool',
       tool_call_id: tc.id,
@@ -77,6 +81,8 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
 
   const argumentKeys = Object.keys(tc.arguments ?? {})
   log.debug("agent_exec.execute_tool_call.debug", `执行工具: ${tc.name} (${argumentKeys.length} 个参数)`, {
+    requestId: tc.requestId,
+    turn: tc.turn,
     tc_name: tc.name,
     argument_count: argumentKeys.length,
     argument_keys: argumentKeys,
@@ -84,7 +90,12 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
   try {
     const output = await tool.handler(tc.arguments)
     const result = typeof output === 'string' ? { content: output } : output
-    log.info("agent_exec.execute_tool_call.info", `工具执行完成: ${tc.name}`, { tc_name: tc.name })
+    log.info("agent_exec.execute_tool_call.info", `工具执行完成: ${tc.name}`, {
+      requestId: tc.requestId,
+      turn: tc.turn,
+      tc_name: tc.name,
+      toolCallId: tc.id,
+    })
     return {
       role: 'tool',
       tool_call_id: tc.id,
@@ -96,6 +107,8 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
     const message = toolErrorMessage(err)
     const code = toolErrorCode(err)
     const context = {
+      requestId: tc.requestId,
+      turn: tc.turn,
       toolName: tc.name,
       toolCallId: tc.id,
       message,

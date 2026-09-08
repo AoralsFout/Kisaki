@@ -182,7 +182,8 @@ export function loadGptSoVitsConfig(): GptSoVitsConfig {
 
 export function saveGptSoVitsConfig(config: GptSoVitsConfig) {
   localStorage.setItem(GPTSOVITS_KEY, JSON.stringify(config))
-  log.debug("ttsconfig.save_gpt_so_vits_config.debug", `GPT-SoVITS 配置已保存 (apiUrl: ${config.apiUrl})`, { config_api_url: config.apiUrl })
+  log.debug("ttsconfig.save_gpt_so_vits_config.debug", 'GPT-SoVITS 配置已保存', { has_api_url: Boolean(config.apiUrl) })
+  log.sensitiveDebug("ttsconfig.endpoint_sensitive.debug", 'GPT-SoVITS 服务地址', { api_url: config.apiUrl })
 }
 
 export function isGptSoVitsConfigValid(config: GptSoVitsConfig): boolean {

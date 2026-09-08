@@ -16,6 +16,12 @@
  *   log.error('tts.failed', '连接失败', error, { requestId })
  */
 
+import {
+  DEFAULT_LOG_RETENTION_DAYS,
+  STORAGE_LOG_RETENTION_DAYS,
+  STORAGE_SENSITIVE_DIAGNOSTICS,
+} from '../constants'
+
 // ─── 类型定义 ─────────────────────────────────────────
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error'
@@ -57,6 +63,8 @@ export interface LogEntry {
 export interface Logger {
   trace: (event: string, message: string, context?: LogContext) => void
   debug: (event: string, message: string, context?: LogContext) => void
+  /** 仅在用户主动开启敏感诊断时记录；可能包含对话、路径或工具载荷。 */
+  sensitiveDebug: (event: string, message: string, context?: LogContext) => void
   info: (event: string, message: string, context?: LogContext) => void
   warn: (event: string, message: string, error?: unknown, context?: LogContext) => void
   error: (event: string, message: string, error: unknown, context?: LogContext) => void
@@ -359,21 +367,48 @@ function publishInternalDiagnostic(
     context,
     source: detectWindowSource(),
   }
-  pushToBuffer(entry)
-  subscribers.forEach(cb => { try { cb(entry) } catch { /* ignore */ } })
+  const safeEntry = serializeEntry(entry)
+  pushToBuffer(safeEntry)
+  subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* ignore */ } })
   ensureBroadcastChannel()
-  try { bc?.postMessage(serializeEntry(entry)) } catch { /* ignore */ }
+  try { bc?.postMessage(safeEntry) } catch { /* ignore */ }
 }
 
-/** Windows 绝对路径（含 Tauri `\\?\` 长路径前缀），脱敏到仅剩末级文件名。 */
-const WINDOWS_ABS_PATH = /(?:\\\\\?\\[A-Za-z]:\\|[A-Za-z]:\\|\\[A-Za-z]:\\)([^ \t"'`,;{}<>|)]+)/g
+/** Windows 盘符路径和 UNC 路径。空格允许出现在路径中；宁可多遮盖少量文案，也不泄漏路径尾部。 */
+const WINDOWS_ABS_PATH = /(?:\\\\\?\\(?:UNC\\)?|\\\\)[^\\\r\n"'`,;{}<>|]+\\[^\r\n"'`,;{}<>|)]+|(?:\\\\\?\\)?[A-Za-z]:\\[^\r\n"'`,;{}<>|)]+/g
 
-/** 把 Windows 绝对路径替换为 `[PATH:basename]`，只保留末级文件名。 */
+/** 把 Windows 绝对路径整体替换为 `[PATH]`。 */
 export function redactWindowsPath(text: string): string {
-  return text.replace(WINDOWS_ABS_PATH, (_, rest: string) => {
-    const base = rest.split(/[\\/]/).filter(Boolean).pop() || '?'
-    return `[PATH:${base}]`
-  })
+  return text.replace(WINDOWS_ABS_PATH, '[PATH]')
+}
+
+export function isSensitiveDiagnosticsEnabled(): boolean {
+  try { return localStorage.getItem(STORAGE_SENSITIVE_DIAGNOSTICS) === '1' } catch { return false }
+}
+
+export function setSensitiveDiagnosticsEnabled(enabled: boolean): void {
+  try { localStorage.setItem(STORAGE_SENSITIVE_DIAGNOSTICS, enabled ? '1' : '0') } catch { /* ignore */ }
+}
+
+export function getLogRetentionDays(): number {
+  try {
+    const parsed = Number(localStorage.getItem(STORAGE_LOG_RETENTION_DAYS))
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 365 ? parsed : DEFAULT_LOG_RETENTION_DAYS
+  } catch {
+    return DEFAULT_LOG_RETENTION_DAYS
+  }
+}
+
+export async function setLogRetentionDays(days: number): Promise<void> {
+  const normalized = Math.min(365, Math.max(1, Math.round(days)))
+  try { localStorage.setItem(STORAGE_LOG_RETENTION_DAYS, String(normalized)) } catch { /* ignore */ }
+  if (!isTauri()) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('prune_log_files', { retentionDays: normalized })
+  } catch (error) {
+    publishInternalDiagnostic('error', '清理过期日志失败', error, { retentionDays: normalized })
+  }
 }
 
 /**
@@ -488,6 +523,8 @@ export function getPersistenceStatus() {
 export async function enableFilePersistence() {
   if (filePersistenceEnabled) return
   filePersistenceEnabled = true
+  // 启用落盘时顺便执行保留策略；失败只影响清理，不阻断新日志。
+  void setLogRetentionDays(getLogRetentionDays())
   // 立即刷新一次已有缓冲
   scheduleFileFlush()
 }
@@ -579,13 +616,13 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     return [lvlStyle, nsStyle, resetStyle]
   }
 
-  function log(lvl: LogLevel, record: LogRecord) {
+  function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
     if (!EVENT_NAME_PATTERN.test(record.event)) {
       throw new TypeError(`无效的日志事件名: ${record.event}`)
     }
     if (!globalConfig.enabled) return
-    if (level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
-    if (!meetsLevel(lvl)) return
+    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
+    if (!forceLevel && !meetsLevel(lvl)) return
 
     const ts = getTimestamp()
     const label = formatLabel(lvl)
@@ -615,7 +652,7 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
         break
     }
 
-    // 入环形缓冲
+    // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
     const entry: LogEntry = {
       schemaVersion: LOG_SCHEMA_VERSION,
       timestamp: ts,
@@ -627,19 +664,20 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
       context: record.context,
       source: detectWindowSource(),
     }
-    pushToBuffer(entry)
+    const safeEntry = serializeEntry(entry)
+    pushToBuffer(safeEntry)
 
     // 通知 UI 订阅者
-    subscribers.forEach(cb => { try { cb(entry) } catch { /* ignore */ } })
+    subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* ignore */ } })
 
     // 跨窗口广播（让日志窗口实时看到其它窗口的日志）
     ensureBroadcastChannel()
     try {
-      bc?.postMessage(serializeEntry(entry))
+      bc?.postMessage(safeEntry)
     } catch { /* ignore */ }
 
     // 文件持久化（全部级别写入文件，2 秒节流批量写入）
-    enqueueFileWrite(entry)
+    enqueueFileWrite(safeEntry)
     if (lvl === 'error') void flushLogs()
     else scheduleFileFlush()
   }
@@ -647,6 +685,10 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
   return {
     trace: (event, message, context) => log('trace', { event, message, context }),
     debug: (event, message, context) => log('debug', { event, message, context }),
+    sensitiveDebug: (event, message, context) => {
+      // 生产环境默认级别是 info；显式开启敏感诊断后仍必须能够采集这些 debug 事件。
+      if (isSensitiveDiagnosticsEnabled()) log('debug', { event, message, context }, true)
+    },
     info: (event, message, context) => log('info', { event, message, context }),
     warn: (event, message, error, context) => log('warn', { event, message, error, context }),
     error: (event, message, error, context) => log('error', { event, message, error, context }),

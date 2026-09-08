@@ -4,7 +4,7 @@
  * 使用 OpenAI 兼容格式，支持大多数 LLM Provider。
  * 支持流式输出 + Function Calling (Tool Use)。
  */
-import type { AIConfig, ChatMessage, StreamCallbacks, ToolCallData, ResponseFormat } from './types'
+import type { AIConfig, ChatMessage, StreamCallbacks, ToolCallData, ResponseFormat, RequestTelemetry } from './types'
 import { getModelProfile } from './modelCapabilities'
 import { createLogger } from '../utils/logger'
 
@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: AIConfig = {
   baseURL: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
+  translationModel: '',
 }
 
 /** 工具定义格式 */
@@ -199,6 +200,7 @@ export async function chat(
   signal?: AbortSignal,
   tools?: ToolDef[],
   responseFormat?: ResponseFormat,
+  telemetry: RequestTelemetry = {},
 ): Promise<void> {
   // 必须走解密版：主窗口重启后解密缓存可能为空，
   // 直接 loadConfig() 会把 localStorage 里的密文当 Key 发给 API 造成 401。
@@ -219,14 +221,14 @@ export async function chat(
   }
   if (tools?.length) {
     body.tools = tools
-    log.debug("api.chat.debug", `tools sent: ${tools.length}`, { tools_length: tools.length, tools_map: tools.map(t => t.function.name) })
+    log.debug("api.chat.debug", `tools sent: ${tools.length}`, { ...telemetry, tools_length: tools.length, tools_map: tools.map(t => t.function.name) })
   } else if (responseFormat) {
     // response_format 与 tools 互斥：有 tools 时不能用，无 tools 时可用
     body.response_format = responseFormat
     const detail = responseFormat.type === 'json_schema'
       ? 'json_schema(' + (responseFormat.json_schema?.name ?? '') + ')'
       : 'json_object'
-    log.info("api.chat.info", `📐 response_format=${detail} (model=${config.model})`, { detail: detail, config_model: config.model })
+    log.info("api.chat.info", `📐 response_format=${detail} (model=${config.model})`, { ...telemetry, detail: detail, config_model: config.model })
   }
 
   for (let attempt = 1; ; attempt++) {
@@ -254,11 +256,16 @@ export async function chat(
       if (!response.ok) {
         const errBody = await response.text().catch(() => '')
         const status = response.status
+        log.sensitiveDebug('api.error_response_sensitive.debug', '模型接口错误响应片段', {
+          ...telemetry,
+          status,
+          body: errBody.slice(0, 200),
+        })
         let msg: string
         if (status === 401) msg = 'API Key 无效或已过期'
         else if (status === 429) msg = '请求过于频繁，请稍后重试'
         else if (status >= 500) msg = '服务端暂时不可用，请稍后重试'
-        else msg = `API ${status}: ${errBody.slice(0, 200)}`
+        else msg = `API ${status}: 请求失败`
         // 瞬时错误（429 / 5xx）重试
         if (isRetryableStatus(status) && attempt < MAX_STREAM_ATTEMPTS) {
           clearTimeout(timeoutId)
@@ -420,14 +427,16 @@ export async function quickChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
   responseFormat?: ResponseFormat,
+  telemetry: RequestTelemetry = {},
 ): Promise<string> {
   const config = await loadConfigSecure()
   if (!isConfigValid(config)) throw new Error('API 未配置')
 
   const url = `${config.baseURL.replace(/\/+$/, '')}/chat/completions`
-  const profile = getModelProfile(config.model)
+  const quickModel = config.translationModel?.trim() || config.model
+  const profile = getModelProfile(quickModel)
   const body: Record<string, unknown> = {
-    model: config.model,
+    model: quickModel,
     messages,
     temperature: 0.3,       // 低温度，更确定性的修复
     max_tokens: Math.min(profile.recommendedMaxTokens, 4096), // 修复场景不需要太长输出
@@ -435,6 +444,12 @@ export async function quickChat(
   if (responseFormat) {
     body.response_format = responseFormat
   }
+  log.debug('api.quick_chat_started', '轻量模型请求开始', {
+    ...telemetry,
+    model: quickModel,
+    message_count: messages.length,
+    response_format: responseFormat?.type,
+  })
 
   const timeoutController = new AbortController()
   const timeoutId = setTimeout(() => timeoutController.abort(), 60000)
@@ -461,13 +476,25 @@ export async function quickChat(
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => '')
-      throw new Error(`API ${response.status}: ${errBody.slice(0, 200)}`)
+      log.sensitiveDebug('api.quick_chat_error_sensitive.debug', '轻量模型错误响应片段', {
+        ...telemetry,
+        status: response.status,
+        body: errBody.slice(0, 200),
+      })
+      throw new Error(`API ${response.status}: 请求失败`)
     }
 
     const data = await response.json()
-    return data.choices?.[0]?.message?.content ?? ''
+    const content = data.choices?.[0]?.message?.content ?? ''
+    log.debug('api.quick_chat_completed', '轻量模型请求完成', {
+      ...telemetry,
+      model: quickModel,
+      result_length: content.length,
+    })
+    return content
   } catch (err) {
     if ((err as Error).name === 'AbortError') return ''
+    log.warn('api.quick_chat_failed', '轻量模型请求失败', err, { ...telemetry })
     throw err
   }
 }

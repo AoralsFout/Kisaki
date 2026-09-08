@@ -12,6 +12,16 @@ import { langName } from './langNames'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('Translate')
+const TRANSLATION_CACHE_LIMIT = 100
+const translationCache = new Map<string, string>()
+
+function cacheTranslation(key: string, value: string) {
+  translationCache.delete(key)
+  translationCache.set(key, value)
+  if (translationCache.size > TRANSLATION_CACHE_LIMIT) {
+    translationCache.delete(translationCache.keys().next().value!)
+  }
+}
 
 export interface TranslateOptions {
   /** 说话者人设，用于让译文更贴合角色语气（可选） */
@@ -20,6 +30,8 @@ export interface TranslateOptions {
   ttsSafe?: boolean
   /** 取消信号 */
   signal?: AbortSignal
+  requestId?: string
+  turn?: number
 }
 
 /**
@@ -36,6 +48,15 @@ export async function translateText(
 ): Promise<string> {
   const trimmed = (text ?? '').trim()
   if (!trimmed) return ''
+  const cacheKey = JSON.stringify([trimmed, targetLang, opts?.persona || '', Boolean(opts?.ttsSafe)])
+  const cached = translationCache.get(cacheKey)
+  if (cached !== undefined) {
+    // LRU：命中后移到末尾。
+    translationCache.delete(cacheKey)
+    translationCache.set(cacheKey, cached)
+    log.debug('translate.cache_hit', '翻译缓存命中', { requestId: opts?.requestId, turn: opts?.turn, target_lang: targetLang, text_length: trimmed.length, tts_safe: Boolean(opts?.ttsSafe) })
+    return cached
+  }
 
   const targetName = langName(targetLang)
   const personaLine = opts?.persona ? `说话者的人设：${opts.persona}\n` : ''
@@ -59,16 +80,19 @@ export async function translateText(
         { role: 'user', content: trimmed },
       ],
       opts?.signal,
+      undefined,
+      { requestId: opts?.requestId, turn: opts?.turn },
     )
     const result = out.trim()
     if (!result) {
-      log.warn("translate.translate_text.warn", "翻译返回空，回退原文")
+      log.warn("translate.translate_text.warn", "翻译返回空，回退原文", undefined, { requestId: opts?.requestId, turn: opts?.turn })
       return trimmed
     }
-    log.debug("translate.translate_text.debug", `翻译完成 → ${targetLang} (${trimmed.length}→${result.length} 字)`, { target_lang: targetLang, trimmed_length: trimmed.length, result_length: result.length })
+    cacheTranslation(cacheKey, result)
+    log.debug("translate.translate_text.debug", `翻译完成 → ${targetLang} (${trimmed.length}→${result.length} 字)`, { requestId: opts?.requestId, turn: opts?.turn, target_lang: targetLang, trimmed_length: trimmed.length, result_length: result.length })
     return result
   } catch (err) {
-    log.warn("translate.translate_text.warn", `翻译失败，回退原文: ${(err as Error).message}`, err)
+    log.warn("translate.translate_text.warn", `翻译失败，回退原文: ${(err as Error).message}`, err, { requestId: opts?.requestId, turn: opts?.turn })
     return trimmed
   }
 }

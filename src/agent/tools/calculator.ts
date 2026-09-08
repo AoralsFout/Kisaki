@@ -183,13 +183,16 @@ export const calculatorTool: Tool = {
     const expr = String(args.expression ?? '')
     if (!expr.trim()) return '请提供数学表达式'
 
-    log.debug("tool_calculator.module.debug", `计算: "${expr}"`, { expr: expr })
+    log.debug("tool_calculator.module.debug", "开始计算", { expression_length: expr.length })
+    log.sensitiveDebug("tool_calculator.input_sensitive.debug", "计算表达式", { expr })
     try {
       const result = safeEval(expr)
-      log.debug("tool_calculator.module.debug", `计算结果: ${expr} = ${result}`, { expr: expr, result: result })
+      log.debug("tool_calculator.module.debug", "计算完成", { expression_length: expr.length })
+      log.sensitiveDebug("tool_calculator.expression_sensitive.debug", "计算表达式与结果", { expr, result })
       return `${expr} = ${result}`
     } catch (err) {
-      log.warn("tool_calculator.module.warn", `计算失败: "${expr}" - ${(err as Error).message}`, err, { expr: expr })
+      log.warn("tool_calculator.module.warn", "计算失败", err, { expression_length: expr.length })
+      log.sensitiveDebug("tool_calculator.failure_sensitive.debug", "失败的计算表达式", { expr })
       return `计算错误: ${(err as Error).message}`
     }
   },

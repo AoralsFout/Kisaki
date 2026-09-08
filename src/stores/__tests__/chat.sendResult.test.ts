@@ -34,11 +34,28 @@ describe('send result contract', () => {
     expect(store.isProcessing).toBe(false)
   })
 
-  it('reports a completed request so the caller can clear its draft', async () => {
+  it('reports an empty model response as failed', async () => {
     request.mockImplementation((_messages, callbacks) => callbacks.onDone(''))
     const { useChatStore } = await import('../chat')
     const store = useChatStore()
+    expect(await store.sendMessage('draft')).toBe(false)
+    expect(store.messages.filter(m => m.role === 'assistant')).toHaveLength(0)
+    expect(store.isProcessing).toBe(false)
+  })
+
+  it('reports a delivered say response as completed', async () => {
+    request.mockImplementation((_messages, callbacks) => callbacks.onTools([{
+      id: 'say-1',
+      type: 'function',
+      function: {
+        name: 'say',
+        arguments: JSON.stringify({ voice: 'こんにちは', display: '你好' }),
+      },
+    }]))
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
     expect(await store.sendMessage('draft')).toBe(true)
+    expect(store.messages.some(m => m.role === 'assistant' && m.text === '你好')).toBe(true)
     expect(store.isProcessing).toBe(false)
   })
 })

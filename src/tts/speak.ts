@@ -14,7 +14,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { loadCosyVoiceConfig, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
+import { loadCosyVoiceConfigSecure, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
 import { synthesizeWithGptSoVits, playAudioBlob, buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
 import { createLogger } from '../utils/logger'
 import { STORAGE_TTS_ENABLED, DEFAULT_VOICE_LANGUAGE } from '../constants'
@@ -48,12 +48,16 @@ export interface TtsPlaybackResult {
   reason?: string
 }
 
+export interface TtsPlaybackHooks {
+  /** 配置校验通过、即将发起合成请求时触发。 */
+  onSynthesisStart?: () => void
+  /** 音频首次真正开始排程/播放时触发。 */
+  onFirstAudio?: () => void
+}
+
 // ============================================================
 //  TtsEngine 类 — 封装所有 TTS 状态（原模块级 currentController）
 // ============================================================
-
-/** 以「稳定 skey」维度只报一次配置类警告，避免每轮刷屏。 */
-const CONFIG_SKIP_KEYS = new Set<string>()
 
 export class TtsEngine {
   private currentController: AbortController | null = null
@@ -61,15 +65,21 @@ export class TtsEngine {
   private streamSeq = 0
   /** Live2D 口型播放钩子；注册后 TTS 改走"批合成 → blob → playVoice（带口型）" */
   private voicePlayer: VoicePlayer | null = null
+  /** 以稳定 key 去重当前实例的连续配置警告。 */
+  private configSkipKeys = new Set<string>()
 
   /** 配置类跳过只 warn 一次（同 key），后续以 trace 记录，既不刷屏也保留可观测性。 */
   private warnOnce(skey: string, message: string) {
-    if (CONFIG_SKIP_KEYS.has(skey)) {
+    if (this.configSkipKeys.has(skey)) {
       log.trace('tts.config_skip_repeat.trace', `重复跳过 TTS (${skey})`)
       return
     }
-    CONFIG_SKIP_KEYS.add(skey)
+    this.configSkipKeys.add(skey)
     log.warn('tts.config_skip.warn', message)
+  }
+
+  private clearWarning(skey: string) {
+    this.configSkipKeys.delete(skey)
   }
 
   /** 注册/注销 Live2D 口型播放器（Live2DStage 在模型 ready/卸载时调用） */
@@ -105,7 +115,8 @@ export class TtsEngine {
   }
 
   /** 合成并播报文本（批处理模式） */
-  async speakText(text: string, voiceId: string): Promise<TtsPlaybackResult> {
+  async speakText(text: string, voiceId: string, hooks: TtsPlaybackHooks = {}): Promise<TtsPlaybackResult> {
+    if (!text.trim()) return { status: 'skipped', reason: 'empty_text' }
     if (!this.isEnabled()) return { status: 'skipped', reason: 'disabled' }
     const provider = getTtsProvider()
     if (provider === 'none') return { status: 'skipped', reason: 'provider_none' }
@@ -116,14 +127,14 @@ export class TtsEngine {
 
     if (provider === 'gptsovits') {
       try {
-        return await this.speakWithGptSoVits(text, controller)
+        return await this.speakWithGptSoVits(text, controller, hooks)
       } finally {
         if (this.currentController === controller) this.currentController = null
       }
     }
 
     // ── CosyVoice 批处理 ──
-    const cvConfig = loadCosyVoiceConfig()
+    const cvConfig = await loadCosyVoiceConfigSecure()
     if (!cvConfig.apiKey || !voiceId) {
       if (this.currentController === controller) this.currentController = null
       return { status: 'skipped', reason: !cvConfig.apiKey ? 'missing_api_key' : 'missing_voice_id' }
@@ -136,6 +147,7 @@ export class TtsEngine {
     }
 
     try {
+      hooks.onSynthesisStart?.()
       const result = await invoke<TtsCommandResult>('cosyvoice_tts', {
         apiKey: cvConfig.apiKey,
         model: cvConfig.model,
@@ -145,7 +157,7 @@ export class TtsEngine {
       })
 
       if (controller.signal.aborted) return { status: 'cancelled' }
-      await this.playAudio(result.audio_base64, result.format, controller.signal)
+      await this.playAudio(result.audio_base64, result.format, controller.signal, hooks.onFirstAudio)
       return controller.signal.aborted ? { status: 'cancelled' } : { status: 'played' }
     } catch (err) {
       log.warn("tts.speak_text.warn", "批处理播报失败", err)
@@ -158,7 +170,8 @@ export class TtsEngine {
   }
 
   /** 合成并流式播报文本（边接收边播放，延迟更低） */
-  async speakTextStreaming(text: string, voiceId: string): Promise<TtsPlaybackResult> {
+  async speakTextStreaming(text: string, voiceId: string, hooks: TtsPlaybackHooks = {}): Promise<TtsPlaybackResult> {
+    if (!text.trim()) return { status: 'skipped', reason: 'empty_text' }
     if (!this.isEnabled()) return { status: 'skipped', reason: 'disabled' }
     const provider = getTtsProvider()
     if (provider === 'none') return { status: 'skipped', reason: 'provider_none' }
@@ -170,14 +183,17 @@ export class TtsEngine {
     if (provider === 'gptsovits') {
       // Live2D 角色暂不应用口型同步，统一走 PCM 流式输出（低延迟，无口型驱动）
       try {
-        return await this.speakGptSoVitsStream(text, controller)
+        return await this.speakGptSoVitsStream(text, controller, hooks)
+      } catch (error) {
+        log.warn("tts.speak_gpt_so_vits_stream.warn", "GPT-SoVITS 流式播报失败", error)
+        return { status: controller.signal.aborted ? 'cancelled' : 'failed', reason: (error as Error).message }
       } finally {
         if (this.currentController === controller) this.currentController = null
       }
     }
 
     // ── CosyVoice 流式处理 ──
-    const cvConfig = loadCosyVoiceConfig()
+    const cvConfig = await loadCosyVoiceConfigSecure()
     if (!cvConfig.apiKey || !voiceId) {
       if (this.currentController === controller) this.currentController = null
       return { status: 'skipped', reason: !cvConfig.apiKey ? 'missing_api_key' : 'missing_voice_id' }
@@ -192,7 +208,8 @@ export class TtsEngine {
     // Live2D 口型：注册了 voicePlayer 时走批合成 → blob → playVoice（带口型），不走流式
     if (this.voicePlayer) {
       try {
-        return await this.speakBatchWithLipSync(text, voiceId, cvConfig, wsUrl, controller)
+        hooks.onSynthesisStart?.()
+        return await this.speakBatchWithLipSync(text, voiceId, cvConfig, wsUrl, controller, hooks)
       } finally {
         if (this.currentController === controller) this.currentController = null
       }
@@ -204,11 +221,12 @@ export class TtsEngine {
 
     if (!canStream) {
       log.info("tts.speak_text_streaming.info", "当前环境不支持 MediaSource 流式播放，回退到批处理模式")
-      return this.speakText(text, voiceId)
+      return this.speakText(text, voiceId, hooks)
     }
 
     try {
-      await this.playStream(controller, cvConfig.model, voiceId, text, wsUrl, mimeType)
+      hooks.onSynthesisStart?.()
+      await this.playStream(controller, cvConfig.apiKey, cvConfig.model, voiceId, text, wsUrl, mimeType, hooks)
       return controller.signal.aborted ? { status: 'cancelled' } : { status: 'played' }
     } catch (err) {
       log.warn("tts.speak_text_streaming.warn", "流式播报失败", err)
@@ -229,20 +247,24 @@ export class TtsEngine {
   private async speakGptSoVitsStream(
     text: string,
     controller: AbortController,
+    hooks: TtsPlaybackHooks,
   ): Promise<TtsPlaybackResult> {
     const config = loadGptSoVitsConfig()
     if (!config.apiUrl) {
       this.warnOnce('gptsovits.missing_api_url', 'GPT-SoVITS API URL 未配置，跳过 TTS')
       return { status: 'skipped', reason: 'missing_api_url' }
     }
+    this.clearWarning('gptsovits.missing_api_url')
 
     const charParams = await this.getGptSoVitsCharacterParams()
     if (!charParams.refAudioPath) {
       this.warnOnce('gptsovits.missing_ref_audio', 'GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
       return { status: 'skipped', reason: 'missing_ref_audio' }
     }
+    this.clearWarning('gptsovits.missing_ref_audio')
 
     if (controller.signal.aborted) return { status: 'cancelled' }
+    hooks.onSynthesisStart?.()
 
     const streamId = String(++this.streamSeq)
     const url = buildGptSoVitsStreamUrl(
@@ -258,6 +280,8 @@ export class TtsEngine {
     // Web Audio 连续 PCM 播放器：收到字节即排程播放，无缝衔接、低延迟
     const player = new PcmStreamPlayer()
     let streamError: string | null = null
+    let receivedAudioBytes = 0
+    let firstAudioReported = false
 
     const onAbort = () => player.dispose()
     controller.signal.addEventListener('abort', onAbort, { once: true })
@@ -276,6 +300,11 @@ export class TtsEngine {
         const bytes = new Uint8Array(binaryStr.length)
         for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
         player.push(bytes)
+        receivedAudioBytes += bytes.byteLength
+        if (!firstAudioReported && receivedAudioBytes > 44) {
+          firstAudioReported = true
+          hooks.onFirstAudio?.()
+        }
       } catch { /* 跳过损坏块 */ }
     })
 
@@ -289,11 +318,16 @@ export class TtsEngine {
       // 后端命令返回 = 字节已全部发完；标记结束并等待已排程音频播放完毕。
       // 安全超时兜底，即便漏发 is_last 也不会无限等待。
       if (!controller.signal.aborted && !streamError) {
+        if (receivedAudioBytes <= 44) {
+          streamError = 'GPT-SoVITS 未返回可播放音频'
+        }
         player.end()
-        await Promise.race([
-          player.waitDone(),
-          new Promise<void>((resolve) => setTimeout(resolve, 60000)),
-        ])
+        if (!streamError) {
+          await Promise.race([
+            player.waitDone(),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('GPT-SoVITS 播放超时')), 60000)),
+          ])
+        }
       }
     } finally {
       unlisten()
@@ -317,12 +351,14 @@ export class TtsEngine {
   private async speakWithGptSoVits(
     text: string,
     controller: AbortController,
+    hooks: TtsPlaybackHooks,
   ): Promise<TtsPlaybackResult> {
     const config = loadGptSoVitsConfig()
     if (!config.apiUrl) {
       this.warnOnce('gptsovits.missing_api_url', 'GPT-SoVITS API URL 未配置，跳过 TTS')
       return { status: 'skipped', reason: 'missing_api_url' }
     }
+    this.clearWarning('gptsovits.missing_api_url')
 
     // 获取角色级参数（参考音频必须从角色数据获取）
     const charParams = await this.getGptSoVitsCharacterParams()
@@ -330,8 +366,10 @@ export class TtsEngine {
       this.warnOnce('gptsovits.missing_ref_audio', 'GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
       return { status: 'skipped', reason: 'missing_ref_audio' }
     }
+    this.clearWarning('gptsovits.missing_ref_audio')
 
     if (controller.signal.aborted) return { status: 'cancelled' }
+    hooks.onSynthesisStart?.()
 
     try {
       const result = await synthesizeWithGptSoVits({
@@ -349,16 +387,17 @@ export class TtsEngine {
         const url = URL.createObjectURL(result.blob)
         try {
           await this.voicePlayer(url, controller.signal)
+          hooks.onFirstAudio?.()
         } catch {
           log.warn("tts.speak_with_gpt_so_vits.warn", "playVoice 口型播放失败，回退 HTMLAudio")
           if (!controller.signal.aborted) {
-            await playAudioBlob(result.blob, controller.signal)
+            await playAudioBlob(result.blob, controller.signal, hooks.onFirstAudio)
           }
         } finally {
           URL.revokeObjectURL(url)
         }
       } else {
-        await playAudioBlob(result.blob, controller.signal)
+        await playAudioBlob(result.blob, controller.signal, hooks.onFirstAudio)
       }
       return controller.signal.aborted ? { status: 'cancelled' } : { status: 'played' }
     } catch (err) {
@@ -411,9 +450,10 @@ export class TtsEngine {
   private async speakBatchWithLipSync(
     text: string,
     voiceId: string,
-    cvConfig: ReturnType<typeof loadCosyVoiceConfig>,
+    cvConfig: Awaited<ReturnType<typeof loadCosyVoiceConfigSecure>>,
     wsUrl: string,
     controller: AbortController,
+    hooks: TtsPlaybackHooks,
   ): Promise<TtsPlaybackResult> {
     let result: TtsCommandResult
     try {
@@ -433,9 +473,11 @@ export class TtsEngine {
     const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }))
     try {
       await this.voicePlayer!(url, controller.signal)
+      // easy-live2d 的 playVoice Promise 在音频实例开始播放后返回。
+      hooks.onFirstAudio?.()
     } catch (err) {
       log.warn("tts.speak_batch_with_lip_sync.warn", "playVoice 口型播放失败，回退 HTMLAudio", err)
-      if (!controller.signal.aborted) await this.playAudio(result.audio_base64, result.format, controller.signal)
+      if (!controller.signal.aborted) await this.playAudio(result.audio_base64, result.format, controller.signal, hooks.onFirstAudio)
     } finally {
       URL.revokeObjectURL(url)
     }
@@ -448,14 +490,14 @@ export class TtsEngine {
    */
   private async playStream(
     controller: AbortController,
+    apiKey: string,
     model: string,
     voice: string,
     text: string,
     wsUrl: string,
     mimeType: string,
+    hooks: TtsPlaybackHooks,
   ): Promise<void> {
-    const cvConfig = loadCosyVoiceConfig()
-
     // 本次流的唯一 id：后端会在每个音频帧里带上它，前端据此过滤掉
     // 已被取代的旧流的帧，避免快速连发消息时新旧音频串台。
     const streamId = String(++this.streamSeq)
@@ -492,6 +534,7 @@ export class TtsEngine {
       const pendingChunks: ArrayBuffer[] = []
       let streamError: string | null = null
       let firstChunkAppended = false
+      let audioPlayPromise: Promise<void> | null = null
 
       let resolveStreamComplete: (() => void) | null = null
       const streamComplete = new Promise<void>((resolve) => {
@@ -499,12 +542,21 @@ export class TtsEngine {
       })
 
       const flushBuffer = () => {
-        if (sourceBuffer.updating || pendingChunks.length === 0) return
-        const chunk = pendingChunks.shift()!
-        sourceBuffer.appendBuffer(chunk)
+        if (sourceBuffer.updating || pendingChunks.length === 0 || streamError) return
+        try {
+          const chunk = pendingChunks.shift()!
+          sourceBuffer.appendBuffer(chunk)
+        } catch (error) {
+          streamError = (error as Error).message || '追加音频缓冲失败'
+          resolveStreamComplete?.()
+        }
       }
 
       sourceBuffer.addEventListener('updateend', () => { flushBuffer() })
+      sourceBuffer.addEventListener('error', () => {
+        streamError = '音频缓冲解码失败'
+        resolveStreamComplete?.()
+      })
 
       unlisten = await listen<TtsChunk>('tts-audio-chunk', (event) => {
         // 过滤掉非本次流（已被取代的旧流）的音频帧
@@ -523,13 +575,21 @@ export class TtsEngine {
           flushBuffer()
           if (!firstChunkAppended) {
             firstChunkAppended = true
-            audio.play().catch(e => log.warn("tts.play_stream.warn", "音频播放启动失败", e))
+            audioPlayPromise = audio.play()
+              .then(() => { hooks.onFirstAudio?.() })
+              .catch((error) => {
+                streamError = (error as Error).message || '音频播放启动失败'
+                resolveStreamComplete?.()
+              })
           }
-        } catch { /* 跳过损坏块 */ }
+        } catch (error) {
+          streamError = (error as Error).message || '音频块解码失败'
+          resolveStreamComplete?.()
+        }
       })
 
       const invokePromise = invoke('cosyvoice_tts_stream', {
-        streamId, apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
+        streamId, apiKey, model, voice, text, wsUrl,
       })
 
       try { await invokePromise } catch (err) { streamError = (err as Error).message }
@@ -538,9 +598,12 @@ export class TtsEngine {
         // 等待全部音频帧追加完成；安全超时兜底，即便后端漏发 is_last 也不会无限等待
         await Promise.race([
           streamComplete,
-          new Promise<void>((resolve) => setTimeout(resolve, 60000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('等待 TTS 音频流超时')), 60000)),
         ])
-        await new Promise<void>((resolve) => {
+        if (!firstChunkAppended || !audioPlayPromise) throw new Error('TTS 未返回可播放音频')
+        await audioPlayPromise
+        if (streamError) throw new Error(streamError)
+        await Promise.race([new Promise<void>((resolve) => {
           if (!sourceBuffer.updating && pendingChunks.length === 0) { resolve(); return }
           const onUpdateEnd = () => {
             if (!sourceBuffer.updating && pendingChunks.length === 0) {
@@ -549,15 +612,31 @@ export class TtsEngine {
             }
           }
           sourceBuffer.addEventListener('updateend', onUpdateEnd)
-        })
+        }), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('刷新 TTS 音频缓冲超时')), 10000))])
+        if (streamError) throw new Error(streamError)
         if (mediaSource.readyState === 'open') {
           try { mediaSource.endOfStream() } catch { /* ignore */ }
         }
-        await new Promise<void>((resolve) => {
-          audio.onended = () => resolve()
-          audio.onerror = () => resolve()
+        await new Promise<void>((resolve, reject) => {
+          let settled = false
+          let timeout: ReturnType<typeof setTimeout> | null = null
+          const onAbort = () => finish()
+          const finish = (error?: Error) => {
+            if (settled) return
+            settled = true
+            if (timeout !== null) clearTimeout(timeout)
+            controller.signal.removeEventListener('abort', onAbort)
+            error ? reject(error) : resolve()
+          }
+          audio.onended = () => finish()
+          audio.onerror = () => finish(new Error('TTS 音频播放失败'))
           const estimatedMs = Math.min(text.length * 100 + 5000, 30000)
-          setTimeout(() => { audio.pause(); resolve() }, estimatedMs)
+          timeout = setTimeout(() => {
+            audio.pause()
+            finish(new Error('TTS 音频播放超时'))
+          }, estimatedMs)
+          controller.signal.addEventListener('abort', onAbort, { once: true })
+          if (controller.signal.aborted) onAbort()
         })
       }
       if (streamError) throw new Error(streamError)
@@ -580,7 +659,7 @@ export class TtsEngine {
   }
 
   /** 通过 HTMLAudioElement 播放 base64 音频 */
-  private playAudio(base64Data: string, format: string, signal: AbortSignal): Promise<void> {
+  private playAudio(base64Data: string, format: string, signal: AbortSignal, onFirstAudio?: () => void): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
         const mimeType = format === 'mp3' ? 'audio/mpeg' : `audio/${format}`
@@ -599,7 +678,7 @@ export class TtsEngine {
         audio.onerror = () => { URL.revokeObjectURL(url); reject(new Error('音频播放失败')) }
         if (signal.aborted) { audio.pause(); audio.src = ''; URL.revokeObjectURL(url); resolve(); return }
         signal.addEventListener('abort', () => { audio.pause(); audio.src = ''; URL.revokeObjectURL(url); resolve() })
-        audio.play().catch((err) => { URL.revokeObjectURL(url); reject(err) })
+        audio.play().then(() => onFirstAudio?.()).catch((err) => { URL.revokeObjectURL(url); reject(err) })
       } catch (err) { reject(err) }
     })
   }
@@ -616,9 +695,9 @@ export function isTtsEnabled(): boolean { return ttsEngine.isEnabled() }
 /** 设置语音播报开关 */
 export function setTtsEnabled(enabled: boolean) { ttsEngine.setEnabled(enabled) }
 /** 合成并播报文本（批处理模式） */
-export function speakText(text: string, voiceId: string): Promise<TtsPlaybackResult> { return ttsEngine.speakText(text, voiceId) }
+export function speakText(text: string, voiceId: string, hooks?: TtsPlaybackHooks): Promise<TtsPlaybackResult> { return ttsEngine.speakText(text, voiceId, hooks) }
 /** 合成并流式播报文本 */
-export function speakTextStreaming(text: string, voiceId: string): Promise<TtsPlaybackResult> { return ttsEngine.speakTextStreaming(text, voiceId) }
+export function speakTextStreaming(text: string, voiceId: string, hooks?: TtsPlaybackHooks): Promise<TtsPlaybackResult> { return ttsEngine.speakTextStreaming(text, voiceId, hooks) }
 /** 取消当前播报 */
 export function cancelSpeak() { ttsEngine.cancel() }
 /** 检查是否正在播报 */
