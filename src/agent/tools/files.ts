@@ -88,11 +88,11 @@ export const readFileTool: Tool = {
     if (hasRange) {
       const startLine = args.start_line != null ? Number(args.start_line) : null
       const endLine = args.end_line != null ? Number(args.end_line) : null
-      log.debug("tool_files.module.debug", `read_file(lines): ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
+      log.sensitiveDebug("tool_files.payload_sensitive.debug", `read_file(lines): ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
       const text = await invoke<string>('agent_read_lines', { workspaceId, relPath, startLine, endLine })
       return text || '(空文件)'
     }
-    log.debug("tool_files.module.debug", `read_file: ${relPath}`, { rel_path: relPath })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `read_file: ${relPath}`, { rel_path: relPath })
     const content = await invoke<string>('agent_read_file', { workspaceId, relPath })
     return content === '' ? '(空文件)' : content
   },
@@ -121,7 +121,7 @@ export const readImageTool: Tool<ToolOutput> = {
   handler: async (args) => {
     const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
-    log.debug("tool_files.module.debug", `read_image: ${relPath}`, { rel_path: relPath })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `read_image: ${relPath}`, { rel_path: relPath })
     const image = await invoke<ImageReadResult>('agent_read_image', { workspaceId, relPath })
     return {
       content: `已读取图片 ${relPath}（${image.mime_type}，${image.size} 字节），图片已附加供观察。`,
@@ -160,7 +160,7 @@ export const writeFileTool: Tool = {
     const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
-    log.debug("tool_files.module.debug", `write_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `write_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
     await invoke('agent_write_file', { workspaceId, relPath, content })
     return `已写入 ${relPath}（${content.length} 字符）`
   },
@@ -189,7 +189,7 @@ export const appendFileTool: Tool = {
     const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
-    log.debug("tool_files.module.debug", `append_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `append_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
     await invoke('agent_append_file', { workspaceId, relPath, content })
     return `已追加到 ${relPath}（${content.length} 字符）`
   },
@@ -215,7 +215,7 @@ export const listDirTool: Tool = {
   handler: async (args) => {
     const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
-    log.debug("tool_files.module.debug", `list_dir: ${relPath || '(root)'}`, { rel_path: relPath || '(root)' })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `list_dir: ${relPath || '(root)'}`, { rel_path: relPath || '(root)' })
     const items = await invoke<DirEntry[]>('agent_list_dir', { workspaceId, relPath })
     if (!items.length) return '(空目录)'
     const lines = items
@@ -247,7 +247,7 @@ export const deleteFileTool: Tool = {
   handler: async (args) => {
     const workspaceId = await requireWorkspaceId()
     const relPath = String(args.path ?? '')
-    log.debug("tool_files.module.debug", `delete_file: ${relPath}`, { rel_path: relPath })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `delete_file: ${relPath}`, { rel_path: relPath })
     await invoke('agent_delete_file', { workspaceId, relPath })
     return `已删除 ${relPath}`
   },
@@ -281,7 +281,7 @@ export const replaceLinesTool: Tool = {
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
     const content = String(args.content ?? '')
-    log.debug("tool_files.module.debug", `replace_lines: ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `replace_lines: ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
     return await invoke<string>('agent_edit_lines', {
       workspaceId, relPath, operation: 'replace', startLine, endLine, content,
     })
@@ -312,7 +312,7 @@ export const insertLinesTool: Tool = {
     const relPath = String(args.path ?? '')
     const startLine = Number(args.line)
     const content = String(args.content ?? '')
-    log.debug("tool_files.module.debug", `insert_lines: ${relPath} @${startLine}`, { rel_path: relPath, start_line: startLine })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `insert_lines: ${relPath} @${startLine}`, { rel_path: relPath, start_line: startLine })
     return await invoke<string>('agent_edit_lines', {
       workspaceId, relPath, operation: 'insert', startLine, endLine: null, content,
     })
@@ -341,7 +341,7 @@ export const deleteLinesTool: Tool = {
     const relPath = String(args.path ?? '')
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
-    log.debug("tool_files.module.debug", `delete_lines: ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `delete_lines: ${relPath} [${startLine},${endLine}]`, { rel_path: relPath, start_line: startLine, end_line: endLine })
     return await invoke<string>('agent_edit_lines', {
       workspaceId, relPath, operation: 'delete', startLine, endLine, content: null,
     })
@@ -371,7 +371,7 @@ export const findFilesTool: Tool = {
     const workspaceId = await requireWorkspaceId()
     const pattern = String(args.pattern ?? '')
     const relPath = args.path != null ? String(args.path) : null
-    log.debug("tool_files.module.debug", `find_files: ${pattern} (in ${relPath || '(root)'})`, { pattern: pattern, rel_path: relPath || '(root)' })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `find_files: ${pattern} (in ${relPath || '(root)'})`, { pattern: pattern, rel_path: relPath || '(root)' })
     const list = await invoke<string[]>('agent_find_files', { workspaceId, pattern, relPath })
     if (!list.length) return '(无匹配)'
     let out = list.join('\n')
@@ -401,7 +401,7 @@ export const searchInFilesTool: Tool = {
     const workspaceId = await requireWorkspaceId()
     const query = String(args.query ?? '')
     const relPath = args.path != null ? String(args.path) : null
-    log.debug("tool_files.module.debug", `search_in_files: ${query} (in ${relPath || '(root)'})`, { query: query, rel_path: relPath || '(root)' })
+    log.sensitiveDebug("tool_files.payload_sensitive.debug", `search_in_files: ${query} (in ${relPath || '(root)'})`, { query: query, rel_path: relPath || '(root)' })
     const hits = await invoke<SearchHit[]>('agent_search_in_files', { workspaceId, query, relPath })
     if (!hits.length) return '(无匹配)'
     let out = hits.map(h => `${h.path}:${h.line}: ${h.text}`).join('\n')

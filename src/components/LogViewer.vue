@@ -389,6 +389,7 @@ async function refreshHistory() {
 
 async function exportLog() {
   try {
+    if (!window.confirm(t('logs.exportPrivacyWarning'))) return
     // 确保导出的文件包含用户点击导出前刚产生的错误日志。
     await flushLogs()
     const destPath = await save({

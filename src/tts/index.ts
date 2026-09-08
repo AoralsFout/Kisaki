@@ -9,5 +9,5 @@ export {
 } from './config'
 export { fetchVoiceList } from './api'
 export { speakText, speakTextStreaming, cancelSpeak, isSpeaking, isTtsEnabled, setTtsEnabled, setVoicePlayer } from './speak'
-export type { VoicePlayer, TtsPlaybackResult, TtsPlaybackStatus } from './speak'
+export type { VoicePlayer, TtsPlaybackHooks, TtsPlaybackResult, TtsPlaybackStatus } from './speak'
 export type { CosyVoiceConfig, CosyVoiceModel, VoiceInfo, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'

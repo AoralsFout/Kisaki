@@ -55,6 +55,8 @@ export interface ToolCall {
   id: string
   name: string
   arguments: Record<string, any>
+  requestId?: string
+  turn?: number
 }
 
 /** 工具执行结果 */

@@ -419,4 +419,46 @@ describe('Logger - 敏感信息脱敏', () => {
     const { redactSensitiveText } = await import('../logger')
     expect(redactSensitiveText('request completed in 42ms')).toBe('request completed in 42ms')
   })
+
+  it('脱敏含空格的盘符路径和 UNC 路径', async () => {
+    const { redactSensitiveText } = await import('../logger')
+    const output = redactSensitiveText('C:\\Users\\Alice Smith\\secret.txt and \\\\server\\private share\\report.docx')
+    expect(output).not.toContain('Alice Smith')
+    expect(output).not.toContain('server')
+    expect(output).not.toContain('private share')
+    expect(output).toContain('[PATH]')
+  })
+})
+
+describe('Logger - 敏感诊断开关', () => {
+  beforeEach(async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    mod.setSensitiveDiagnosticsEnabled(false)
+    mod.clearBuffer()
+    localStorage.clear()
+  })
+
+  it('关闭时不记录敏感调试日志', async () => {
+    const mod = await import('../logger')
+    mod.setLogLevel('trace')
+    mod.createLogger('SensitiveOff').sensitiveDebug('sensitive.test.debug', '敏感内容', { text: 'secret' })
+
+    expect(mod.getBuffer()).toEqual([])
+  })
+
+  it('开启后可绕过较高的全局日志级别写入敏感调试日志', async () => {
+    const mod = await import('../logger')
+    mod.setLogLevel('error')
+    mod.setSensitiveDiagnosticsEnabled(true)
+    mod.createLogger('SensitiveOn').sensitiveDebug('sensitive.test.debug', '敏感内容', { text: 'secret' })
+
+    expect(mod.getBuffer()).toEqual([
+      expect.objectContaining({
+        level: 'debug',
+        event: 'sensitive.test.debug',
+        context: { text: 'secret' },
+      }),
+    ])
+  })
 })

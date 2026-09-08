@@ -146,6 +146,7 @@ pub fn run() {
             log::read_log_file_page,
             log::export_log_file,
             log::list_log_files,
+            log::prune_log_files,
             fileio::agent_pick_workspace,
             fileio::agent_resolve_workspace,
             fileio::agent_revoke_workspace,

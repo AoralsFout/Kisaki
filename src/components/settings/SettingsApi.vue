@@ -93,6 +93,12 @@ async function handleTest() {
       <p class="form-hint">{{ t('settings.api.visionHint') }}</p>
     </div>
 
+    <div class="form-group">
+      <label class="form-label">{{ t('settings.api.translationModel') }}</label>
+      <input v-model="config.translationModel" class="form-input" :placeholder="config.model || 'gpt-4o-mini'" />
+      <p class="form-hint">{{ t('settings.api.translationModelHint') }}</p>
+    </div>
+
     <p v-if="dirty" class="form-hint">{{ t('safety.unsaved') }}</p>
     <SaveBar :saving="saving" :saved="saved" :dirty="dirty" :error="error" @save="handleSave">
       <BaseButton variant="secondary" :disabled="testing || !isConfigValid(config)" @click="handleTest">

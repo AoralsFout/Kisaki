@@ -6,6 +6,8 @@ export interface AIConfig {
   apiKey: string
   /** 模型名称 */
   model: string
+  /** 可选的低延迟翻译/TTS 清洗模型；留空时沿用主模型。 */
+  translationModel?: string
   /**
    * Key 存储方式标记：'keychain' = 明文保存在系统密钥链，apiKey 字段为空；
    * 缺省 = 本地加密存储（旧方案 / 密钥链不可用时的回退）。
@@ -79,6 +81,11 @@ export interface StreamCallbacks {
   onDone: (fullText: string) => void
   /** 出错 */
   onError: (error: Error) => void
+}
+
+export interface RequestTelemetry {
+  requestId?: string
+  turn?: number
 }
 
 /** Response format 选项（用于支持结构化输出的 provider） */

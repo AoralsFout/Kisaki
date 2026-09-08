@@ -16,7 +16,7 @@ const log = createLogger('AgentSvc')
 /** Agent 服务的公开接口 */
 export interface AgentService {
   /** 获取所有工具定义（含角色枚举值注入） */
-  getToolDefinitions(charData?: CharacterData | null): ToolDefinition[]
+  getToolDefinitions(charData?: CharacterData | null, options?: { hasWorkspace?: boolean }): ToolDefinition[]
   /** 执行单个工具调用 */
   execute(tc: ToolCall): Promise<ToolResult>
   /** 从文本中提取工具调用（兜底方案） */
@@ -31,8 +31,8 @@ export interface AgentService {
 
 /** 默认实现 */
 export const agentService: AgentService = {
-  getToolDefinitions(charData) {
-    return getDefinitions(charData)
+  getToolDefinitions(charData, options) {
+    return getDefinitions(charData, options)
   },
 
   async execute(tc) {

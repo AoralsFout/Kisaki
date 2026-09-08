@@ -23,8 +23,10 @@ import { getTypingSpeed, setTypingSpeed } from '../../stores/language'
 import SaveBar from '../ui/SaveBar.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import ToggleRow from '../ui/ToggleRow.vue'
+import { useCharacterStore } from '../../character'
 
 const { t } = useI18n()
+const characterStore = useCharacterStore()
 
 const provider = ref<TtsProvider>(getTtsProvider())
 
@@ -53,6 +55,21 @@ const showAdvanced = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
 const displayLang = ref(getDisplayLanguage())
 const typingSpeed = ref(getTypingSpeed())
+const ttsPreflightWarning = computed(() => {
+  if (!ttsEnabled.value || provider.value === 'none') return ''
+  if (provider.value === 'cosyvoice') {
+    if (!cvConfig.value.apiKey) return t('settings.tts.preflightMissingApiKey')
+    if (cvConfig.value.region === 'singapore' && !cvConfig.value.workspaceId) return t('settings.tts.preflightMissingWorkspaceId')
+    if (!characterStore.data?.voice) return t('settings.tts.preflightMissingVoice')
+  }
+  if (provider.value === 'gptsovits') {
+    if (!gsConfig.value.apiUrl) return t('settings.tts.preflightMissingApiUrl')
+    if (!characterStore.data?.gptsovitsRefAudio) {
+      return t('settings.tts.preflightMissingRefAudio')
+    }
+  }
+  return ''
+})
 
 onMounted(async () => {
   cvConfig.value = { ...await loadCosyVoiceConfigSecure() }
@@ -135,6 +152,9 @@ async function handleGsSave() { return gsForm.save() }
       <p class="form-hint">{{ t('settings.tts.providerHint') }}</p>
       <p v-if="provider === 'none'" class="form-hint provider-none-hint">
         <i class="fas fa-info-circle"></i> {{ t('settings.tts.providerNoneHint') }}
+      </p>
+      <p v-else-if="ttsPreflightWarning" class="status-error" role="alert">
+        <i class="fas fa-triangle-exclamation"></i> {{ ttsPreflightWarning }}
       </p>
     </div>
 

@@ -255,7 +255,7 @@ export const useSessionStore = defineStore('session', () => {
     }
 
     ready.value = true
-    log.info("session_store.init.info", `初始化完成: ${sessions.value.length} 个会话, 当前="${currentSession.value?.name ?? '无'}"`, { sessions_value: sessions.value.length, current_session_value: currentSession.value?.name ?? '无' })
+    log.info("session_store.init.info", `初始化完成: ${sessions.value.length} 个会话`, { sessions_count: sessions.value.length, current_session_id: currentSessionId.value })
 
     // 页面隐藏/关闭时强制落盘，避免脏状态合并窗口内的快照丢失。
     if (typeof window !== 'undefined' && !sessionFlushRegistered) {
@@ -365,7 +365,8 @@ export const useSessionStore = defineStore('session', () => {
     persistSessions()
     // 立即切换到新会话（角色状态会自动重置为默认）
     switchSession(session.id)
-    log.info("session_store.create_session.info", `已创建并切换到会话: "${session.name}"`, { session_name: session.name })
+    log.info("session_store.create_session.info", "已创建并切换到会话", { session_id: session.id })
+    log.sensitiveDebug("session_store.session_name_sensitive.debug", "会话名称", { session_id: session.id, session_name: session.name })
     return session
   }
 
@@ -394,7 +395,7 @@ export const useSessionStore = defineStore('session', () => {
     // 恢复目标会话的角色与视觉状态（可能异步切角色）
     await restoreSessionState(target)
 
-    log.info("session_store.switch_session.info", `已切换到会话: "${target.name}" (${target.messages.length} 条消息)`, { target_name: target.name, target_messages: target.messages.length })
+    log.info("session_store.switch_session.info", `已切换会话 (${target.messages.length} 条消息)`, { session_id: target.id, target_messages: target.messages.length })
   }
 
   /**
@@ -488,7 +489,11 @@ export const useSessionStore = defineStore('session', () => {
     if (previousId && previousId !== grant.id) {
       void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => { /* ignore */ })
     }
-    log.info("session_store.set_workspace.info", `已设置会话工作目录: workspaceId=${grant.id}`, { workspace_id: grant.id })
+    log.info("session_store.set_workspace.info", '已设置会话工作目录')
+    log.sensitiveDebug("session_store.workspace_sensitive.debug", '工作区授权详情', {
+      workspace_id: grant.id,
+      workspace_path: grant.path,
+    })
   }
 
   /** 取消当前会话的工作目录授权 */

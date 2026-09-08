@@ -36,6 +36,19 @@ describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
     expect(getDefinitions().map(d => d.function.name)).toContain('capture_screen')
   })
 
+  it('没有工作区时不暴露文件工具', () => {
+    register(mkTool('read_file'))
+    register(mkTool('write_file'))
+    setAgentCharData({ render: 'illustration' } as any)
+
+    const withoutWorkspace = getDefinitions(undefined, { hasWorkspace: false }).map(d => d.function.name)
+    const withWorkspace = getDefinitions(undefined, { hasWorkspace: true }).map(d => d.function.name)
+    expect(withoutWorkspace).not.toContain('read_file')
+    expect(withoutWorkspace).not.toContain('write_file')
+    expect(withWorkspace).toContain('read_file')
+    expect(withWorkspace).toContain('write_file')
+  })
+
   it('illustration 角色：含 illustration/both，不含 live2d', () => {
     setAgentCharData({ render: 'illustration', emotions: [], poses: [], costumes: [] } as any)
     const names = getDefinitions().map(d => d.function.name)

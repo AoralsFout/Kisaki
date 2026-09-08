@@ -25,6 +25,17 @@ const MUTATING_TOOLS: Record<string, (args: Record<string, any>) => string> = {
   delete_lines: a => String(a.path ?? ''),
 }
 
+/** 只有会话持有工作区能力时才应暴露给模型的工具。 */
+const WORKSPACE_TOOLS = new Set([
+  'read_file', 'read_image', 'write_file', 'append_file', 'delete_file',
+  'replace_lines', 'insert_lines', 'delete_lines', 'list_dir', 'find_files',
+  'search_in_files', 'run_process', 'run_shell',
+])
+
+export function requiresWorkspace(name: string): boolean {
+  return WORKSPACE_TOOLS.has(name)
+}
+
 /** 该工具是否会修改文件 */
 export function isMutatingTool(name: string): boolean {
   return name in MUTATING_TOOLS
