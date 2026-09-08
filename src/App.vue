@@ -6,7 +6,6 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
 import InputBox from './components/InputBox.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
 import ChatHistory from './components/ChatHistory.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
 import SessionList from './components/SessionList.vue'
@@ -16,8 +15,6 @@ import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
 import ScreenCaptureConfirm from './components/ScreenCaptureConfirm.vue'
 import CommandExecution from './components/CommandExecution.vue'
-import DevPanel from './components/settings/DevPanel.vue'
-import LogViewer from './components/LogViewer.vue'
 import Onboarding from './components/Onboarding.vue'
 import { useChatStore, setChatCharacterIdentity } from './stores/chat'
 import { useSessionStore } from './stores/session'
@@ -31,9 +28,7 @@ import { getAgentLive2DController } from './agent'
 import { createLogger } from './utils/logger'
 import {
   WINDOW_SETTINGS,
-  QUERY_DEV,
   QUERY_SETTINGS,
-  QUERY_LOGS,
   CHANNEL_DESKPET_DEV,
   DEFAULT_VOICE_LANGUAGE,
   EVENT_CHARACTERS_CHANGED,
@@ -51,10 +46,6 @@ import { initWindowState } from './utils/windowState'
 const log = createLogger('App')
 
 const { t } = useI18n()
-
-const isDev = import.meta.env.DEV && new URLSearchParams(window.location.search).has(QUERY_DEV)
-const isSettings = new URLSearchParams(window.location.search).has(QUERY_SETTINGS)
-const isLogs = new URLSearchParams(window.location.search).has(QUERY_LOGS)
 
 const chat = useChatStore()
 const sessionStore = useSessionStore()
@@ -241,16 +232,11 @@ const contextDetail = computed(() => t('chat.history.contextDetail', {
 }))
 
 onMounted(async () => {
-  // 日志窗口/Dev 窗口不初始化角色和对话
-  if (isLogs || isDev) return
-
-  if (!isSettings) {
-    // 主窗口在 Tauri 配置中隐藏创建：先恢复上次的位置/大小再显示，
-    // 避免默认位置白窗闪现后瞬移。穿透初始化放在恢复之后，确保初始坐标正确。
-    await initWindowState('main', { showAfterRestore: true })
-      .catch(() => { /* 浏览器预览环境无原生窗口 */ })
-    await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
-  }
+  // 主窗口在 Tauri 配置中隐藏创建：先恢复上次的位置/大小再显示，
+  // 避免默认位置白窗闪现后瞬移。穿透初始化放在恢复之后，确保初始坐标正确。
+  await initWindowState('main', { showAfterRestore: true })
+    .catch(() => { /* 浏览器预览环境无原生窗口 */ })
+  await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
 
   // 加载并解密 API Key（填充解密缓存，后续 sync loadConfig 直接取缓存）
   await Promise.allSettled([
@@ -271,62 +257,55 @@ onMounted(async () => {
     .catch((e) => log.error("app.module.error", "角色初始化失败", e))
   // 首次运行：无完成标记时显示引导；已被「稍后」搁置则不再整层弹出，
   // 改以主窗口的配置待办入口恢复（仅主窗口）。
-  if (!isSettings) {
-    onboardingDone.value = isOnboardingDone()
-    onboardingDismissed.value = isOnboardingDismissed()
-    showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
-  }
+  onboardingDone.value = isOnboardingDone()
+  onboardingDismissed.value = isOnboardingDismissed()
+  showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
   // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
   setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
   // 角色和会话状态均已恢复，此时再挂载渲染器，首帧即为正确角色。
   charReady.value = true
 
-  // Dev 面板通信：仅主窗口响应，避免设置窗口/日志窗口的 handler 干扰
-  if (!isDev && !isSettings && !isLogs) {
-    try {
-      const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
-      channel.onmessage = (event) => {
-        const { type, payload } = event.data ?? {}
-        const l2dCtrl = getAgentLive2DController()
-        if (type === 'set-pose') {
-          l2dCtrl?.setScreenPose(payload.key as any)
-          getCharacterController()?.setScreenPose(payload.key as any)
-          return
-        }
-        if (type === 'set-expression') { l2dCtrl?.setExpression(payload.expression as string); return }
-        if (type === 'play-motion') { l2dCtrl?.playMotion(payload.group as string, payload.index ?? 0); return }
-        if (type === 'set-stance') { getCharacterController()?.setPoseTag(payload.stance as string); return }
-        if (type === 'set-emotion') { getCharacterController()?.setEmotion(payload.emotion as string); return }
-        if (type === 'set-costume') { getCharacterController()?.setCostume(payload.costume as string); return }
-        if (type === 'request-state') {
-          const ctrl = getCharacterController()
-          channel.postMessage({
-            type: 'state-update',
-            payload: {
-              currentId: charStore.currentId,
-              poseTag: ctrl?.currentPoseTag.value ?? '',
-              emotion: ctrl?.currentEmotion.value ?? '',
-              costume: ctrl?.currentCostume.value ?? '',
-              screenPose: (ctrl ?? l2dCtrl)?.charStore?.currentScreenPose ?? 'full-center',
-              expression: l2dCtrl?.currentExpression.value ?? '',
-            },
-          })
-        }
+  // Dev 面板通信：根入口已确保只有主窗口执行此 handler。
+  try {
+    const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
+    channel.onmessage = (event) => {
+      const { type, payload } = event.data ?? {}
+      const l2dCtrl = getAgentLive2DController()
+      if (type === 'set-pose') {
+        l2dCtrl?.setScreenPose(payload.key as any)
+        getCharacterController()?.setScreenPose(payload.key as any)
+        return
       }
-    } catch (e) { log.warn("app.module.warn", "BroadcastChannel 初始化失败", e) }
-  }
+      if (type === 'set-expression') { l2dCtrl?.setExpression(payload.expression as string); return }
+      if (type === 'play-motion') { l2dCtrl?.playMotion(payload.group as string, payload.index ?? 0); return }
+      if (type === 'set-stance') { getCharacterController()?.setPoseTag(payload.stance as string); return }
+      if (type === 'set-emotion') { getCharacterController()?.setEmotion(payload.emotion as string); return }
+      if (type === 'set-costume') { getCharacterController()?.setCostume(payload.costume as string); return }
+      if (type === 'request-state') {
+        const ctrl = getCharacterController()
+        channel.postMessage({
+          type: 'state-update',
+          payload: {
+            currentId: charStore.currentId,
+            poseTag: ctrl?.currentPoseTag.value ?? '',
+            emotion: ctrl?.currentEmotion.value ?? '',
+            costume: ctrl?.currentCostume.value ?? '',
+            screenPose: (ctrl ?? l2dCtrl)?.charStore?.currentScreenPose ?? 'full-center',
+            expression: l2dCtrl?.currentExpression.value ?? '',
+          },
+        })
+      }
+    }
+  } catch (e) { log.warn("app.module.warn", "BroadcastChannel 初始化失败", e) }
 
   // 监听其它窗口（设置窗口）的角色变更通知，刷新主窗口角色状态
   await listen(EVENT_CHARACTERS_CHANGED, () => { onCharactersChanged() })
     .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
-  // 只让主窗口重建并保存会话；设置窗口持有的会话副本可能已过期，不能回写覆盖。
-  if (!isSettings) {
-    await listen(EVENT_AI_CONFIG_CHANGED, () => {
-      chat.refreshModelContext()
-      void refreshApiConfigured()
-    })
-      .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
-  }
+  await listen(EVENT_AI_CONFIG_CHANGED, () => {
+    chat.refreshModelContext()
+    void refreshApiConfigured()
+  })
+    .catch(() => { /* 浏览器预览环境无 Tauri 事件总线 */ })
 
 })
 
@@ -402,11 +381,7 @@ async function handleSelectCharacter(charId: string) {
 </script>
 
 <template>
-  <DevPanel v-if="isDev" />
-  <SettingsPanel v-else-if="isSettings" />
-  <LogViewer v-else-if="isLogs" />
-
-  <main v-else class="app-container">
+  <main class="app-container">
     <!-- 拖拽区域 -->
     <div class="drag-region" data-tauri-drag-region data-pet-solid></div>
 

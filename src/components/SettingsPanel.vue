@@ -5,7 +5,7 @@
  * 左侧导航 + 右侧内容，各标签页内容由 settings/ 下子组件实现。
  * 作为独立 Tauri 窗口打开（?settings=1）。
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onUnmounted } from 'vue'
 import UnsavedDialog from './UnsavedDialog.vue'
 import type { EditablePage } from '../utils/editableForm'
 import { useI18n } from 'vue-i18n'
@@ -15,17 +15,23 @@ import { listen } from '@tauri-apps/api/event'
 import { QUERY_SETTINGS, EVENT_SETTINGS_NAVIGATE } from '../constants'
 import { initWindowState } from '../utils/windowState'
 import { createLogger } from '../utils/logger'
-import DevPanel from './settings/DevPanel.vue'
-import CharacterManager from './CharacterManager.vue'
-import SettingsGeneral from './settings/SettingsGeneral.vue'
-import SettingsApi from './settings/SettingsApi.vue'
-import SettingsSearch from './settings/SettingsSearch.vue'
-import SettingsTts from './settings/SettingsTts.vue'
-import SettingsAbout from './settings/SettingsAbout.vue'
-import SettingsPrivacy from './settings/SettingsPrivacy.vue'
-import SettingsPermissions from './settings/SettingsPermissions.vue'
-import SettingsDiagnostics from './settings/SettingsDiagnostics.vue'
-import SettingsContext from './settings/SettingsContext.vue'
+
+// 每个标签页按需加载，避免普通设置页把角色管理、ChatStore 和 Agent 工具链提前拉起。
+const DevPanel = defineAsyncComponent(() => import('./settings/DevPanel.vue'))
+const CharacterManager = defineAsyncComponent(async () => {
+  // 角色编辑器可预览 Live2D，仅打开该标签时加载 Pixi 兼容层。
+  await import('pixi.js/unsafe-eval')
+  return import('./CharacterManager.vue')
+})
+const SettingsGeneral = defineAsyncComponent(() => import('./settings/SettingsGeneral.vue'))
+const SettingsApi = defineAsyncComponent(() => import('./settings/SettingsApi.vue'))
+const SettingsSearch = defineAsyncComponent(() => import('./settings/SettingsSearch.vue'))
+const SettingsTts = defineAsyncComponent(() => import('./settings/SettingsTts.vue'))
+const SettingsAbout = defineAsyncComponent(() => import('./settings/SettingsAbout.vue'))
+const SettingsPrivacy = defineAsyncComponent(() => import('./settings/SettingsPrivacy.vue'))
+const SettingsPermissions = defineAsyncComponent(() => import('./settings/SettingsPermissions.vue'))
+const SettingsDiagnostics = defineAsyncComponent(() => import('./settings/SettingsDiagnostics.vue'))
+const SettingsContext = defineAsyncComponent(() => import('./settings/SettingsContext.vue'))
 
 const { t } = useI18n()
 const log = createLogger('SettingsPanel')

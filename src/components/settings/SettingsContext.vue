@@ -9,6 +9,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../../stores/chat'
 import { useSessionStore } from '../../stores/session'
+import { useCharacterStore } from '../../stores/character'
+import { initCharacterDataDir } from '../../character/loader'
+import { resolveDisplayLanguage } from '../../stores/language'
 import {
   attachCurrentSession,
   inspectSavedSession,
@@ -17,10 +20,12 @@ import {
 } from '../../contextInspector'
 import type { ContextInspectionMessage } from '../../ai'
 import type { ToolDefinition } from '../../agent'
+import { DEFAULT_VOICE_LANGUAGE } from '../../constants'
 
 const { t, locale } = useI18n()
 const chat = useChatStore()
 const sessionStore = useSessionStore()
+const charStore = useCharacterStore()
 
 type FilterKey = 'all' | 'system' | 'user' | 'assistant' | 'tool' | 'definition' | 'meta'
 type ItemKind = 'message' | 'definition' | 'meta'
@@ -46,6 +51,7 @@ const selectedItemId = ref('')
 const copied = ref(false)
 const drawerClose = ref<HTMLButtonElement | null>(null)
 const now = ref(Date.now())
+let storesInitialized = false
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let lastTrigger: HTMLElement | null = null
 
@@ -83,11 +89,29 @@ function followCurrentSession() {
   selectedSessionId.value = snapshot.value?.currentSessionId ?? ''
 }
 
+async function initializeContextStores() {
+  await initCharacterDataDir().catch(() => { /* 浏览器预览环境无原生目录 */ })
+  if (!storesInitialized) {
+    chat.init()
+    storesInitialized = true
+  }
+  await sessionStore.init()
+  if (!charStore.data) await charStore.init(sessionStore.currentSession?.characterId)
+  if (charStore.prompt) {
+    chat.setSystemPrompt(
+      charStore.prompt,
+      charStore.data?.voiceLanguage || DEFAULT_VOICE_LANGUAGE,
+      resolveDisplayLanguage(charStore.data?.textLanguage),
+      charStore.render,
+    )
+  }
+}
+
 async function refreshSnapshot() {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    await sessionStore.init()
+    await initializeContextStores()
     snapshot.value = captureLocalSnapshot()
     now.value = Date.now()
   } finally {
@@ -95,7 +119,8 @@ async function refreshSnapshot() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await initializeContextStores()
   snapshot.value = captureLocalSnapshot()
   clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
   window.addEventListener('keydown', onWindowKeydown)

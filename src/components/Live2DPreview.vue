@@ -7,8 +7,8 @@
  */
 import { ref } from 'vue'
 import { useLive2DScene } from '../character/live2d/scene'
-import { DEFAULT_POSE } from '../character'
-import type { Live2DConfig } from '../character'
+import { DEFAULT_POSE } from '../character/poses'
+import type { Live2DConfig } from '../character/loader'
 
 const props = defineProps<{
   id: string

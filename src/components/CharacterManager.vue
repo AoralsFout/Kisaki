@@ -8,7 +8,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
-import { bustImageCache } from '../character/loader'
+import { bustImageCache, initCharacterDataDir } from '../character/loader'
 import { buildCharacterJson, type CharacterEdits } from '../character/characterJson'
 import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid, getTtsProvider } from '../tts'
 import { createLogger } from '../utils/logger'
@@ -25,8 +25,9 @@ import CharacterList from './CharacterList.vue'
 import CharacterPreview from './CharacterPreview.vue'
 import Live2DEditor from './Live2DEditor.vue'
 import Live2DPreview from './Live2DPreview.vue'
-import { loadLive2DManifest } from '../character'
-import type { Live2DManifest, Live2DConfig } from '../character'
+import { loadLive2DManifest } from '../character/live2d/manifest'
+import type { Live2DManifest } from '../character/live2d/manifest'
+import type { Live2DConfig } from '../character/loader'
 import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
 import { useModalFocus } from '../utils/modalFocus'
 
@@ -154,7 +155,8 @@ watch(addingPose, (v) => { if (v) setTimeout(() => poseInputRef.value?.focus(), 
 watch(addingCostume, (v) => { if (v) setTimeout(() => costumeInputRef.value?.focus(), 50) })
 
 onMounted(async () => {
-  if (!charStore.data) await charStore.init()
+  await initCharacterDataDir().catch(() => { /* 浏览器预览环境无原生目录 */ })
+  if (charStore.availableList.length === 0) await charStore.refreshList()
 })
 
 const displayList = computed(() => charStore.availableList)

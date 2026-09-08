@@ -12,8 +12,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { POSE_PRESETS, loadCharacterJson, loadLive2DManifest, useCharacterStore } from '../../character'
-import type { PoseKey, CharacterData, Live2DManifest } from '../../character'
+import { POSE_PRESETS } from '../../character/poses'
+import type { PoseKey } from '../../character/poses'
+import { initCharacterDataDir, loadCharacterJson } from '../../character/loader'
+import type { CharacterData } from '../../character/loader'
+import { loadLive2DManifest } from '../../character/live2d/manifest'
+import type { Live2DManifest } from '../../character/live2d/manifest'
+import { useCharacterStore } from '../../stores/character'
 import { createLogger } from '../../utils/logger'
 import { CHANNEL_DESKPET_DEV } from '../../constants'
 
@@ -88,7 +93,8 @@ async function loadMainCharData(id: string) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await initCharacterDataDir().catch(() => { /* 浏览器预览环境无原生目录 */ })
   const params = new URLSearchParams(window.location.search)
   isDevWindow.value = params.has('dev')
   if (isDevWindow.value) {

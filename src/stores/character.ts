@@ -7,7 +7,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { loadCharacterJson, listCharacterSummaries, imageUrl } from '../character/loader'
+import { clearCache, loadCharacterJson, listCharacterSummaries, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
 import { DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
@@ -78,9 +78,8 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
-  /** 刷新可用角色列表（同时加载所有角色的显示名称） */
+  /** 刷新可用角色列表及轻量元数据（显示名称/渲染类型） */
   async function refreshList() {
-    const { clearCache } = await import('../character/loader')
     clearCache()
     const summaries = await listCharacterSummaries()
     availableList.value = summaries.map(item => item.id)

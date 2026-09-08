@@ -8,8 +8,9 @@
  * 图片切换：旧图叠加在上层淡出（opacity 1→0），新图在下层始终保持显示。
  */
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
-import { useCharacterController, registerCharacterController } from '../character'
-import type { CharacterImageData } from '../character'
+import { useCharacterController } from '../character/controller'
+import { registerCharacterController } from '../character/commandBus'
+import type { CharacterImageData } from '../character/loader'
 import { setAgentController } from '../agent'
 import { buildMask } from '../passthrough/alphaMask'
 import { createLogger } from '../utils/logger'

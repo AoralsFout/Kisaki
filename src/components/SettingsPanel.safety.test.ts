@@ -11,6 +11,7 @@ vi.mock('./settings/SettingsPrivacy.vue', () => ({ default: { template: '<div />
 vi.mock('./settings/SettingsAbout.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('./settings/SettingsPermissions.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('./settings/SettingsDiagnostics.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('./settings/SettingsContext.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('./settings/DevPanel.vue', () => ({ default: { template: '<div />' } }))
 
 // 捕获设置窗口导航监听器：主窗口 emitTo(EVENT_SETTINGS_NAVIGATE) 的接收端
