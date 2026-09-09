@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import Character from './components/Character.vue'
 import InputBox from './components/InputBox.vue'
 import ChatHistory from './components/ChatHistory.vue'
+import ConversationDock from './components/ConversationDock.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
 import SessionList from './components/SessionList.vue'
 import WorkspaceChip from './components/WorkspaceChip.vue'
@@ -66,6 +67,7 @@ const characterOpacityPercent = computed(() => Math.round(characterOpacity.value
 const showSession = ref(false)
 const showCharacterSelect = ref(false)
 const ttsEnabled = ref(isTtsEnabled())
+const latestMessageHeight = ref(0)
 
 // ── 角色画布顶部位置 ────────────────────────────────
 const CHARACTER_CANVAS_TOP_MAX = 0.8
@@ -500,18 +502,26 @@ async function handleSelectCharacter(charId: string) {
     <!-- 工具调用过程列表（右侧浮层，处理时自动显现） -->
     <ToolActivityList v-if="!noCharacter" />
 
-    <!-- 底部交互区 -->
-    <div class="bottom-area">
-      <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
-      <ToolConfirm v-if="!noCharacter" />
-      <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
-      <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
-      <!-- 屏幕截图确认卡（高隐私读取，每次只能允许一次） -->
-      <ScreenCaptureConfirm v-if="!noCharacter && chat.pendingScreenCaptureConfirm" />
-      <CommandExecution v-if="!noCharacter" />
+    <!-- 底部交互区：统一轨道协调历史区与输入区的开合 -->
+    <ConversationDock :expanded="chat.showInput" :latest-message-height="latestMessageHeight"
+      :layout-key="sessionStore.currentSessionId">
+      <template #before>
+        <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
+        <ToolConfirm v-if="!noCharacter" />
+        <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
+        <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
+        <!-- 屏幕截图确认卡（高隐私读取，每次只能允许一次） -->
+        <ScreenCaptureConfirm v-if="!noCharacter && chat.pendingScreenCaptureConfirm" />
+        <CommandExecution v-if="!noCharacter" />
+      </template>
 
-      <!-- 历史对话：常驻底部；折叠时显示最新一条，对话框弹出时展开到全高 -->
-      <ChatHistory visible />
+      <!-- 历史对话：常驻底部；折叠时显示最新一条，对话框弹出时展开到可用高度 -->
+      <template #history="{ collapsedHeight, latestOverflowing }">
+        <ChatHistory visible :collapsed-height="collapsedHeight" :latest-overflowing="latestOverflowing"
+          @latest-height-change="latestMessageHeight = $event" />
+      </template>
+
+      <template #after>
 
       <!-- 状态行：配置待办；无内容时不渲染，出现时不推动工具栏位置 -->
       <div v-if="showConfigTodo" class="status-row" data-pet-solid>
@@ -606,17 +616,21 @@ async function handleSelectCharacter(charId: string) {
         </button>
       </div>
 
-      <!-- 点击「更多」菜单外的任意位置关闭菜单 -->
-      <div v-if="showMoreMenu" class="menu-backdrop" data-pet-solid @click="closeMoreMenu"></div>
+      </template>
 
-      <!-- 输入框：从底部弹出/收起（历史对话随其展开） -->
-      <div class="input-wrapper" :class="{ open: chat.showInput }">
+      <!-- 点击「更多」菜单外的任意位置关闭菜单 -->
+      <template #overlay>
+        <div v-if="showMoreMenu" class="menu-backdrop" data-pet-solid @click="closeMoreMenu"></div>
+      </template>
+
+      <!-- 输入框常驻轨道底部；收起时随轨道移出窗口裁剪区 -->
+      <template #input>
         <InputBox :visible="chat.showInput" :disabled="chat.isProcessing" :draft-key="sessionStore.currentSessionId"
           :valid-draft-keys="sessionStore.sessionList.map(s => s.id)" :submit="handleSend"
           :title="sessionStore.currentSession?.name" @close="chat.closeInput()"
           :context-utilization="chat.contextStats.utilization" :context-detail="contextDetail" />
-      </div>
-    </div>
+      </template>
+    </ConversationDock>
 
     <!-- 面板 -->
     <SessionList :visible="showSession" @close="showSession = false" />
@@ -711,41 +725,6 @@ async function handleSelectCharacter(charId: string) {
   right: 0;
   bottom: 0;
   overflow: hidden;
-}
-
-/* ---- 输入框弹出/收起动画（从底部缓慢展开） ---- */
-.input-wrapper {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.4s ease;
-  width: 100%;
-  pointer-events: auto;
-}
-
-.input-wrapper.open {
-  max-height: 380px;
-}
-
-/* ---- 底部交互区 ---- */
-.bottom-area {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  /* 全屏父级在折叠态也必须把整组控件压在窗口底部。 */
-  justify-content: flex-end;
-  align-items: center;
-  pointer-events: none;
-}
-
-.bottom-area>* {
-  pointer-events: auto;
-  /* 展开态底部区域占满窗口时，输入框/工具栏不能被历史列表挤压 */
-  flex-shrink: 0;
 }
 
 .bars {
@@ -937,10 +916,6 @@ async function handleSelectCharacter(charId: string) {
 }
 
 @media (max-height: 520px) {
-  .input-wrapper.open {
-    max-height: 55vh;
-  }
-
   .bars {
     margin-block: var(--space-1);
   }

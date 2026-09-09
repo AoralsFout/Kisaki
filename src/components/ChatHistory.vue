@@ -3,7 +3,7 @@
  * 历史对话列表 —— 常驻底部交互区，取代独立对话气泡
  *
  * - 折叠态（对话框收起）：仅展示最新一条；短消息底部对齐，长消息从顶部预览；
- * - 展开态（对话框弹出）：生长到全高并可滚动，展开/收起在同一元素上过渡，动画连贯；
+ * - 展开态（对话框弹出）：由 ConversationDock 分配可用高度，列表在内部滚动；
  * - 容器整体为实体区域（data-pet-solid）：背景透明但空隙不穿透——悬停空隙时的
  *   滚轮会转发给消息列表滚动，避免滚动意图被透传到桌面；
  * - 顶部渐隐（mask，仅展开态），提示上方还有更早的历史；
@@ -24,9 +24,17 @@ const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   visible?: boolean
+  collapsedHeight?: number
+  latestOverflowing?: boolean
 }>(), {
   visible: false,
+  collapsedHeight: 0,
+  latestOverflowing: false,
 })
+
+const emit = defineEmits<{
+  latestHeightChange: [height: number]
+}>()
 
 const chat = useChatStore()
 const sessionStore = useSessionStore()
@@ -36,21 +44,11 @@ const listRef = ref<HTMLElement | null>(null)
 const previewImage = ref<{ dataUrl: string; name: string } | null>(null)
 const sessionSwitching = ref(false)
 
-/** 展开态由对话框驱动；折叠/展开在同一元素上过渡 */
+/** 展开态由对话框驱动；几何过渡统一交给 ConversationDock。 */
 const expanded = computed(() => chat.showInput)
 
-/** 挂载后下一帧再置位，让折叠高度从 0 过渡生长（入场动画） */
-const entered = ref(false)
-let layoutResizeObserver: ResizeObserver | null = null
-onMounted(() => {
-  requestAnimationFrame(() => { entered.value = true })
-  window.addEventListener('resize', onViewportResize)
-  const bottomArea = historyRef.value?.parentElement
-  if (typeof ResizeObserver !== 'undefined' && bottomArea) {
-    layoutResizeObserver = new ResizeObserver(onViewportResize)
-    layoutResizeObserver.observe(bottomArea)
-  }
-})
+let latestResizeObserver: ResizeObserver | null = null
+let observedLatestItem: HTMLElement | null = null
 
 /** 助手消息展示名：优先消息内的角色身份快照，旧数据回退当前角色名/品牌名 */
 function assistantLabel(charName?: string): string {
@@ -79,63 +77,37 @@ function onWheel(e: WheelEvent) {
   list.scrollBy({ top: e.deltaY })
 }
 
-/**
- * 折叠高度 = 最新一条消息的实际高度，最大不超过当前窗口高度；
- * 超过窗口高度时仍显示“展开查看全文”。
- */
-function viewportHeight(): number {
-  if (typeof window === 'undefined') return 1
-  return Math.max(1, window.innerHeight || document.documentElement?.clientHeight || 1)
-}
-
-const collapsedHeight = ref(0)
-const latestOverflowing = ref(false)
-
 function lastHistoryItem(): HTMLElement | null {
   const items = listRef.value?.querySelectorAll<HTMLElement>('.history-item')
   return items?.[items.length - 1] ?? null
 }
 
-function measureCollapsed() {
-  const list = listRef.value
-  if (!list) return
+/** 向布局壳报告最新一条消息的原始高度；可用空间和裁剪统一由布局壳计算。 */
+function publishLatestHeight() {
   const last = lastHistoryItem()
-  const padBottom = parseFloat(getComputedStyle(list).paddingBottom) || 0
-  const h = last ? last.getBoundingClientRect().height + padBottom : 0
-  const maxHeight = collapsedAvailableHeight()
-  latestOverflowing.value = h > maxHeight
-  collapsedHeight.value = Math.min(Math.ceil(h), maxHeight)
+  emit('latestHeightChange', last ? Math.ceil(last.getBoundingClientRect().height) : 0)
 }
 
-/** 历史列表可用的最大收起高度 = 窗口高度 - 同层其它实体控件占用的高度。 */
-function collapsedAvailableHeight(): number {
-  const history = historyRef.value
-  if (!history) return viewportHeight()
-  const parent = history.parentElement
-  if (!parent) return viewportHeight()
-  let occupiedHeight = 0
-  for (const sibling of Array.from(parent.children)) {
-    if (sibling === history) continue
-    const el = sibling as HTMLElement
-    const rect = el.getBoundingClientRect()
-    const style = getComputedStyle(el)
-    if (style.display === 'none' || style.position === 'absolute' || style.position === 'fixed') continue
-    occupiedHeight += rect.height
-      + (parseFloat(style.marginTop) || 0)
-      + (parseFloat(style.marginBottom) || 0)
+/** 最新项替换时切换观察目标；流式文本、图片和 details 尺寸变化会自动重新发布。 */
+function observeLatestItem() {
+  const latest = lastHistoryItem()
+  if (latestResizeObserver && observedLatestItem !== latest) {
+    latestResizeObserver.disconnect()
+    if (latest) latestResizeObserver.observe(latest)
   }
-  return Math.max(1, viewportHeight() - occupiedHeight)
+  observedLatestItem = latest
+  publishLatestHeight()
 }
 
-function onViewportResize() {
-  measureCollapsed()
-  scrollToLatest('auto')
-}
-watch(
-  () => [sessionStore.currentSessionId, chat.messages.length, hasPending.value, expanded.value] as const,
-  () => { nextTick(measureCollapsed) },
-  { immediate: true },
-)
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    latestResizeObserver = new ResizeObserver(() => {
+      publishLatestHeight()
+      if (!expanded.value) jumpToLatestNow()
+    })
+  }
+  void nextTick(observeLatestItem)
+})
 
 // 对齐最新消息：展开态滚到底；折叠态短消息滚到底、长消息定位到消息顶部。
 function collapsedTarget(list: HTMLElement): number {
@@ -149,7 +121,7 @@ function collapsedTarget(list: HTMLElement): number {
     listTop: listRect.top,
     itemTop: itemRect.top,
     itemHeight: itemRect.height,
-    viewportHeight: collapsedHeight.value,
+    viewportHeight: props.collapsedHeight,
   })
 }
 
@@ -189,7 +161,7 @@ function scheduleCollapsedLayoutRefresh() {
   if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
   collapsedLayoutRaf = requestAnimationFrame(() => {
     collapsedLayoutRaf = 0
-    measureCollapsed()
+    observeLatestItem()
     jumpToLatestNow()
   })
 }
@@ -199,8 +171,8 @@ function onThinkingToggle() {
 }
 
 /**
- * 会话替换会同时改变末条消息高度和列表 scrollHeight。先禁用行高过渡并重测折叠高度，
- * 再在新高度提交后及下一绘制帧各校准一次，避免布局钳制把位置留在底部上方。
+ * 会话替换会同时改变末条消息高度和列表 scrollHeight；在 DOM 提交后及下一绘制帧
+ * 各校准一次，避免异步布局把位置留在最新消息上方。
  */
 async function settleSessionAtLatest() {
   const version = ++sessionSettleVersion
@@ -208,7 +180,7 @@ async function settleSessionAtLatest() {
   sessionSwitching.value = true
   await nextTick()
   if (version !== sessionSettleVersion) return
-  measureCollapsed()
+  observeLatestItem()
   await nextTick()
   if (version !== sessionSettleVersion) return
   jumpToLatestNow()
@@ -222,7 +194,7 @@ async function settleSessionAtLatest() {
 function onHistoryImageLoad() {
   if (expanded.value && !sessionSwitching.value) return
   void nextTick(async () => {
-    measureCollapsed()
+    observeLatestItem()
     await nextTick()
     jumpToLatestNow()
   })
@@ -233,9 +205,9 @@ onUnmounted(() => {
   cancelCollapseScroll()
   if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
   collapsedLayoutRaf = 0
-  layoutResizeObserver?.disconnect()
-  layoutResizeObserver = null
-  window.removeEventListener('resize', onViewportResize)
+  latestResizeObserver?.disconnect()
+  latestResizeObserver = null
+  observedLatestItem = null
 })
 
 // 首次载入与每次切换会话都瞬时定位；仅同一会话内的新消息使用平滑滚动。
@@ -247,10 +219,12 @@ watch(
     const sessionChanged = sessionId !== lastSessionId
     lastSessionId = sessionId
     if (!props.visible) return
+    void nextTick(observeLatestItem)
     if (sessionChanged) void settleSessionAtLatest()
     else scrollToLatest(!initialMessagesSettled ? 'auto' : 'smooth')
     initialMessagesSettled = true
   },
+  { immediate: true },
 )
 watch(
   () => [chat.currentBubbleText.length, chat.currentThinking.length] as const,
@@ -265,35 +239,13 @@ watch(
   (v) => { if (v) scrollToLatest('auto') },
   { immediate: true },
 )
-// 折叠/展开切换：行高过渡会不断改变列表的可滚动量，
-// 只在过渡结束时校准会出现"结束瞬间跳到正确位置"的跳变；
-// 过渡期间逐帧把 scrollTop 钳到当前最大值，全程钉在底部则无跳变
-function pinToBottomDuringTransition() {
-  const container = historyRef.value
-  const list = listRef.value
-  if (!container || !list) return
-  if (shouldReduceMotion()) return
-  const box: HTMLElement = container
-  const scroller: HTMLElement = list
-  let raf = 0
-  const tick = () => {
-    scroller.scrollTop = scroller.scrollHeight
-    raf = requestAnimationFrame(tick)
-  }
-  function finish(e?: TransitionEvent) {
-    if (e && (e.target !== box || e.propertyName !== 'grid-template-rows')) return
-    clearTimeout(timeout)
-    box.removeEventListener('transitionend', finish)
-    box.removeEventListener('transitioncancel', finish)
-    cancelAnimationFrame(raf)
-    scrollToLatest('auto')
-  }
-  const timeout = setTimeout(() => finish(), 1000) // 兜底：transition 事件丢失时终止循环
-  raf = requestAnimationFrame(tick)
-  box.addEventListener('transitionend', finish)
-  box.addEventListener('transitioncancel', finish)
-}
-/** 收起：scrollTop 与行高过渡同步移向最新消息的最终锚点，避免结束时跳变。 */
+watch(
+  () => props.collapsedHeight,
+  () => {
+    if (!expanded.value && props.visible) void nextTick(jumpToLatestNow)
+  },
+)
+/** 收起：滚动位置与视口高度同步移向最新消息，保留从历史中部收起时的连续感。 */
 function collapseToLatestAnimated() {
   const list = listRef.value
   if (!list) return
@@ -312,26 +264,25 @@ function collapseToLatestAnimated() {
   collapseRaf = requestAnimationFrame(tick)
 }
 
-watch(expanded, (v) => {
+watch(expanded, async (v) => {
+  await nextTick()
   const list = listRef.value
   if (!list) return
   if (sessionSwitching.value || shouldReduceMotion()) {
-    jumpToLatestNow() // 会话切换/无过渡：直接定位
+    jumpToLatestNow()
     return
   }
-  if (v) pinToBottomDuringTransition()
+  if (v) jumpToLatestNow()
   else collapseToLatestAnimated()
-  // 过渡结束校准（消除插值与 CSS 行高过渡的微小舍入差）
-  const box = historyRef.value
-  if (box) box.addEventListener('transitionend', () => scrollToLatest('auto'), { once: true })
 })
 </script>
 
 <template>
   <ImageLightbox :visible="Boolean(previewImage)" :src="previewImage?.dataUrl"
     :alt="previewImage?.name" @close="previewImage = null" />
-  <div v-if="visible" ref="historyRef" :class="['chat-history', { expanded, entered, 'session-switching': sessionSwitching, 'latest-overflowing': latestOverflowing }]"
-    :style="{ '--collapsed-h': `${collapsedHeight}px` }" data-pet-solid @wheel="onWheel">
+  <div v-if="visible" ref="historyRef"
+    :class="['chat-history', { expanded, 'session-switching': sessionSwitching, 'latest-overflowing': latestOverflowing }]"
+    data-pet-solid @wheel="onWheel">
     <div ref="listRef" class="message-list">
       <div v-for="msg in chat.messages" :key="msg.id" class="history-item">
         <!-- 头部：角色/时间 + 回档（用户消息） -->
@@ -392,33 +343,11 @@ watch(expanded, (v) => {
 .chat-history {
   position: relative;
   width: 100%;
+  height: 100%;
   max-width: 600px;
-  /* 父级始终覆盖视口；只过渡 flex-grow，避免展开时父级几何先跳变。 */
-  flex: 0 0 var(--collapsed-h, 100vh);
   min-height: 0;
   /* 容器整体为实体区域：背景透明但空隙不穿透，悬停空隙的滚轮转发给列表滚动 */
   background: transparent;
-  /* 折叠/展开用 grid 行高过渡：0 → 一条消息高度 → 全高，在同一元素上连贯动画。
-     不用 flex-end 钉底：overflow 容器里 flex-end 会被 Chromium 按"安全对齐"回退成顶部对齐；
-     列表自身始终保持为滚动容器（见 .message-list），程序化滚到底在两种状态下都可靠。 */
-  display: grid;
-  grid-template-rows: 0px;
-  transition: flex-grow 0.35s ease, grid-template-rows 0.35s ease;
-}
-
-/* 折叠态：仅最新一条消息的高度（动态量测） */
-.chat-history.entered {
-  grid-template-rows: var(--collapsed-h, 100vh);
-}
-
-/* 展开态：对话框弹出时生长到全高 */
-.chat-history.expanded {
-  flex-grow: 1;
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.chat-history.session-switching {
-  transition: none;
 }
 
 .chat-history.latest-overflowing:not(.expanded)::after {
@@ -457,12 +386,6 @@ watch(expanded, (v) => {
   background: rgba(255, 255, 255, 0.9);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .chat-history {
-    transition: none;
-  }
-}
-
 .message-list {
   /* 行高约束列表高度：折叠态溢出隐藏不可滚动，展开态内部滚动；
      收起/展开时由脚本瞬时滚到底，保证始终显示最新消息。
@@ -470,6 +393,8 @@ watch(expanded, (v) => {
      溢出时 auto 边距归零、内容顶部对齐且可正常滚动（justify-content: flex-end 在
      溢出的滚动容器里会把溢出压到起点上方导致无法滚动，不能用） */
   min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
   overflow-y: hidden;
   display: flex;
   flex-direction: column;
@@ -685,7 +610,4 @@ watch(expanded, (v) => {
   font-size: var(--fs-aux);
 }
 
-@media (max-height: 520px) {
-  .chat-history.expanded { grid-template-rows: 32vh; }
-}
 </style>

@@ -2,8 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import ChatHistory from './ChatHistory.vue'
 
 vi.mock('vue-i18n', async (importOriginal) => ({
@@ -76,14 +74,13 @@ describe('ChatHistory 历史列表', () => {
     wrapper.unmount()
   })
 
-  it('展开过渡期间持续钉住最新消息，结束时再校准滚动锚点', async () => {
+  it('展开时直接把最新消息交给浏览器滚动到底部', async () => {
     const { useChatStore } = await import('../stores/chat')
     const chat = useChatStore()
     chat.messages.push({ id: 'm-anchor', role: 'assistant', text: '滚动锚点', timestamp: 0 })
 
     const wrapper = mount(ChatHistory, { attachTo: document.body, props: { visible: true } })
     await flushPromises()
-    const history = wrapper.get('.chat-history').element as HTMLElement
     const list = wrapper.get<HTMLElement>('.message-list').element
     const scrollTo = vi.fn()
     Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 800 })
@@ -91,31 +88,16 @@ describe('ChatHistory 历史列表', () => {
 
     chat.showInput = true
     await nextTick()
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(list.scrollTop).toBe(800)
-
-    const transitionEnd = new Event('transitionend')
-    Object.defineProperty(transitionEnd, 'propertyName', { value: 'grid-template-rows' })
-    history.dispatchEvent(transitionEnd)
     await nextTick()
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 800, behavior: 'auto' })
 
     wrapper.unmount()
   })
 
-  it('折叠态的全屏底部容器使用底部对齐，避免控件组落到窗口顶部', async () => {
-    const appSource = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8')
-    const bottomArea = appSource.match(/\.bottom-area\s*\{([\s\S]*?)\n\}/)?.[1] || ''
-    expect(bottomArea).toContain('top: 0;')
-    expect(bottomArea).toContain('bottom: 0;')
-    expect(bottomArea).toMatch(/justify-content:\s*flex-end;/)
-  })
-
-  it('思考过程 toggle 后按最新气泡高度重算，并在超限时恢复展开入口', async () => {
+  it('思考过程 toggle 后报告最新气泡高度，并响应布局壳的溢出结果', async () => {
     const { useChatStore } = await import('../stores/chat')
     const chat = useChatStore()
     chat.messages.push({ id: 'm-thinking', role: 'assistant', text: '正文', thinking: '思考内容', timestamp: 0 })
-    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(120)
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (!this.classList.contains('history-item')) {
         return { x: 0, y: 0, width: 300, height: 0, top: 0, right: 300, bottom: 0, left: 0, toJSON: () => ({}) }
@@ -125,24 +107,25 @@ describe('ChatHistory 历史列表', () => {
       return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
     })
 
-    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 120 } })
     await flushPromises()
     const details = wrapper.get<HTMLDetailsElement>('.thinking-block')
     details.element.open = true
     await details.trigger('toggle')
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 120px')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([180])
+    await wrapper.setProps({ latestOverflowing: true })
     expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
     expect(wrapper.find('.collapsed-more').exists()).toBe(true)
 
     details.element.open = false
     await details.trigger('toggle')
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 40px')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([40])
+    await wrapper.setProps({ latestOverflowing: false })
     expect(wrapper.get('.chat-history').classes()).not.toContain('latest-overflowing')
 
     rectSpy.mockRestore()
-    viewportSpy.mockRestore()
     wrapper.unmount()
   })
 
@@ -151,7 +134,6 @@ describe('ChatHistory 历史列表', () => {
     const chat = useChatStore()
     chat.isProcessing = true
     chat.currentThinking = '短思考'
-    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(120)
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (!this.classList.contains('history-item')) {
         return { x: 0, y: 0, width: 300, height: 0, top: 0, right: 300, bottom: 0, left: 0, toJSON: () => ({}) }
@@ -161,22 +143,20 @@ describe('ChatHistory 历史列表', () => {
       return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
     })
 
-    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 120 } })
     await flushPromises()
     const details = wrapper.get<HTMLDetailsElement>('.thinking-block')
     details.element.open = true
     await details.trigger('toggle')
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 40px')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([40])
 
     chat.currentThinking = '这是一段持续增长的思考内容，已经超过折叠区域的可用高度。'
     await flushPromises()
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 120px')
-    expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([180])
 
     rectSpy.mockRestore()
-    viewportSpy.mockRestore()
     wrapper.unmount()
   })
 
@@ -212,13 +192,13 @@ describe('ChatHistory 历史列表', () => {
       const height = this.classList.contains('history-item') ? 444 : 220
       return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
     })
-    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(300)
-
-    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    const wrapper = mount(ChatHistory, {
+      props: { visible: true, collapsedHeight: 300, latestOverflowing: true },
+    })
     await flushPromises()
 
     expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 300px')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([444])
     const expand = wrapper.get('.collapsed-more')
     expect(expand.text()).toContain('chat.history.expandMessage')
     await expand.trigger('click')
@@ -227,47 +207,7 @@ describe('ChatHistory 历史列表', () => {
     expect(wrapper.find('.collapsed-more').exists()).toBe(false)
 
     rectSpy.mockRestore()
-    viewportSpy.mockRestore()
     wrapper.unmount()
-  })
-
-  it('折叠高度同时扣除历史上下两侧的实体控件', async () => {
-    const { useChatStore } = await import('../stores/chat')
-    const chat = useChatStore()
-    chat.messages.push({ id: 'm-tall', role: 'assistant', text: '占满可用空间的消息', timestamp: 0 })
-
-    const host = document.createElement('div')
-    const controls: {
-      before: HTMLElement
-      after: HTMLElement
-    } = {
-      before: document.createElement('div'),
-      after: document.createElement('div'),
-    }
-    controls.before.dataset.layoutHeight = '40'
-    controls.after.dataset.layoutHeight = '60'
-    document.body.append(host)
-
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const height = this.classList.contains('history-item')
-        ? 444
-        : Number(this.dataset.layoutHeight || 0)
-      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
-    })
-    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(300)
-    const wrapper = mount(ChatHistory, { attachTo: host, props: { visible: true } })
-    const layoutParent = wrapper.get('.chat-history').element.parentElement!
-    layoutParent.prepend(controls.before)
-    layoutParent.append(controls.after)
-    window.dispatchEvent(new Event('resize'))
-    await flushPromises()
-
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 200px')
-
-    rectSpy.mockRestore()
-    viewportSpy.mockRestore()
-    wrapper.unmount()
-    host.remove()
   })
 
   it('切换会话时直接跳到底部，同一会话的新消息才平滑滚动', async () => {
@@ -278,7 +218,7 @@ describe('ChatHistory 历史列表', () => {
     sessions.currentSessionId = 'session-a'
     chat.messages.push({ id: 'm-a', role: 'assistant', text: 'A', timestamp: 0 })
 
-    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 300 } })
     const list = wrapper.get<HTMLElement>('.message-list').element
     const scrollTo = vi.fn()
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -298,7 +238,7 @@ describe('ChatHistory 历史列表', () => {
     await flushPromises()
     expect(scrollTo).toHaveBeenCalled()
     expect(scrollTo.mock.calls.every(([options]) => options.behavior === 'auto')).toBe(true)
-    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 126px')
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([126])
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 
     scrollTo.mockClear()
