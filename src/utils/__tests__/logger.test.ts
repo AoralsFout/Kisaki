@@ -404,6 +404,22 @@ describe('Logger - 异常序列化', () => {
 })
 
 describe('Logger - 敏感信息脱敏', () => {
+  it('敏感诊断默认关闭，显式开启后不受生产日志级别过滤', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    mod.setLogLevel('info')
+    mod.setSensitiveDiagnosticsEnabled(false)
+    const log = mod.createLogger('Sensitive')
+
+    log.sensitiveDebug('test.sensitive_debug', 'secret detail')
+    expect(mod.getBuffer()).toHaveLength(0)
+
+    mod.setSensitiveDiagnosticsEnabled(true)
+    log.sensitiveDebug('test.sensitive_debug', 'secret detail')
+    expect(mod.getBuffer()).toHaveLength(1)
+    mod.setSensitiveDiagnosticsEnabled(false)
+  })
+
   it('移除常见 API Key 和 Authorization 值', async () => {
     const { redactSensitiveText } = await import('../logger')
     const input = 'apiKey=sk-secret123 Authorization: Bearer abc.def-123 access_token=token-value'

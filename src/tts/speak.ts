@@ -14,7 +14,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { loadCosyVoiceConfig, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
+import { loadCosyVoiceConfigSecure, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
 import { synthesizeWithGptSoVits, playAudioBlob, buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
 import { createLogger } from '../utils/logger'
 import { STORAGE_TTS_ENABLED, DEFAULT_VOICE_LANGUAGE } from '../constants'
@@ -59,24 +59,27 @@ export interface TtsPlaybackHooks {
 //  TtsEngine 类 — 封装所有 TTS 状态（原模块级 currentController）
 // ============================================================
 
-/** 以「稳定 skey」维度只报一次配置类警告，避免每轮刷屏。 */
-const CONFIG_SKIP_KEYS = new Set<string>()
-
 export class TtsEngine {
   private currentController: AbortController | null = null
   /** 流序号，用于为每次流式播报生成唯一 stream_id（过滤旧流音频帧） */
   private streamSeq = 0
   /** Live2D 口型播放钩子；注册后 TTS 改走"批合成 → blob → playVoice（带口型）" */
   private voicePlayer: VoicePlayer | null = null
+  /** 以稳定 key 去重当前实例的连续配置警告。 */
+  private configSkipKeys = new Set<string>()
 
   /** 配置类跳过只 warn 一次（同 key），后续以 trace 记录，既不刷屏也保留可观测性。 */
   private warnOnce(skey: string, message: string) {
-    if (CONFIG_SKIP_KEYS.has(skey)) {
+    if (this.configSkipKeys.has(skey)) {
       log.trace('tts.config_skip_repeat.trace', `重复跳过 TTS (${skey})`)
       return
     }
-    CONFIG_SKIP_KEYS.add(skey)
+    this.configSkipKeys.add(skey)
     log.warn('tts.config_skip.warn', message)
+  }
+
+  private clearWarning(skey: string) {
+    this.configSkipKeys.delete(skey)
   }
 
   /** 注册/注销 Live2D 口型播放器（Live2DStage 在模型 ready/卸载时调用） */
@@ -131,7 +134,7 @@ export class TtsEngine {
     }
 
     // ── CosyVoice 批处理 ──
-    const cvConfig = loadCosyVoiceConfig()
+    const cvConfig = await loadCosyVoiceConfigSecure()
     if (!cvConfig.apiKey || !voiceId) {
       if (this.currentController === controller) this.currentController = null
       return { status: 'skipped', reason: !cvConfig.apiKey ? 'missing_api_key' : 'missing_voice_id' }
@@ -190,7 +193,7 @@ export class TtsEngine {
     }
 
     // ── CosyVoice 流式处理 ──
-    const cvConfig = loadCosyVoiceConfig()
+    const cvConfig = await loadCosyVoiceConfigSecure()
     if (!cvConfig.apiKey || !voiceId) {
       if (this.currentController === controller) this.currentController = null
       return { status: 'skipped', reason: !cvConfig.apiKey ? 'missing_api_key' : 'missing_voice_id' }
@@ -223,7 +226,7 @@ export class TtsEngine {
 
     try {
       hooks.onSynthesisStart?.()
-      await this.playStream(controller, cvConfig.model, voiceId, text, wsUrl, mimeType, hooks)
+      await this.playStream(controller, cvConfig.apiKey, cvConfig.model, voiceId, text, wsUrl, mimeType, hooks)
       return controller.signal.aborted ? { status: 'cancelled' } : { status: 'played' }
     } catch (err) {
       log.warn("tts.speak_text_streaming.warn", "流式播报失败", err)
@@ -251,12 +254,14 @@ export class TtsEngine {
       this.warnOnce('gptsovits.missing_api_url', 'GPT-SoVITS API URL 未配置，跳过 TTS')
       return { status: 'skipped', reason: 'missing_api_url' }
     }
+    this.clearWarning('gptsovits.missing_api_url')
 
     const charParams = await this.getGptSoVitsCharacterParams()
     if (!charParams.refAudioPath) {
       this.warnOnce('gptsovits.missing_ref_audio', 'GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
       return { status: 'skipped', reason: 'missing_ref_audio' }
     }
+    this.clearWarning('gptsovits.missing_ref_audio')
 
     if (controller.signal.aborted) return { status: 'cancelled' }
     hooks.onSynthesisStart?.()
@@ -353,6 +358,7 @@ export class TtsEngine {
       this.warnOnce('gptsovits.missing_api_url', 'GPT-SoVITS API URL 未配置，跳过 TTS')
       return { status: 'skipped', reason: 'missing_api_url' }
     }
+    this.clearWarning('gptsovits.missing_api_url')
 
     // 获取角色级参数（参考音频必须从角色数据获取）
     const charParams = await this.getGptSoVitsCharacterParams()
@@ -360,6 +366,7 @@ export class TtsEngine {
       this.warnOnce('gptsovits.missing_ref_audio', 'GPT-SoVITS 参考音频路径未配置（请在角色编辑器中设置），跳过 TTS')
       return { status: 'skipped', reason: 'missing_ref_audio' }
     }
+    this.clearWarning('gptsovits.missing_ref_audio')
 
     if (controller.signal.aborted) return { status: 'cancelled' }
     hooks.onSynthesisStart?.()
@@ -443,7 +450,7 @@ export class TtsEngine {
   private async speakBatchWithLipSync(
     text: string,
     voiceId: string,
-    cvConfig: ReturnType<typeof loadCosyVoiceConfig>,
+    cvConfig: Awaited<ReturnType<typeof loadCosyVoiceConfigSecure>>,
     wsUrl: string,
     controller: AbortController,
     hooks: TtsPlaybackHooks,
@@ -483,6 +490,7 @@ export class TtsEngine {
    */
   private async playStream(
     controller: AbortController,
+    apiKey: string,
     model: string,
     voice: string,
     text: string,
@@ -490,8 +498,6 @@ export class TtsEngine {
     mimeType: string,
     hooks: TtsPlaybackHooks,
   ): Promise<void> {
-    const cvConfig = loadCosyVoiceConfig()
-
     // 本次流的唯一 id：后端会在每个音频帧里带上它，前端据此过滤掉
     // 已被取代的旧流的帧，避免快速连发消息时新旧音频串台。
     const streamId = String(++this.streamSeq)
@@ -583,7 +589,7 @@ export class TtsEngine {
       })
 
       const invokePromise = invoke('cosyvoice_tts_stream', {
-        streamId, apiKey: cvConfig.apiKey, model, voice, text, wsUrl,
+        streamId, apiKey, model, voice, text, wsUrl,
       })
 
       try { await invokePromise } catch (err) { streamError = (err as Error).message }

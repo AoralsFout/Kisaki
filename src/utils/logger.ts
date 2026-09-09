@@ -616,15 +616,13 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     return [lvlStyle, nsStyle, resetStyle]
   }
 
-  function log(lvl: LogLevel, record: LogRecord, force = false) {
+  function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
     if (!EVENT_NAME_PATTERN.test(record.event)) {
       throw new TypeError(`无效的日志事件名: ${record.event}`)
     }
     if (!globalConfig.enabled) return
-    if (!force) {
-      if (level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
-      if (!meetsLevel(lvl)) return
-    }
+    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
+    if (!forceLevel && !meetsLevel(lvl)) return
 
     const ts = getTimestamp()
     const label = formatLabel(lvl)
@@ -688,7 +686,7 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     trace: (event, message, context) => log('trace', { event, message, context }),
     debug: (event, message, context) => log('debug', { event, message, context }),
     sensitiveDebug: (event, message, context) => {
-      // 用户显式开启敏感诊断后，即使生产环境最低级别为 info 也必须写入。
+      // 生产环境默认级别是 info；显式开启敏感诊断后仍必须能够采集这些 debug 事件。
       if (isSensitiveDiagnosticsEnabled()) log('debug', { event, message, context }, true)
     },
     info: (event, message, context) => log('info', { event, message, context }),
