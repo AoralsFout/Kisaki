@@ -141,6 +141,16 @@ function openChat() {
   closeMoreMenu()
 }
 
+/** 工具栏聊天按钮：切换历史/对话框的展开状态。 */
+function toggleChat() {
+  if (chat.showInput) {
+    chat.closeInput()
+    closeMoreMenu()
+    return
+  }
+  openChat()
+}
+
 // ── 「更多」菜单：语音、穿透、会话、设置收敛于此（日志入口在 设置 → 诊断） ──
 const showMoreMenu = ref(false)
 const moreButtonRef = ref<HTMLButtonElement | null>(null)
@@ -496,7 +506,8 @@ async function handleSelectCharacter(charId: string) {
         <WorkspaceChip v-if="!noCharacter" />
         <!-- 陪伴状态工具栏：聊天 / 会话 / 更多（换角色、语音、穿透、设置收敛进更多；日志入口在 设置 → 诊断） -->
         <div class="toolbar" data-pet-solid>
-          <button class="tool-btn" :disabled="noCharacter" @click="openChat" :aria-label="t('app.aria.chatInput')">
+          <button class="tool-btn" :disabled="noCharacter" @click="toggleChat" :aria-expanded="chat.showInput"
+            :aria-label="t('app.aria.chatInput')">
             <i class="fas fa-comment btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.chat') }}</span>
           </button>
