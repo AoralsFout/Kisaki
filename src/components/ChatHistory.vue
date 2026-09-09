@@ -176,10 +176,26 @@ function jumpToLatestNow() {
 
 let sessionSettleVersion = 0
 let collapseRaf = 0
+let collapsedLayoutRaf = 0
 
 function cancelCollapseScroll() {
   if (collapseRaf) cancelAnimationFrame(collapseRaf)
   collapseRaf = 0
+}
+
+/** 折叠态内容尺寸变化后，在浏览器完成本帧布局时重测并重新对齐最新消息。 */
+function scheduleCollapsedLayoutRefresh() {
+  if (expanded.value || sessionSwitching.value) return
+  if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
+  collapsedLayoutRaf = requestAnimationFrame(() => {
+    collapsedLayoutRaf = 0
+    measureCollapsed()
+    jumpToLatestNow()
+  })
+}
+
+function onThinkingToggle() {
+  scheduleCollapsedLayoutRefresh()
 }
 
 /**
@@ -215,6 +231,8 @@ function onHistoryImageLoad() {
 onUnmounted(() => {
   sessionSettleVersion++
   cancelCollapseScroll()
+  if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
+  collapsedLayoutRaf = 0
   layoutResizeObserver?.disconnect()
   layoutResizeObserver = null
   window.removeEventListener('resize', onViewportResize)
@@ -235,14 +253,11 @@ watch(
   },
 )
 watch(
-  () => chat.currentBubbleText.length,
+  () => [chat.currentBubbleText.length, chat.currentThinking.length] as const,
   () => {
     if (!props.visible) return
     if (expanded.value) scrollToLatest('auto')
-    else nextTick(() => {
-      measureCollapsed()
-      scrollToLatest('auto')
-    })
+    else scheduleCollapsedLayoutRefresh()
   },
 )
 watch(
@@ -339,7 +354,7 @@ watch(expanded, (v) => {
           </div>
         </div>
         <!-- 思考内容（仅 assistant 消息可能有） -->
-        <details v-if="msg.thinking" class="thinking-block">
+        <details v-if="msg.thinking" class="thinking-block" @toggle="onThinkingToggle">
           <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
           <div class="thinking-text" data-selectable>{{ msg.thinking }}</div>
         </details>
@@ -358,7 +373,7 @@ watch(expanded, (v) => {
         <div class="item-header">
           <div class="msg-role-label">{{ assistantLabel() }}</div>
         </div>
-        <details v-if="chat.currentThinking" class="thinking-block">
+        <details v-if="chat.currentThinking" class="thinking-block" @toggle="onThinkingToggle">
           <summary class="thinking-summary">{{ t('chat.history.thinking') }}</summary>
           <div class="thinking-text" data-selectable>{{ chat.currentThinking }}</div>
         </details>

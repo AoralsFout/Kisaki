@@ -111,6 +111,75 @@ describe('ChatHistory 历史列表', () => {
     expect(bottomArea).toMatch(/justify-content:\s*flex-end;/)
   })
 
+  it('思考过程 toggle 后按最新气泡高度重算，并在超限时恢复展开入口', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.messages.push({ id: 'm-thinking', role: 'assistant', text: '正文', thinking: '思考内容', timestamp: 0 })
+    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(120)
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('history-item')) {
+        return { x: 0, y: 0, width: 300, height: 0, top: 0, right: 300, bottom: 0, left: 0, toJSON: () => ({}) }
+      }
+      const details = this.querySelector<HTMLDetailsElement>('.thinking-block')
+      const height = details?.open ? 180 : 40
+      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
+    })
+
+    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    await flushPromises()
+    const details = wrapper.get<HTMLDetailsElement>('.thinking-block')
+    details.element.open = true
+    await details.trigger('toggle')
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 120px')
+    expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
+    expect(wrapper.find('.collapsed-more').exists()).toBe(true)
+
+    details.element.open = false
+    await details.trigger('toggle')
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 40px')
+    expect(wrapper.get('.chat-history').classes()).not.toContain('latest-overflowing')
+
+    rectSpy.mockRestore()
+    viewportSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('pending 思考块已展开时，currentThinking 增长会持续更新折叠高度', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.isProcessing = true
+    chat.currentThinking = '短思考'
+    const viewportSpy = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(120)
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('history-item')) {
+        return { x: 0, y: 0, width: 300, height: 0, top: 0, right: 300, bottom: 0, left: 0, toJSON: () => ({}) }
+      }
+      const details = this.querySelector<HTMLDetailsElement>('.thinking-block')
+      const height = details?.open ? (chat.currentThinking.length > 20 ? 180 : 40) : 32
+      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
+    })
+
+    const wrapper = mount(ChatHistory, { props: { visible: true } })
+    await flushPromises()
+    const details = wrapper.get<HTMLDetailsElement>('.thinking-block')
+    details.element.open = true
+    await details.trigger('toggle')
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 40px')
+
+    chat.currentThinking = '这是一段持续增长的思考内容，已经超过折叠区域的可用高度。'
+    await flushPromises()
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(wrapper.get('.chat-history').attributes('style')).toContain('--collapsed-h: 120px')
+    expect(wrapper.get('.chat-history').classes()).toContain('latest-overflowing')
+
+    rectSpy.mockRestore()
+    viewportSpy.mockRestore()
+    wrapper.unmount()
+  })
+
   it('图片缩略图可用键盘聚焦并打开带焦点管理的大图查看器', async () => {
     const { useChatStore } = await import('../stores/chat')
     const chat = useChatStore()
