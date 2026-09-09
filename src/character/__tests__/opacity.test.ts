@@ -24,6 +24,12 @@ describe('character opacity wheel', () => {
     expect(getCharacterOpacity()).toBe(0.2)
   })
 
+  it('keeps explicit adjustments available when hover-wheel adjustment is disabled', () => {
+    setCharacterOpacityWheelEnabled(false)
+    expect(adjustCharacterOpacity(0.2, -1)).toBe(0.3)
+    expect(getCharacterOpacity()).toBe(0.3)
+  })
+
   it('falls back to fully opaque for invalid stored values', () => {
     localStorage.setItem('deskpet-character-opacity', 'invalid')
     expect(getCharacterOpacity()).toBe(1)

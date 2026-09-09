@@ -43,6 +43,7 @@ import { getAllWindows, getCurrentWindow, PhysicalPosition } from '@tauri-apps/a
 import { listen, emitTo } from '@tauri-apps/api/event'
 import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
 import { initWindowState } from './utils/windowState'
+import { adjustCharacterOpacity, getCharacterOpacity } from './character/opacity'
 
 const log = createLogger('App')
 
@@ -57,6 +58,9 @@ const charReady = ref(false)
 const noCharacter = computed(() => charReady.value && charStore.availableList.length === 0)
 
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
+// 透明度由 App 单一持有，角色组件通过 update:opacity 回传悬浮滚轮调整结果。
+const characterOpacity = ref(getCharacterOpacity())
+const characterOpacityPercent = computed(() => Math.round(characterOpacity.value * 100))
 
 // 聊天 = 对话框从底部弹出 + 历史对话向上展开到全高（两者由 chat.showInput 驱动）
 const showSession = ref(false)
@@ -127,6 +131,21 @@ function onCanvasHeightKeydown(event: KeyboardEvent) {
   event.preventDefault()
   event.stopPropagation()
   characterTopRatio.value = clampCharacterTopRatio(characterTopRatio.value + delta)
+}
+
+/** 工具栏显式调整透明度：不受“悬浮角色滚轮”设置开关影响。 */
+function onCharacterOpacityWheel(event: WheelEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  characterOpacity.value = adjustCharacterOpacity(characterOpacity.value, event.deltaY)
+}
+
+function onCharacterOpacityKeydown(event: KeyboardEvent) {
+  const deltaY = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0
+  if (!deltaY) return
+  event.preventDefault()
+  event.stopPropagation()
+  characterOpacity.value = adjustCharacterOpacity(characterOpacity.value, deltaY)
 }
 
 /** 打开对话框（历史随对话框展开）；会话/换角色等其它浮层互斥关闭 */
@@ -463,7 +482,8 @@ async function handleSelectCharacter(charId: string) {
     <!-- 边框跟随穿透模式（而非光标瞬时命中）：实体态常显作状态指示，穿透态始终隐藏 -->
     <div class="character-area" :class="{ 'is-passthrough': passthroughOn }">
       <div class="character-canvas" :style="characterCanvasStyle">
-        <Character v-if="charReady && !noCharacter" ref="characterRef" @click="handleCharacterClick" />
+        <Character v-if="charReady && !noCharacter" ref="characterRef" :opacity="characterOpacity"
+          @update:opacity="characterOpacity = $event" @click="handleCharacterClick" />
       </div>
 
       <!-- 零角色引导：无任何角色时提示添加，聊天被禁用 -->
@@ -565,6 +585,15 @@ async function handleSelectCharacter(charId: string) {
             @keydown="onCanvasHeightKeydown">
             <i class="fas fa-up-down btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.resizeCanvas') }}</span>
+          </button>
+          <button class="tool-btn" type="button"
+            :aria-label="t('app.aria.adjustCharacterOpacity', { value: characterOpacityPercent })"
+            :title="t('app.aria.adjustCharacterOpacity', { value: characterOpacityPercent })"
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            @wheel.prevent.stop="onCharacterOpacityWheel"
+            @keydown="onCharacterOpacityKeydown">
+            <i class="fas fa-sun btn-icon"></i>
+            <span class="btn-label">{{ t('app.toolbar.adjustOpacity') }}</span>
           </button>
         </div>
 

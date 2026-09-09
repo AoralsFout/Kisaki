@@ -44,6 +44,7 @@ export default {
       more: 'More',
       moveWindow: 'Move window',
       resizeCanvas: 'Canvas height',
+      adjustOpacity: 'Character opacity',
     },
     aria: {
       chatInput: 'Open chat panel',
@@ -53,6 +54,7 @@ export default {
       more: 'Open more menu',
       moveWindow: 'Drag window',
       resizeCharacterCanvas: 'Resize character canvas height',
+      adjustCharacterOpacity: 'Adjust character opacity: {value}%',
     },
     stop: 'Stop',
     configTodo: 'Finish initial setup',

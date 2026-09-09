@@ -47,6 +47,7 @@ export default {
       more: '更多',
       moveWindow: '移动窗口',
       resizeCanvas: '画布高度',
+      adjustOpacity: '角色透明度',
     },
     aria: {
       chatInput: '打开聊天面板',
@@ -56,6 +57,7 @@ export default {
       more: '打开更多菜单',
       moveWindow: '拖动窗口',
       resizeCharacterCanvas: '调整角色画布高度',
+      adjustCharacterOpacity: '调整角色透明度：{value}%',
     },
     stop: '停止',
     configTodo: '完成初始配置',

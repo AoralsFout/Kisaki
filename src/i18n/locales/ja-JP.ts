@@ -44,6 +44,7 @@ export default {
       more: 'その他',
       moveWindow: 'ウィンドウ移動',
       resizeCanvas: 'キャンバス高さ',
+      adjustOpacity: 'キャラクター透明度',
     },
     aria: {
       chatInput: 'チャットパネルを開く',
@@ -53,6 +54,7 @@ export default {
       more: 'その他メニューを開く',
       moveWindow: 'ウィンドウをドラッグ',
       resizeCharacterCanvas: 'キャラクターキャンバスの高さを調整',
+      adjustCharacterOpacity: 'キャラクター透明度を調整：{value}%',
     },
     stop: '停止',
     configTodo: '初期設定を完了',

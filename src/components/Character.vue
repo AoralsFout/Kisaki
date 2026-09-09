@@ -9,35 +9,37 @@
  * App.vue 通过 commandBus 的 getCharacterController()（立绘）/ agent 上下文（Live2D）
  * 访问控制器，不再依赖本组件的实例暴露。
  */
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useCharacterStore } from '../character'
 import IllustrationStage from './IllustrationStage.vue'
 import Live2DStage from './Live2DStage.vue'
 import {
   adjustCharacterOpacity,
-  getCharacterOpacity,
   isCharacterOpacityWheelEnabled,
 } from '../character/opacity'
 
+const props = defineProps<{
+  opacity: number
+}>()
+
 const emit = defineEmits<{
   click: [event: MouseEvent]
+  'update:opacity': [opacity: number]
 }>()
 
 const charStore = useCharacterStore()
 const isLive2d = computed(() => charStore.render === 'live2d')
-const opacity = ref(getCharacterOpacity())
-
 function handleWheel(event: WheelEvent) {
   // 穿透命中仍由 img/canvas 的 alpha 掩码决定；这里只改变渲染透明度。
   if (!isCharacterOpacityWheelEnabled()) return
   event.preventDefault()
   event.stopPropagation()
-  opacity.value = adjustCharacterOpacity(opacity.value, event.deltaY)
+  emit('update:opacity', adjustCharacterOpacity(props.opacity, event.deltaY))
 }
 </script>
 
 <template>
-  <div class="character-renderer" :style="{ opacity }" @wheel="handleWheel">
+  <div class="character-renderer" :style="{ opacity: props.opacity }" @wheel="handleWheel">
     <Live2DStage v-if="isLive2d" @click="emit('click', $event)" />
     <IllustrationStage v-else @click="emit('click', $event)" />
   </div>
