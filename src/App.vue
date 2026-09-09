@@ -481,7 +481,7 @@ async function handleSelectCharacter(charId: string) {
     <ToolActivityList v-if="!noCharacter" />
 
     <!-- 底部交互区 -->
-    <div class="bottom-area" :class="{ 'chat-open': chat.showInput }">
+    <div class="bottom-area">
       <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
       <ToolConfirm v-if="!noCharacter" />
       <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
@@ -700,29 +700,17 @@ async function handleSelectCharacter(charId: string) {
 /* ---- 底部交互区 ---- */
 .bottom-area {
   position: absolute;
+  top: 0;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 50;
   display: flex;
   flex-direction: column;
+  /* 全屏父级在折叠态也必须把整组控件压在窗口底部。 */
+  justify-content: flex-end;
   align-items: center;
   pointer-events: none;
-}
-
-/* 对话框展开时底部区域占满窗口，让历史列表真正顶到窗口顶部 */
-.bottom-area.chat-open {
-  top: 0;
-  bottom: 0;
-}
-
-.bottom-area.chat-open :deep(.chat-history) {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.bottom-area.chat-open :deep(.chat-history.expanded) {
-  grid-template-rows: minmax(0, 1fr);
 }
 
 .bottom-area>* {

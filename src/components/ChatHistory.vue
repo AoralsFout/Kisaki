@@ -378,6 +378,9 @@ watch(expanded, (v) => {
   position: relative;
   width: 100%;
   max-width: 600px;
+  /* 父级始终覆盖视口；只过渡 flex-grow，避免展开时父级几何先跳变。 */
+  flex: 0 0 var(--collapsed-h, 100vh);
+  min-height: 0;
   /* 容器整体为实体区域：背景透明但空隙不穿透，悬停空隙的滚轮转发给列表滚动 */
   background: transparent;
   /* 折叠/展开用 grid 行高过渡：0 → 一条消息高度 → 全高，在同一元素上连贯动画。
@@ -385,7 +388,7 @@ watch(expanded, (v) => {
      列表自身始终保持为滚动容器（见 .message-list），程序化滚到底在两种状态下都可靠。 */
   display: grid;
   grid-template-rows: 0px;
-  transition: grid-template-rows 0.35s ease;
+  transition: flex-grow 0.35s ease, grid-template-rows 0.35s ease;
 }
 
 /* 折叠态：仅最新一条消息的高度（动态量测） */
@@ -395,7 +398,8 @@ watch(expanded, (v) => {
 
 /* 展开态：对话框弹出时生长到全高 */
 .chat-history.expanded {
-  grid-template-rows: 45vh;
+  flex-grow: 1;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .chat-history.session-switching {

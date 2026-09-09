@@ -1,6 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import ChatHistory from './ChatHistory.vue'
 
 vi.mock('vue-i18n', async (importOriginal) => ({
@@ -71,6 +74,41 @@ describe('ChatHistory 历史列表', () => {
     chat.isProcessing = false
     chat.showInput = false
     wrapper.unmount()
+  })
+
+  it('展开过渡期间持续钉住最新消息，结束时再校准滚动锚点', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.messages.push({ id: 'm-anchor', role: 'assistant', text: '滚动锚点', timestamp: 0 })
+
+    const wrapper = mount(ChatHistory, { attachTo: document.body, props: { visible: true } })
+    await flushPromises()
+    const history = wrapper.get('.chat-history').element as HTMLElement
+    const list = wrapper.get<HTMLElement>('.message-list').element
+    const scrollTo = vi.fn()
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 800 })
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollTo })
+
+    chat.showInput = true
+    await nextTick()
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(list.scrollTop).toBe(800)
+
+    const transitionEnd = new Event('transitionend')
+    Object.defineProperty(transitionEnd, 'propertyName', { value: 'grid-template-rows' })
+    history.dispatchEvent(transitionEnd)
+    await nextTick()
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 800, behavior: 'auto' })
+
+    wrapper.unmount()
+  })
+
+  it('折叠态的全屏底部容器使用底部对齐，避免控件组落到窗口顶部', async () => {
+    const appSource = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8')
+    const bottomArea = appSource.match(/\.bottom-area\s*\{([\s\S]*?)\n\}/)?.[1] || ''
+    expect(bottomArea).toContain('top: 0;')
+    expect(bottomArea).toContain('bottom: 0;')
+    expect(bottomArea).toMatch(/justify-content:\s*flex-end;/)
   })
 
   it('图片缩略图可用键盘聚焦并打开带焦点管理的大图查看器', async () => {
