@@ -103,4 +103,17 @@ describe('CharacterRuntime', () => {
     expect(runtime.snapshot().look?.emotion).toBe('neutral')
     expect(renderer.dispose).toHaveBeenCalledOnce()
   })
+
+  it('adopts renderer-discovered capabilities and normalizes unsupported state', () => {
+    const runtime = new CharacterRuntime()
+    runtime.selectCharacter(character())
+
+    runtime.updateCapabilities({ emotions: ['smile', 'angry'] })
+
+    expect(runtime.snapshot()).toMatchObject({
+      look: { emotion: 'smile' },
+      capabilities: { emotions: ['smile', 'angry'] },
+      revision: 2,
+    })
+  })
 })

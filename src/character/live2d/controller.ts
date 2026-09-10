@@ -13,6 +13,7 @@ import { Priority, type Live2DSprite } from 'easy-live2d'
 import { useCharacterStore } from '../../stores/character'
 import { ALL_POSE_KEYS, type PoseKey } from '../poses'
 import type { Live2DManifest } from './manifest'
+import type { CharacterRuntimeSnapshot } from '../../application/character/characterRuntime'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('Live2DCtrl')
@@ -26,6 +27,17 @@ export function useLive2DController() {
   let manifest: Live2DManifest | null = null
   /** Live2DStage 注入：屏幕姿态变化后重新适配 sprite 变换 */
   let onScreenPose: (() => void) | null = null
+  let detachRenderer: (() => void) | null = null
+
+  function applyRuntimeSnapshot(snapshot: CharacterRuntimeSnapshot) {
+    if (!sprite || !manifest || !snapshot.look) return
+    const expression = snapshot.look.emotion
+    if (expression && expression !== currentExpression.value && manifest.expressions.some(e => e.id === expression)) {
+      sprite.setExpression({ expressionId: expression })
+      currentExpression.value = expression
+    }
+    onScreenPose?.()
+  }
 
   /** 模型 ready 后由 Live2DStage 注入 sprite + manifest */
   function attach(s: Live2DSprite, mf: Live2DManifest, opts?: { onScreenPose?: () => void }) {
@@ -33,12 +45,14 @@ export function useLive2DController() {
     manifest = mf
     onScreenPose = opts?.onScreenPose ?? null
     ready.value = true
-    // 恢复会话中保存的表情（复用 emotion 字段）
-    const restored = charStore.currentEmotion
-    if (restored && mf.expressions.some(e => e.id === restored)) setExpression(restored)
+    charStore.updateRuntimeCapabilities({ emotions: mf.expressions.map(expression => expression.id) })
+    detachRenderer?.()
+    detachRenderer = charStore.attachRenderer('live2d', { apply: applyRuntimeSnapshot })
   }
 
   function detach() {
+    detachRenderer?.()
+    detachRenderer = null
     sprite = null
     manifest = null
     onScreenPose = null
@@ -53,9 +67,7 @@ export function useLive2DController() {
       log.warn("live2_dctrl.set_expression.warn", `未知表情: ${id}`, undefined, { id: id })
       return false
     }
-    sprite.setExpression({ expressionId: id })
-    currentExpression.value = id
-    charStore.applyVisualState({ emotion: id }) // 复用 emotion 字段持久化
+    charStore.applyVisualState({ emotion: id })
     log.info("live2_dctrl.set_expression.info", `表情切换: ${id}`, { id: id })
     return true
   }
@@ -76,7 +88,6 @@ export function useLive2DController() {
   function setScreenPose(key: PoseKey) {
     if (!ALL_POSE_KEYS.includes(key)) return
     charStore.applyVisualState({ screenPose: key })
-    onScreenPose?.()
     log.info("live2_dctrl.set_screen_pose.info", `屏幕位置: ${key}`, { key: key })
   }
 

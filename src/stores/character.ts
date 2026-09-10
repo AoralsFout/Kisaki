@@ -14,6 +14,7 @@ import type { PoseKey } from '../character/poses'
 import { createLogger } from '../utils/logger'
 import {
   CharacterRuntime,
+  type CharacterCapabilities,
   type CharacterRenderer,
   type CharacterRuntimeSnapshot,
   type CharacterRenderKind,
@@ -190,12 +191,16 @@ export const useCharacterStore = defineStore('character', () => {
     return runtime.snapshot()
   }
 
+  function updateRuntimeCapabilities(change: Partial<CharacterCapabilities>): void {
+    runtime.updateCapabilities(change)
+  }
+
   return {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName, getCharacterRender,
-    applyVisualState, getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot,
+    applyVisualState, getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot, updateRuntimeCapabilities,
     loadCharacter, refreshList, init,
   }
 })

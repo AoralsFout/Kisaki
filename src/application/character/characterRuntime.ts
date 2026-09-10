@@ -101,6 +101,28 @@ export class CharacterRuntime {
     this.publish()
   }
 
+  updateCapabilities(change: Partial<CharacterCapabilities>): void {
+    if (!this.state.look || !this.state.capabilities) throw new Error('No character is selected')
+    const capabilities: CharacterCapabilities = {
+      ...this.state.capabilities,
+      ...clone(change),
+    }
+    const supportedOrFirst = (value: string, values: readonly string[]) => (
+      values.includes(value) ? value : (values[0] ?? '')
+    )
+    const look: CharacterLook = {
+      emotion: supportedOrFirst(this.state.look.emotion, capabilities.emotions),
+      stance: supportedOrFirst(this.state.look.stance, capabilities.stances),
+      costume: supportedOrFirst(this.state.look.costume, capabilities.costumes),
+      screenPose: supportedOrFirst(this.state.look.screenPose, capabilities.screenPoses),
+    }
+    this.assertLook(look, capabilities)
+    this.state.capabilities = capabilities
+    this.state.look = look
+    this.state.revision++
+    this.publish()
+  }
+
   attachRenderer(kind: CharacterRenderKind, renderer: CharacterRenderer): () => void {
     const previous = this.renderers.get(kind)
     if (previous) void previous.tail.then(() => previous.renderer.dispose?.()).catch(this.onRendererError)
