@@ -17,10 +17,13 @@ const character = (id: string) => ({
   version: 2,
   prompt: `${id} prompt`,
   render: 'illustration' as const,
-  poses: ['default'],
-  emotions: ['normal'],
+  poses: ['default', 'wave'],
+  emotions: ['normal', 'happy'],
   costumes: ['default'],
-  images: [],
+  images: [
+    { file: 'default.png', pose: 'default', costume: 'default', emotions: ['normal'] },
+    { file: 'wave.png', pose: 'wave', costume: 'default', emotions: ['happy'] },
+  ],
 })
 
 describe('useCharacterStore init', () => {
@@ -81,5 +84,22 @@ describe('useCharacterStore init', () => {
     await Promise.resolve()
 
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ characterId: 'chryso' }))
+  })
+
+  it('在 Store 边界把情绪意图解析为可渲染的立绘组合', async () => {
+    const store = useCharacterStore()
+    await store.init('chryso')
+
+    expect(store.setVisualLook({ emotion: 'happy' })).toBe(true)
+    expect(store.getRuntimeSnapshot().look).toMatchObject({ emotion: 'happy', stance: 'wave' })
+  })
+
+  it('拒绝不存在的立绘组合且不污染 Runtime 状态', async () => {
+    const store = useCharacterStore()
+    await store.init('chryso')
+    const before = store.getRuntimeSnapshot()
+
+    expect(store.setVisualLook({ stance: 'wave', emotion: 'normal' })).toBe(false)
+    expect(store.getRuntimeSnapshot()).toEqual(before)
   })
 })

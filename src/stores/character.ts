@@ -9,6 +9,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { clearCache, loadCharacterJson, listCharacterSummaries, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
+import { findImages } from '../character/config'
 import { ALL_POSE_KEYS, DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
 import { createLogger } from '../utils/logger'
@@ -105,6 +106,8 @@ export const useCharacterStore = defineStore('character', () => {
           stances: charData.poses,
           costumes: charData.costumes,
           screenPoses: ALL_POSE_KEYS,
+          motions: [],
+          emotionDescriptions: {},
         },
         defaults: {
           emotion: supported(pending?.emotion, charData.emotions, defaultEmotion),
@@ -195,12 +198,67 @@ export const useCharacterStore = defineStore('character', () => {
     runtime.updateCapabilities(change)
   }
 
+  /**
+   * 处理来自 UI/Agent 的外观意图。Runtime 是状态 Owner；Store 只负责把立绘的
+   * 非法标签组合解析为可渲染组合，避免调用方依赖具体 renderer controller。
+   */
+  function setVisualLook(change: Partial<Pick<CharacterVisualState, 'emotion' | 'stance' | 'costume'>>): boolean {
+    const charData = data.value
+    const snapshot = runtime.snapshot()
+    if (!charData || !snapshot.look) return false
+
+    let stance = change.stance ?? snapshot.look.stance
+    const emotion = change.emotion ?? snapshot.look.emotion
+    const costume = change.costume ?? snapshot.look.costume
+
+    if ((charData.render ?? 'illustration') === 'illustration') {
+      let matches = findImages(charData, { pose: stance, emotion, costume })
+      if (!matches.length && change.emotion && change.stance === undefined) {
+        const compatibleStance = charData.poses.find(candidate => (
+          findImages(charData, { pose: candidate, emotion, costume }).length > 0
+        ))
+        if (compatibleStance) {
+          stance = compatibleStance
+          matches = findImages(charData, { pose: stance, emotion, costume })
+        }
+      }
+      if (!matches.length) return false
+    }
+
+    try {
+      runtime.setLook({ stance, emotion, costume })
+      return true
+    } catch (error) {
+      log.warn('character_store.set_visual_look.warn', '角色外观能力校验失败', error)
+      return false
+    }
+  }
+
+  function setScreenPose(screenPose: PoseKey): boolean {
+    if (!ALL_POSE_KEYS.includes(screenPose)) return false
+    try {
+      runtime.setLook({ screenPose })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function hasActiveRenderer(): boolean {
+    return runtime.hasActiveRenderer()
+  }
+
+  function playMotion(group: string, index = 0): Promise<boolean> {
+    return runtime.executeRendererCommand({ type: 'play-motion', group, index })
+  }
+
   return {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName, getCharacterRender,
-    applyVisualState, getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot, updateRuntimeCapabilities,
+    applyVisualState, setVisualLook, setScreenPose, playMotion,
+    getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot, updateRuntimeCapabilities, hasActiveRenderer,
     loadCharacter, refreshList, init,
   }
 })

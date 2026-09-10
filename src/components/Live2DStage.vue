@@ -3,13 +3,12 @@
  * Live2D 桌宠舞台
  *
  * 用共享的 useLive2DScene 渲染当前角色模型，叠加桌宠专属副作用：模型 ready 后
- * 注册 Live2D 控制器（供 AI 工具）+ 启动穿透掩码快照；卸载时解绑。
+ * 连接 Live2D renderer adapter + 启动穿透掩码快照；卸载时解绑。
  * 屏幕姿态变化由 scene 监听 charStore.currentScreenPose 自动重排。
  */
 import { ref } from 'vue'
 import { useCharacterStore, useLive2DController } from '../character'
 import { useLive2DScene } from '../character/live2d/scene'
-import { setAgentLive2DController, setAgentLive2DManifest } from '../agent'
 import { startLive2DMask, stopLive2DMask } from '../passthrough/live2dMask'
 import { setVoicePlayer } from '../tts'
 
@@ -33,15 +32,11 @@ const scene = useLive2DScene(
   {
     onReady: (sprite, manifest) => {
       controller.attach(sprite, manifest)
-      setAgentLive2DController(controller)
-      setAgentLive2DManifest(manifest)
       setVoicePlayer((url, signal) => controller.speakVoice(url, signal)) // TTS 口型同步
       startLive2DMask()
     },
     onDispose: () => {
       controller.detach()
-      setAgentLive2DController(null)
-      setAgentLive2DManifest(null)
       setVoicePlayer(null)
       stopLive2DMask()
     },

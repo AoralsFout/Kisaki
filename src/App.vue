@@ -19,13 +19,12 @@ import CommandExecution from './components/CommandExecution.vue'
 import Onboarding from './components/Onboarding.vue'
 import { useChatStore, setChatCharacterIdentity } from './stores/chat'
 import { useSessionStore } from './stores/session'
-import { useCharacterStore, initCharacterDataDir, getCharacterController } from './character'
+import { useCharacterStore, initCharacterDataDir } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure, isConfigValid } from './ai'
 import type { ChatInputPayload } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
 import { resolveDisplayLanguage } from './stores/language'
-import { getAgentLive2DController } from './agent'
 import { createLogger } from './utils/logger'
 import {
   WINDOW_SETTINGS,
@@ -368,28 +367,26 @@ onMounted(async () => {
     const channel = new BroadcastChannel(CHANNEL_DESKPET_DEV)
     channel.onmessage = (event) => {
       const { type, payload } = event.data ?? {}
-      const l2dCtrl = getAgentLive2DController()
       if (type === 'set-pose') {
-        l2dCtrl?.setScreenPose(payload.key as any)
-        getCharacterController()?.setScreenPose(payload.key as any)
+        charStore.setScreenPose(payload.key as any)
         return
       }
-      if (type === 'set-expression') { l2dCtrl?.setExpression(payload.expression as string); return }
-      if (type === 'play-motion') { l2dCtrl?.playMotion(payload.group as string, payload.index ?? 0); return }
-      if (type === 'set-stance') { getCharacterController()?.setPoseTag(payload.stance as string); return }
-      if (type === 'set-emotion') { getCharacterController()?.setEmotion(payload.emotion as string); return }
-      if (type === 'set-costume') { getCharacterController()?.setCostume(payload.costume as string); return }
+      if (type === 'set-expression') { charStore.setVisualLook({ emotion: payload.expression as string }); return }
+      if (type === 'play-motion') { void charStore.playMotion(payload.group as string, payload.index ?? 0); return }
+      if (type === 'set-stance') { charStore.setVisualLook({ stance: payload.stance as string }); return }
+      if (type === 'set-emotion') { charStore.setVisualLook({ emotion: payload.emotion as string }); return }
+      if (type === 'set-costume') { charStore.setVisualLook({ costume: payload.costume as string }); return }
       if (type === 'request-state') {
-        const ctrl = getCharacterController()
+        const snapshot = charStore.getRuntimeSnapshot()
         channel.postMessage({
           type: 'state-update',
           payload: {
             currentId: charStore.currentId,
-            poseTag: ctrl?.currentPoseTag.value ?? '',
-            emotion: ctrl?.currentEmotion.value ?? '',
-            costume: ctrl?.currentCostume.value ?? '',
-            screenPose: (ctrl ?? l2dCtrl)?.charStore?.currentScreenPose ?? 'full-center',
-            expression: l2dCtrl?.currentExpression.value ?? '',
+            poseTag: snapshot.look?.stance ?? '',
+            emotion: snapshot.look?.emotion ?? '',
+            costume: snapshot.look?.costume ?? '',
+            screenPose: snapshot.look?.screenPose ?? 'full-center',
+            expression: snapshot.render === 'live2d' ? (snapshot.look?.emotion ?? '') : '',
           },
         })
       }
@@ -419,7 +416,7 @@ function handleCharacterClick() {
 
 async function handleSend(payload: ChatInputPayload): Promise<boolean> {
   if (noCharacter.value || chat.isProcessing) return false
-  if (charStore.render === 'illustration' && !getCharacterController()) return false
+  if (!charStore.hasActiveRenderer()) return false
   // 消息一经接受立即收起对话框（历史折叠回一条消息高度），不等生成完成；
   // 被拒绝（未配置/断网/处理中）时重新弹出，草稿与错误提示仍保留在输入框内
   chat.closeInput()
@@ -464,14 +461,8 @@ async function openSettingsWindow(tab?: string) {
 
 async function handleSelectCharacter(charId: string) {
   if (!sessionStore.canChangeCharacter || charId === charStore.currentId) return
-  const ctrl = getCharacterController()
-  if (ctrl) {
-    await ctrl.switchCharacter(charId)
-  } else {
-    // Live2D 角色无立绘控制器，走渲染无关切换
-    await charStore.loadCharacter(charId, true)
-    sessionStore.saveCurrentSession()
-  }
+  await charStore.loadCharacter(charId, true)
+  sessionStore.saveCurrentSession()
   chat.resetContext()
   // resetContext 会清除旧角色人设；切换完成后将新角色人设写入新上下文。
   applyCharacterPersona()

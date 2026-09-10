@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { extname, join, relative } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const SOURCE_ROOT = join(process.cwd(), 'src')
@@ -20,7 +20,7 @@ function sourceFiles(root: string): string[] {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name)
     if (entry.isDirectory()) files.push(...sourceFiles(path))
-    else if (['.ts', '.tsx'].includes(extname(entry.name)) && !entry.name.endsWith('.test.ts')) files.push(path)
+    else if (['.ts', '.tsx', '.vue'].includes(extname(entry.name)) && !entry.name.endsWith('.test.ts')) files.push(path)
   }
   return files
 }
@@ -69,5 +69,23 @@ describe('architecture boundaries', () => {
   it('does not allow ChatStore to import SessionStore', () => {
     const chatStore = join(SOURCE_ROOT, 'stores', 'chat.ts')
     expect(importsOf(readFileSync(chatStore, 'utf8'))).not.toContain('./session')
+  })
+
+  it('does not restore the legacy character controller registries', () => {
+    const legacyModules = new Set([
+      join(SOURCE_ROOT, 'character', 'commandBus'),
+      join(SOURCE_ROOT, 'agent', 'context'),
+    ].map(path => path.toLowerCase()))
+    const violations: string[] = []
+
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      for (const dependency of importsOf(readFileSync(file, 'utf8'))) {
+        if (!dependency.startsWith('.')) continue
+        const resolved = resolve(dirname(file), dependency).toLowerCase()
+        if (legacyModules.has(resolved)) violations.push(`${relative(SOURCE_ROOT, file)} -> ${dependency}`)
+      }
+    }
+
+    expect(violations).toEqual([])
   })
 })

@@ -10,6 +10,8 @@ function character(overrides: Partial<CharacterSelection> = {}): CharacterSelect
       stances: ['idle', 'wave'],
       costumes: ['default', 'formal'],
       screenPoses: ['center', 'left'],
+      motions: [],
+      emotionDescriptions: {},
     },
     defaults: {
       emotion: 'neutral',
@@ -115,5 +117,18 @@ describe('CharacterRuntime', () => {
       capabilities: { emotions: ['smile', 'angry'] },
       revision: 2,
     })
+  })
+
+  it('serializes transient commands through the active renderer', async () => {
+    const execute = vi.fn(async () => true)
+    const runtime = new CharacterRuntime()
+    runtime.selectCharacter(character({ render: 'live2d' }))
+    runtime.attachRenderer('live2d', { apply: vi.fn(), execute })
+
+    const result = await runtime.executeRendererCommand({ type: 'play-motion', group: 'Idle', index: 1 })
+
+    expect(result).toBe(true)
+    expect(execute).toHaveBeenCalledWith({ type: 'play-motion', group: 'Idle', index: 1 })
+    expect(runtime.hasActiveRenderer()).toBe(true)
   })
 })

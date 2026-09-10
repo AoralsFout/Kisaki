@@ -5,10 +5,8 @@
  * context 等内部细节。后续替换 Agent 实现时只需修改本文件。
  */
 import type { ToolDefinition, ToolCall, ToolResult } from './types'
-import type { CharacterData } from '../character/loader'
-import { getDefinitions, getTool } from './registry'
+import { getDefinitions, getTool, type CharacterToolContext } from './registry'
 import { executeToolCall } from './executor'
-import { setAgentCharData } from './context'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentSvc')
@@ -16,23 +14,21 @@ const log = createLogger('AgentSvc')
 /** Agent 服务的公开接口 */
 export interface AgentService {
   /** 获取所有工具定义（含角色枚举值注入） */
-  getToolDefinitions(charData?: CharacterData | null, options?: { hasWorkspace?: boolean }): ToolDefinition[]
+  getToolDefinitions(context: CharacterToolContext): ToolDefinition[]
   /** 执行单个工具调用 */
   execute(tc: ToolCall): Promise<ToolResult>
   /** 从文本中提取工具调用（兜底方案） */
   extractTextToolCalls(text: string): ToolCall[]
   /** 从文本中移除工具调用 */
   stripTextToolCalls(text: string): string
-  /** 同步角色数据到工具上下文 */
-  syncCharacterData(data: CharacterData | null): void
   /** 检查工具是否存在 */
   hasTool(name: string): boolean
 }
 
 /** 默认实现 */
 export const agentService: AgentService = {
-  getToolDefinitions(charData, options) {
-    return getDefinitions(charData, options)
+  getToolDefinitions(context) {
+    return getDefinitions(context)
   },
 
   async execute(tc) {
@@ -51,10 +47,6 @@ export const agentService: AgentService = {
       out = out.slice(0, start) + out.slice(end)
     }
     return out.trim()
-  },
-
-  syncCharacterData(data) {
-    setAgentCharData(data)
   },
 
   hasTool(name) {

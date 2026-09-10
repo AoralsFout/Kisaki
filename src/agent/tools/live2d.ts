@@ -1,10 +1,10 @@
 /**
  * Live2D 角色控制工具（独立工具集，仅对 render==='live2d' 的角色提供）
  *
- * 表情/动作的可用枚举由 registry.getDefinitions 从 Live2D manifest 动态注入。
+ * 表情/动作的可用枚举由 registry.getDefinitions 从 CharacterRuntime 能力快照注入。
  */
 import type { Tool } from '../types'
-import { getAgentLive2DController, getAgentLive2DManifest } from '../context'
+import { useCharacterStore } from '../../stores/character'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolLive2D')
@@ -28,13 +28,13 @@ export const setExpressionTool: Tool = {
   },
   handler: async (args) => {
     const id = String(args.expression ?? '')
-    const ctrl = getAgentLive2DController()
-    if (!ctrl) return 'Live2D 控制器未就绪'
-    const mf = getAgentLive2DManifest()
-    if (mf && !mf.expressions.some(e => e.id === id)) {
-      return `不支持的表情「${id}」。可用: ${mf.expressions.map(e => e.id).join('、') || '（无）'}`
+    const store = useCharacterStore()
+    const capabilities = store.getRuntimeSnapshot().capabilities
+    if (!capabilities) return '角色运行时未就绪'
+    if (!capabilities.emotions.includes(id)) {
+      return `不支持的表情「${id}」。可用: ${capabilities.emotions.join('、') || '（无）'}`
     }
-    const ok = ctrl.setExpression(id)
+    const ok = store.setVisualLook({ emotion: id })
     log.info("tool_live2_d.module.info", `set_expression: ${id} → ${ok ? 'ok' : 'fail'}`, { id: id, ok: ok ? 'ok' : 'fail' })
     return ok ? `表情已切换为「${id}」` : `切换表情失败: ${id}`
   },
@@ -61,13 +61,13 @@ export const playMotionTool: Tool = {
   handler: async (args) => {
     const group = String(args.motion ?? '')
     const no = Number.isInteger(args.index) ? Number(args.index) : 0
-    const ctrl = getAgentLive2DController()
-    if (!ctrl) return 'Live2D 控制器未就绪'
-    const mf = getAgentLive2DManifest()
-    if (mf && !mf.motions.some(m => m.group === group)) {
-      return `不支持的动作组「${group}」。可用: ${mf.motions.map(m => m.group).join('、') || '（无）'}`
+    const store = useCharacterStore()
+    const capabilities = store.getRuntimeSnapshot().capabilities
+    if (!capabilities) return '角色运行时未就绪'
+    if (!capabilities.motions.some(motion => motion.group === group)) {
+      return `不支持的动作组「${group}」。可用: ${capabilities.motions.map(motion => motion.group).join('、') || '（无）'}`
     }
-    const ok = ctrl.playMotion(group, no)
+    const ok = await store.playMotion(group, no)
     log.info("tool_live2_d.module.info", `play_motion: ${group}[${no}] → ${ok ? 'ok' : 'fail'}`, { group: group, no: no, ok: ok ? 'ok' : 'fail' })
     return ok ? `已播放动作「${group}」` : `播放动作失败: ${group}`
   },

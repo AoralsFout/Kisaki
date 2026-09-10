@@ -834,20 +834,14 @@ export const useChatStore = defineStore('chat', () => {
     currentThinking.value = ''
     log.trace("chat_store.send_message.trace", `[${_fn}] 气泡状态: showBubble=true text="" isTyping=false`, { fn: _fn })
 
-    // ── 同步角色数据到 agent 上下文 ─────────────────────
-    {
-      const charStore = useCharacterStore()
-      if (charStore.data) {
-        agentService.syncCharacterData(charStore.data)
-        log.trace("chat_store.send_message.trace", `[${_fn}] 角色数据已同步到 agent 上下文 (voice=${charStore.data.voice || '?'} lang=${charStore.data.voiceLanguage || '?'})`, { fn: _fn, char_store_data: charStore.data.voice || '?', char_store_data2: charStore.data.voiceLanguage || '?' })
-      } else {
-        log.trace("chat_store.send_message.trace", `[${_fn}] 无角色数据可同步`, { fn: _fn })
-      }
-    }
-
     // ── 收集工具定义（含 say 说话工具）────────────────────
+    const charStore = useCharacterStore()
     const hasWorkspace = Boolean(chatSessionPort.workspaceGrantId())
-    const tools = [...agentService.getToolDefinitions(undefined, { hasWorkspace }), SAY_TOOL_DEF]
+    const tools = [...agentService.getToolDefinitions({
+      data: charStore.data,
+      capabilities: charStore.getRuntimeSnapshot().capabilities,
+      hasWorkspace,
+    }), SAY_TOOL_DEF]
     log.debug("chat_store.send_message.debug", `[${_fn}] 工具定义数量: ${tools.length} (含 say)`, { fn: _fn, tools_length: tools.length })
     {
       const toolNames = tools.map(t => t.function?.name || '(unnamed)').join(', ')
@@ -1861,7 +1855,9 @@ export const useChatStore = defineStore('chat', () => {
    */
   function inspectContext(): CurrentContextInspection {
     const tools = [
-      ...agentService.getToolDefinitions(useCharacterStore().data, {
+      ...agentService.getToolDefinitions({
+        data: useCharacterStore().data,
+        capabilities: useCharacterStore().getRuntimeSnapshot().capabilities,
         hasWorkspace: Boolean(chatSessionPort.workspaceGrantId()),
       }),
       SAY_TOOL_DEF,

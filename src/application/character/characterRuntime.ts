@@ -12,6 +12,14 @@ export interface CharacterCapabilities {
   stances: readonly string[]
   costumes: readonly string[]
   screenPoses: readonly string[]
+  motions: readonly CharacterMotionCapability[]
+  emotionDescriptions: Readonly<Record<string, string>>
+}
+
+export interface CharacterMotionCapability {
+  group: string
+  count: number
+  description: string
 }
 
 export interface CharacterSelection {
@@ -31,7 +39,14 @@ export interface CharacterRuntimeSnapshot {
 
 export interface CharacterRenderer {
   apply(snapshot: CharacterRuntimeSnapshot): void | Promise<void>
+  execute?(command: CharacterRendererCommand): boolean | Promise<boolean>
   dispose?(): void | Promise<void>
+}
+
+export type CharacterRendererCommand = {
+  type: 'play-motion'
+  group: string
+  index: number
 }
 
 interface RendererSlot {
@@ -146,6 +161,25 @@ export class CharacterRuntime {
 
   async whenRendererSettled(kind: CharacterRenderKind): Promise<void> {
     await this.renderers.get(kind)?.tail
+  }
+
+  hasActiveRenderer(): boolean {
+    return this.state.render !== null && this.renderers.has(this.state.render)
+  }
+
+  async executeRendererCommand(command: CharacterRendererCommand): Promise<boolean> {
+    if (!this.state.render) return false
+    const slot = this.renderers.get(this.state.render)
+    if (!slot?.renderer.execute) return false
+    let result = false
+    slot.tail = slot.tail
+      .then(async () => { result = await slot.renderer.execute!(clone(command)) })
+      .catch(error => {
+        this.onRendererError(error)
+        result = false
+      })
+    await slot.tail
+    return result
   }
 
   private publish(): void {

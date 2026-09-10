@@ -1,9 +1,8 @@
 /**
  * Live2D 角色控制器
  *
- * 包装 easy-live2d 的 Live2DSprite，向 AI 工具暴露表情/动作/屏幕位置控制。
- * 与静态立绘的 useCharacterController 平行；由 Live2DStage 创建、在模型 ready 后
- * attach（注入 sprite + manifest），并注册到 agent 上下文供 Live2D 工具调用。
+ * 包装 easy-live2d 的 Live2DSprite，作为 CharacterRuntime renderer adapter。
+ * 由 Live2DStage 创建、在模型 ready 后 attach（注入 sprite + manifest）。
  *
  * 视觉状态复用 characterStore：表情存 `emotion` 字段、屏幕位置存 `screenPose`
  * （动作是瞬时的，不持久化），从而复用现有会话保存/恢复机制。
@@ -11,9 +10,9 @@
 import { ref } from 'vue'
 import { Priority, type Live2DSprite } from 'easy-live2d'
 import { useCharacterStore } from '../../stores/character'
-import { ALL_POSE_KEYS, type PoseKey } from '../poses'
 import type { Live2DManifest } from './manifest'
 import type { CharacterRuntimeSnapshot } from '../../application/character/characterRuntime'
+import type { CharacterRendererCommand } from '../../application/character/characterRuntime'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('Live2DCtrl')
@@ -39,15 +38,31 @@ export function useLive2DController() {
     onScreenPose?.()
   }
 
+  function executeRuntimeCommand(command: CharacterRendererCommand): boolean {
+    if (command.type === 'play-motion') return playMotion(command.group, command.index)
+    return false
+  }
+
   /** 模型 ready 后由 Live2DStage 注入 sprite + manifest */
   function attach(s: Live2DSprite, mf: Live2DManifest, opts?: { onScreenPose?: () => void }) {
     sprite = s
     manifest = mf
     onScreenPose = opts?.onScreenPose ?? null
     ready.value = true
-    charStore.updateRuntimeCapabilities({ emotions: mf.expressions.map(expression => expression.id) })
+    charStore.updateRuntimeCapabilities({
+      emotions: mf.expressions.map(expression => expression.id),
+      emotionDescriptions: Object.fromEntries(mf.expressions.map(expression => [expression.id, expression.desc])),
+      motions: mf.motions.map(motion => ({
+        group: motion.group,
+        count: motion.count,
+        description: motion.desc,
+      })),
+    })
     detachRenderer?.()
-    detachRenderer = charStore.attachRenderer('live2d', { apply: applyRuntimeSnapshot })
+    detachRenderer = charStore.attachRenderer('live2d', {
+      apply: applyRuntimeSnapshot,
+      execute: executeRuntimeCommand,
+    })
   }
 
   function detach() {
@@ -60,18 +75,6 @@ export function useLive2DController() {
     currentExpression.value = ''
   }
 
-  /** 切换表情（→ sprite.setExpression），校验 manifest */
-  function setExpression(id: string): boolean {
-    if (!sprite || !manifest) return false
-    if (!manifest.expressions.some(e => e.id === id)) {
-      log.warn("live2_dctrl.set_expression.warn", `未知表情: ${id}`, undefined, { id: id })
-      return false
-    }
-    charStore.applyVisualState({ emotion: id })
-    log.info("live2_dctrl.set_expression.info", `表情切换: ${id}`, { id: id })
-    return true
-  }
-
   /** 播放动作（→ sprite.startMotion），校验 manifest */
   function playMotion(group: string, no = 0): boolean {
     if (!sprite || !manifest) return false
@@ -82,13 +85,6 @@ export function useLive2DController() {
     void sprite.startMotion({ group, no, priority: Priority.Normal })
     log.info("live2_dctrl.play_motion.info", `播放动作: ${group}[${no}]`, { group: group, no: no })
     return true
-  }
-
-  /** 设置屏幕位置预设（复用 PoseKey；由 Live2DStage 折算为 sprite 变换） */
-  function setScreenPose(key: PoseKey) {
-    if (!ALL_POSE_KEYS.includes(key)) return
-    charStore.applyVisualState({ screenPose: key })
-    log.info("live2_dctrl.set_screen_pose.info", `屏幕位置: ${key}`, { key: key })
   }
 
   /** Live2D 口型：用 easy-live2d playVoice 播放语音并驱动口型；signal 中止即停 */
@@ -104,20 +100,10 @@ export function useLive2DController() {
     }
   }
 
-  function getState() {
-    return {
-      character: charStore.name,
-      expression: currentExpression.value,
-      screenPose: charStore.currentScreenPose,
-      expressions: manifest?.expressions ?? [],
-      motions: manifest?.motions ?? [],
-    }
-  }
-
   return {
-    ready, currentExpression, charStore,
+    ready,
     attach, detach,
-    setExpression, playMotion, setScreenPose, speakVoice, getState,
+    speakVoice,
   }
 }
 

@@ -3,11 +3,8 @@
  * 角色渲染切换器
  *
  * 按当前角色的 render 字段挂载静态立绘（IllustrationStage）或 Live2D（Live2DStage）。
- * 立绘的控制器/注册逻辑在 IllustrationStage 内；Live2D 的控制器在 Live2DStage 内。
+ * 两个舞台只负责 renderer 生命周期；状态与控制入口由 CharacterRuntime 统一持有。
  * 本组件只负责按渲染类型切换，并向上转发点击事件。
- *
- * App.vue 通过 commandBus 的 getCharacterController()（立绘）/ agent 上下文（Live2D）
- * 访问控制器，不再依赖本组件的实例暴露。
  */
 import { computed } from 'vue'
 import { useCharacterStore } from '../character'

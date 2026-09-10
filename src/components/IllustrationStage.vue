@@ -3,15 +3,13 @@
  * 静态立绘渲染舞台（原 Character.vue 的立绘逻辑，行为不变）
  *
  * 双图叠加实现交叉淡入淡出 + 姿态系统（位置/缩放）。
- * 拥有立绘控制器并注册到 commandBus / agent 上下文，供 UI 与 AI 工具访问。
+ * 拥有立绘 renderer adapter；控制命令统一经 CharacterRuntime 进入。
  *
  * 图片切换：旧图叠加在上层淡出（opacity 1→0），新图在下层始终保持显示。
  */
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { useCharacterController } from '../character/controller'
-import { registerCharacterController } from '../character/commandBus'
 import type { CharacterImageData } from '../character/loader'
-import { setAgentController } from '../agent'
 import { buildMask } from '../passthrough/alphaMask'
 import { createLogger } from '../utils/logger'
 
@@ -65,8 +63,6 @@ const imageStyle = computed(() => {
 
 onMounted(() => {
   controller.init()
-  registerCharacterController(controller)
-  setAgentController(controller)
   log.info("illustration_stage.module.info", "立绘舞台已挂载")
 })
 

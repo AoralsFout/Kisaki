@@ -169,13 +169,13 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 对话事实事件命令、后台回复修订事件与串行持久化。
   - [x] ChatStore → SessionStore 直接依赖解除，并以架构测试防回归。
   - [ ] SessionStore 切换为 v2 投影门面，删除旧快照保存逻辑。
-- [ ] 阶段 2：CharacterRuntime。
+- [x] 阶段 2：CharacterRuntime。
   - [x] 无框架依赖的 canonical state、能力校验和 Renderer 端口。
   - [x] renderer 未 ready 时接收命令并在 attach 后应用最新快照。
   - [x] CharacterStore 改为 Runtime 响应式投影。
   - [x] IllustrationController 接入 Renderer 端口并删除重复视觉状态与双向 watch。
   - [x] Live2D 表情/屏幕位置接入 Runtime，并在 manifest ready 后收敛能力。
-  - [ ] 删除 commandBus 与 agent/context 两套全局控制器注册表。
+  - [x] 删除 commandBus 与 agent/context 两套全局控制器注册表；UI/Agent 统一经 Runtime facade 控制角色。
 - [ ] 阶段 3：ToolExecutionCoordinator。
 - [ ] 阶段 4：ConversationRun。
 - [ ] 阶段 5：TTS 管道。

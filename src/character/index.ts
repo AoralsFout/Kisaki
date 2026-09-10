@@ -18,5 +18,4 @@ export {
 export type { PoseKey, PosePreset } from './poses'
 export { useCharacterController } from './controller'
 export type { CharacterController } from './controller'
-export { registerCharacterController, getCharacterController } from './commandBus'
 export { useCharacterStore } from '../stores/character'
