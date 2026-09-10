@@ -149,6 +149,7 @@ export function inspectSavedSession(
     toolDefinitions: [] as ToolDefinition[],
     persona: null,
     runtime: {
+      runState: 'idle',
       processing: false,
       usingTools: false,
       activities: [],

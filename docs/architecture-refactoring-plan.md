@@ -182,6 +182,12 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] ToolExecutionCoordinator 固定执行前置条件 → 批准 → 检查点 → handler → 结构化结果。
   - [x] 原生与文本工具调用复用同一 Coordinator 路径。
 - [ ] 阶段 4：ConversationRun。
+  - [x] 建立无框架依赖的显式状态机与合法转换约束。
+  - [x] 发送、工具执行、统一批准、取消、清空和会话切换接入同一 Run 状态源。
+  - [x] `isProcessing` / `isUsingTools` 改为状态机投影，删除分散写入和 `AbortController` 身份判断。
+  - [x] think 标签与流式 say 参数解析移入 `ModelStreamDecoder`。
+  - [ ] 将完整工具循环从 ChatStore 移入 ConversationCoordinator，并统一原生/文本工具调用适配。
+  - [ ] 回复通过 Session aggregate 原子提交 `AssistantCommitted`，TTS 改为事件订阅。
 - [ ] 阶段 5：TTS 管道。
 - [ ] 阶段 6：设置与网络。
 - [ ] 阶段 7：清理。

@@ -101,4 +101,14 @@ describe('architecture boundaries', () => {
       'waitScreenCaptureConfirm(',
     ]) expect(source).not.toContain(legacy)
   })
+
+  it('keeps conversation lifecycle and stream protocol parsing outside ChatStore', () => {
+    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    expect(source).toContain('new ConversationCoordinator()')
+    expect(source).toContain('new ModelStreamDecoder()')
+    expect(source).not.toContain('new AbortController()')
+    expect(source).not.toContain('abortController ===')
+    expect(source.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
+    expect(source.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+  })
 })
