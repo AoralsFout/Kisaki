@@ -188,8 +188,10 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] think 标签与流式 say 参数解析移入 `ModelStreamDecoder`。
   - [x] 模型回合迭代、上限、取消和异常分类移入 ConversationCoordinator。
   - [x] 原生/文本工具调用统一适配为 ToolCallBatch，并复用同一顺序执行与结果模型。
-  - [ ] 将单轮回复解释与上下文写入从 ChatStore 移入 ConversationCoordinator。
-  - [ ] 回复通过 Session aggregate 原子提交 `AssistantCommitted`，TTS 改为事件订阅。
+  - [x] 单轮模型返回解释移入 `ModelTurnInterpreter`，Store 不再判断 provider 返回通道。
+  - [x] 建立 `AssistantMessageCoordinator` 提交边界；TTS 仅订阅已提交/修订事件。
+  - [ ] 将工具上下文写入从 ChatStore 移入 ConversationCoordinator。
+  - [ ] SessionStore 切换到 v2 后，将提交端口接到 Session aggregate 的原子 `AssistantCommitted`。
 - [ ] 阶段 5：TTS 管道。
 - [ ] 阶段 6：设置与网络。
 - [ ] 阶段 7：清理。

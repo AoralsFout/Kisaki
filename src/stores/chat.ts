@@ -53,10 +53,13 @@ import {
 } from '../application/conversation/modelStreamDecoder'
 import {
   executeToolCallBatch,
-  normalizeNativeToolCalls,
-  normalizeTextToolCalls,
   type ToolCallBatch,
 } from '../application/conversation/toolCallBatch'
+import { interpretModelTurn } from '../application/conversation/modelTurnInterpreter'
+import {
+  AssistantMessageCoordinator,
+  type AssistantMessageSource,
+} from '../application/conversation/assistantMessageCoordinator'
 import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
 
@@ -388,6 +391,24 @@ export const useChatStore = defineStore('chat', () => {
     isProcessing.value = isConversationRunActive(state)
     isUsingTools.value = isConversationRunUsingTools(state)
   })
+  const assistantMessageCoordinator = new AssistantMessageCoordinator({
+    commit: message => {
+      if (chatSessionPort.currentSessionId() !== message.sessionId) return null
+      return addMessage('assistant', message.display, message.thinking, message.voice)
+    },
+    revise: revision => {
+      if (chatSessionPort.currentSessionId() !== revision.sessionId) return false
+      const message = messages.value.find(item => item.id === revision.messageId)
+      if (!message) return false
+      if (revision.voice !== undefined) message.voice = revision.voice
+      if (revision.display !== undefined) message.text = revision.display
+      chatSessionPort.persistCurrent()
+      return true
+    },
+  })
+  assistantMessageCoordinator.subscribe(event => {
+    if (event.playbackText?.trim()) void triggerTts(event.playbackText, event.requestId)
+  })
 
   // ── 工具调用过程展示（主窗口右侧列表，仅处理时临时展示，不持久化） ──
   /** 单条工具调用活动 */
@@ -570,6 +591,7 @@ export const useChatStore = defineStore('chat', () => {
     let ttsRequested = false
     let deliveredFinal = false
     let terminalReason: 'completed' | 'cancelled' | 'error' | 'empty_response' | 'tool_turn_limit' = 'completed'
+    const requestSessionId = chatSessionPort.currentSessionId()
     log.info("chat.request_started", "对话请求开始", {
       requestId,
       textLength: rawText.length,
@@ -632,24 +654,38 @@ export const useChatStore = defineStore('chat', () => {
     const toolTurns = MAX_TOOL_TURNS
 
     /** 把最终可见文本落地：写气泡、入 UI 历史。 */
-    const commitAssistantMessage = (display: string, voice?: string): string | null => {
+    const commitAssistantMessage = (
+      display: string,
+      voice: string | undefined,
+      source: AssistantMessageSource,
+      playbackText?: string,
+    ): string | null => {
       // 已取消：翻译兜底期间被用户中止时，不交付、不落盘、不播报
       if (conversationRun.signal.aborted) return null
       conversationCoordinator.transition(requestId, 'finalizing')
       currentBubbleText.value = display
       isTyping.value = false
-      const messageId = addMessage('assistant', display, currentThinking.value, voice)
+      const committed = assistantMessageCoordinator.commit({
+        requestId,
+        sessionId: requestSessionId,
+        display,
+        thinking: currentThinking.value || undefined,
+        voice,
+        source,
+        playbackText,
+      })
+      const messageId = committed?.messageId ?? null
+      if (!messageId) return null
       deliveredFinal = true
       return messageId
     }
 
     /** 把最终台词落地：写气泡、入 UI 历史、触发 TTS */
-    const deliver = (voice: string, display: string) => {
-      const messageId = commitAssistantMessage(display, voice)
+    const deliver = (source: AssistantMessageSource, voice: string, display: string) => {
+      const messageId = commitAssistantMessage(display, voice, source, voice)
       if (!messageId) return
-      // 气泡立即可见；TTS 用独立、带 requestId 的终态事件收尾。
+      // 气泡立即可见；TTS 订阅已提交事件，不属于 Run 完成条件。
       ttsRequested = true
-      void triggerTts(voice, requestId)
     }
 
     /**
@@ -664,7 +700,7 @@ export const useChatStore = defineStore('chat', () => {
       translate: TranslateFn,
       displayPreview: string,
     ) => {
-      const sessionId = chatSessionPort.currentSessionId()
+      const sessionId = requestSessionId
       const voiceStartedAt = performance.now()
       let playbackStarted = false
       const completeBeforePlayback = (status: 'cancelled' | 'failed', reason: string) => {
@@ -695,19 +731,22 @@ export const useChatStore = defineStore('chat', () => {
             voice,
             display,
           })
-          const message = messages.value.find(item => item.id === messageId)
-          if (!message) {
+          const revised = assistantMessageCoordinator.revise({
+            requestId,
+            sessionId,
+            messageId,
+            voice,
+            display: display && display !== displayPreview ? display : undefined,
+            playbackText: voice,
+          })
+          if (!revised) {
             completeBeforePlayback('cancelled', 'message_removed')
             return
           }
-          if (voice) message.voice = voice
-          if (display && display !== message.text) message.text = display
-          chatSessionPort.persistCurrent()
           if (currentBubbleText.value === displayPreview && display && display !== displayPreview) {
             currentBubbleText.value = display
           }
           playbackStarted = true
-          void triggerTts(voice, requestId)
           log.info("chat_store.send_message.info", `[${_fn}] ✓ say 后台语音准备完成 (显示:${display.length}字, TTS:${voice.length}字)`, { display_length: display.length, voice_length: voice.length })
         } catch (err) {
           log.warn("chat_store.send_message.warn", `[${_fn}] ⚠ 后台语音准备失败: ${(err as Error).message}`, err)
@@ -873,175 +912,121 @@ export const useChatStore = defineStore('chat', () => {
         )
         chatTimer.stop()
 
-        // ── 模型走了纯文本通道（没用 say = 兜底路径）────────
-        if (result.type === 'done') {
-          const finalText = result.text
-          const decoded = streamDecoder.snapshot()
-          const visibleFinalText = decoded.sawThink ? decoded.visibleText : finalText
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 AI 纯文本回复(未走 say), 长度=${visibleFinalText?.length || 0}`, { fn: _fn, turn: turn, final_text_length: visibleFinalText?.length || 0 })
-          log.sensitiveDebug("chat_store.send_message_sensitive.debug", `[${_fn}] AI 回复片段`, { fn: _fn, final_text_slice: (finalText || '').slice(0, 200) })
+        const interpreted = interpretModelTurn(result, streamDecoder.snapshot(), {
+          requestId,
+          turn,
+          sayToolName: SAY_TOOL_NAME,
+          extractTextToolCalls: text => agentService.extractTextToolCalls(text),
+          stripTextToolCalls: text => agentService.stripTextToolCalls(text),
+        })
 
-          // 兜底：不支持原生 FC 的模型可能把动作调用写在文字里
-          const textCalls = agentService.extractTextToolCalls(visibleFinalText)
-          if (textCalls.length > 0) {
-            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 文本动作调用: ${textCalls.length} 个`, { fn: _fn, turn: turn, text_calls_length: textCalls.length })
-            currentBubbleText.value = ""
-            const cleanText = agentService.stripTextToolCalls(visibleFinalText)
-            const batch = normalizeTextToolCalls(textCalls, {
-              requestId,
-              turn,
-              sayToolName: SAY_TOOL_NAME,
-            }, cleanText || undefined)
-            // 文本兜底与原生 FC 在此之后使用完全相同的协议与执行模型。
-            chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
-            syncContextStats()
-            const { toolImages } = await executeActionBatch(batch)
-            if (toolImages.length) {
-              chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
-              syncContextStats()
-            }
-            turnTimer.stop('text-tools — continue')
-            return 'continue'
-          }
-
-          // 纯正文兜底：正文当显示文本，生成 TTS 安全的母语台词
-          if (visibleFinalText && visibleFinalText.trim()) {
-            fallbackUsed = true
-            const { voiceLang, displayLang, persona } = getLangs()
-            const translate: TranslateFn = (txt, target, opts) =>
-              translateText(txt, target, {
-                persona,
-                signal: conversationRun.signal,
-                ttsSafe: opts?.ttsSafe,
-                requestId,
-                turn,
-              })
-            // 立即展示正文，voice 翻译异步进行，避免二次翻译阻塞文字回复。
-            currentBubbleText.value = visibleFinalText
-            isTyping.value = true
-            const { voice, display } = await resolveContentFallback(visibleFinalText, voiceLang, displayLang, translate)
-            commitSyntheticSay(voice, display)
-            deliver(voice, display)
-            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ 纯正文兜底完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
-          } else {
-            log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ AI 返回空文本`, undefined, { fn: _fn, turn: turn })
-          }
-          turnTimer.stop('done — break')
+        if (interpreted.type === 'empty') {
+          log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ AI 返回空内容`, undefined, { fn: _fn, turn })
+          turnTimer.stop('empty — break')
           return 'complete'
         }
 
-        // ── 模型走了工具通道（say 和/或动作工具）──────────
-        if (result.type === 'tools') {
-          const batch = normalizeNativeToolCalls(result.calls, {
-            requestId,
-            turn,
-            sayToolName: SAY_TOOL_NAME,
-          }, result.text)
-          const { sayCall } = batch
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 工具调用: ${result.calls.length} 个 (say=${sayCall ? '有' : '无'}, 动作=${batch.actions.length})`, { fn: _fn, turn: turn, result_calls: result.calls.length, say_call: sayCall ? '有' : '无', action_calls_length: batch.actions.length })
-          if (sayCall) {
-            const rawForLog = parseSayArgs(sayCall.function?.arguments || '{}')
-            log.sensitiveDebug("chat_store.say_sensitive.debug", `[${_fn}] 第${turn}轮 say 原始文本`, {
+        if (interpreted.type === 'final-text') {
+          fallbackUsed = true
+          const visibleText = interpreted.text
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 AI 纯文本回复(未走 say), 长度=${visibleText.length}`, { fn: _fn, turn, final_text_length: visibleText.length })
+          log.sensitiveDebug("chat_store.send_message_sensitive.debug", `[${_fn}] AI 回复片段`, { fn: _fn, final_text_slice: visibleText.slice(0, 200) })
+          const { voiceLang, displayLang, persona } = getLangs()
+          const translate: TranslateFn = (txt, target, opts) =>
+            translateText(txt, target, {
+              persona,
+              signal: conversationRun.signal,
+              ttsSafe: opts?.ttsSafe,
               requestId,
               turn,
-              voice: rawForLog.voice ?? '',
-              display: rawForLog.display ?? '',
             })
-          }
+          currentBubbleText.value = visibleText
+          isTyping.value = true
+          const { voice, display } = await resolveContentFallback(visibleText, voiceLang, displayLang, translate)
+          commitSyntheticSay(voice, display)
+          deliver('text-fallback', voice, display)
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ 纯正文兜底完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn, display_length: display.length, voice_length: voice.length })
+          turnTimer.stop('text — break')
+          return 'complete'
+        }
 
-          // 只把「会写回执」的调用入上下文：动作工具 + 第一条 say。
-          // 多余的 say 直接丢弃，否则会产生无回执的孤儿 tool_call id（下次请求 400）。
-          chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
-          syncContextStats()
+        const { batch } = interpreted
+        const { sayCall } = batch
+        log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 工具调用: ${batch.protocolCalls.length} 个 (source=${batch.source}, say=${sayCall ? '有' : '无'}, 动作=${batch.actions.length})`, { fn: _fn, turn, source: batch.source, result_calls: batch.protocolCalls.length, say_call: sayCall ? '有' : '无', action_calls_length: batch.actions.length })
+        if (sayCall) {
+          const rawForLog = parseSayArgs(sayCall.function.arguments || '{}')
+          log.sensitiveDebug("chat_store.say_sensitive.debug", `[${_fn}] 第${turn}轮 say 原始文本`, {
+            requestId,
+            turn,
+            voice: rawForLog.voice ?? '',
+            display: rawForLog.display ?? '',
+          })
+        }
 
-          // 先执行动作工具（让立绘先变）
-          const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await executeActionBatch(batch)
-          // 同批调用 say 时，模型尚未见到刚读取的图片，不能把预先生成的 say 当作读图结论。
-          // 先为 say 写入回执以保持协议完整，再把图片交给下一轮模型观察。
-          if (sayCall && (toolImages.length || actionBatchNeedsFollowup)) {
-            currentBubbleText.value = ""
-            isTyping.value = false
-            const reason = actionBatchFailed
-              ? '未说出：需要先读取并处理刚才的工具失败结果，再生成最终答复。'
-              : toolImages.length
-                ? '未说出：需要先观察刚读取的图片，再生成最终答复。'
-                : '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
-            chatContext.addToolResult(sayCall.id, reason)
-            chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
-            syncContextStats()
-            turnTimer.stop(actionBatchFailed ? 'tool-failed — continue' : 'tool-images — continue')
-            return 'continue'
-          }
+        currentBubbleText.value = ""
+        chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
+        syncContextStats()
+        const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await executeActionBatch(batch)
 
-          // ── say 出现 → 字段兜底 + 渲染 + TTS + 终止 ──────
-          if (sayCall) {
-            const { voiceLang, displayLang, persona } = getLangs()
-            const translate: TranslateFn = (txt, target, opts) =>
-              translateText(txt, target, {
-                persona,
-                signal: conversationRun.signal,
-                ttsSafe: opts?.ttsSafe,
-                requestId,
-                turn,
-              })
-            const raw = parseSayArgs(sayCall.function?.arguments || '{}')
-            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ say 原始: voice=${raw.voice?.length || 0}字 display=${raw.display?.length || 0}字`, { fn: _fn, turn: turn, raw_voice: raw.voice?.length || 0, raw_display: raw.display?.length || 0 })
-            // 立即展示 display，不阻塞在 voice 清洗/翻译上，降低打字到可见的首字延迟。
-            const displayPreview = raw.display?.trim() || (voiceLang === displayLang ? raw.voice?.trim() : '')
-            if (displayPreview) {
-              currentBubbleText.value = displayPreview
-              isTyping.value = false
-            }
-            chatContext.addToolResult(sayCall.id, '已说出')  // 保持上下文合法
-            syncContextStats()
-            if (displayPreview) {
-              // 可见文本已经流式完成：先提交并释放输入，语音清洗和 TTS 转入后台。
-              const messageId = commitAssistantMessage(displayPreview, raw.voice)
-              if (messageId) finalizeVoiceInBackground(messageId, raw, voiceLang, displayLang, translate, displayPreview)
-              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 可见文本完成 (显示:${displayPreview.length}字)`, { fn: _fn, turn: turn, display_length: displayPreview.length })
-            } else {
-              // 没有可见文本（例如只有 voice 且语言不同），只能等待翻译生成 display。
-              const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
-              log.sensitiveDebug("chat_store.say_resolved_sensitive.debug", `[${_fn}] 第${turn}轮 say 最终文本`, {
-                requestId,
-                turn,
-                voice,
-                display,
-              })
-              if (voice || display) {
-                deliver(voice, display)
-                log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ say 完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn: turn, display_length: display.length, voice_length: voice.length })
-              } else {
-                log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn: turn })
-              }
-            }
-            turnTimer.stop('say — break')
-            return 'complete'
-          }
-
-          if (toolImages.length) {
-            chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
-            syncContextStats()
-            turnTimer.stop('tool-images — continue')
-            return 'continue'
-          }
-
-          // ── 仅动作、无 say ──────────────────────────────
-          // 动作后的正文不是最终答复，忽略并继续下一轮，让模型收尾调用 say 提交。
-          currentBubbleText.value = ""
+        // say 不能抢在同批动作的图片、失败或拒绝结果之前成为最终答复。
+        if (sayCall && (toolImages.length || actionBatchNeedsFollowup)) {
           isTyping.value = false
-          if (result.text?.trim()) {
-            log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮忽略工具执行前正文并继续`, {
-              fn: _fn,
-              turn,
-              pre_tool_text_length: result.text.length,
-            })
-          }
-          turnTimer.stop('actions — continue')
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 仅动作无 say，继续下一轮`, { fn: _fn, turn: turn })
+          const reason = actionBatchFailed
+            ? '未说出：需要先读取并处理刚才的工具失败结果，再生成最终答复。'
+            : toolImages.length
+              ? '未说出：需要先观察刚读取的图片，再生成最终答复。'
+              : '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
+          chatContext.addToolResult(sayCall.id, reason)
+          chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
+          syncContextStats()
+          turnTimer.stop(actionBatchFailed ? 'tool-failed — continue' : 'tool-followup — continue')
           return 'continue'
         }
-        return 'complete'
+
+        if (sayCall) {
+          const { voiceLang, displayLang, persona } = getLangs()
+          const translate: TranslateFn = (txt, target, opts) =>
+            translateText(txt, target, {
+              persona,
+              signal: conversationRun.signal,
+              ttsSafe: opts?.ttsSafe,
+              requestId,
+              turn,
+            })
+          const raw = parseSayArgs(sayCall.function.arguments || '{}')
+          const displayPreview = raw.display?.trim() || (voiceLang === displayLang ? raw.voice?.trim() : '')
+          if (displayPreview) {
+            currentBubbleText.value = displayPreview
+            isTyping.value = false
+          }
+          chatContext.addToolResult(sayCall.id, '已说出')
+          syncContextStats()
+          if (displayPreview) {
+            const messageId = commitAssistantMessage(displayPreview, raw.voice, 'say')
+            if (messageId) finalizeVoiceInBackground(messageId, raw, voiceLang, displayLang, translate, displayPreview)
+          } else {
+            const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
+            if (voice || display) deliver('say', voice, display)
+            else log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn })
+          }
+          turnTimer.stop('say — break')
+          return 'complete'
+        }
+
+        if (toolImages.length) {
+          chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
+          syncContextStats()
+        }
+        isTyping.value = false
+        if (batch.assistantText?.trim()) {
+          log.debug("chat_store.send_message.debug", `[${_fn}] 第${turn}轮忽略工具执行前正文并继续`, {
+            fn: _fn,
+            turn,
+            pre_tool_text_length: batch.assistantText.length,
+          })
+        }
+        turnTimer.stop('actions — continue')
+        return 'continue'
     })
     turnsUsed = loopResult.turnsUsed
     if (loopResult.status === 'cancelled') {
