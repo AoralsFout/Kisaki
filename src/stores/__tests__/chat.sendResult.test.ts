@@ -11,6 +11,7 @@ vi.mock('../../ai', async original => ({
 }))
 beforeEach(() => {
   setActivePinia(createPinia())
+  localStorage.clear()
   request.mockReset()
   translate.mockReset()
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
@@ -220,5 +221,42 @@ describe('send result contract', () => {
         && entry.context?.reason === 'voice_preparation_cancelled'
       ))).toBe(true)
     })
+  })
+
+  it('等待文件操作确认时取消会解除等待并清理所有运行态', async () => {
+    const { useChatStore } = await import('../chat')
+    const store = useChatStore()
+    let modelTurn = 0
+    request.mockImplementation((_messages, callbacks, signal: AbortSignal) => {
+      if (modelTurn++ === 0) {
+        callbacks.onTools([{
+          id: 'write-awaiting-confirmation',
+          type: 'function',
+          function: {
+            name: 'write_file',
+            arguments: JSON.stringify({ path: 'notes.txt', content: 'pending' }),
+          },
+        }])
+        return
+      }
+      const error = new Error('cancelled')
+      error.name = signal.aborted ? 'AbortError' : 'UnexpectedError'
+      callbacks.onError(error)
+    })
+
+    const sending = store.sendMessage('write a note')
+    await vi.waitFor(() => {
+      expect(store.pendingConfirm?.id).toBe('write-awaiting-confirmation')
+    })
+
+    store.cancelResponse()
+    await sending
+
+    expect(store.pendingConfirm).toBeNull()
+    expect(store.pendingCommandConfirm).toBeNull()
+    expect(store.pendingScreenCaptureConfirm).toBeNull()
+    expect(store.isProcessing).toBe(false)
+    expect(store.isUsingTools).toBe(false)
+    expect(store.currentBubbleText).toBe('')
   })
 })
