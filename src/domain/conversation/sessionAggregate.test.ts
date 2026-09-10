@@ -153,4 +153,86 @@ describe('SessionAggregate', () => {
       { messageId: 'missing', display: 'orphan' },
     )).toThrow('Unknown assistant message id')
   })
+
+  it('rolls back timeline, checkpoints, and compacted context at one user-turn boundary', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'user-event-1', occurredAt: 11 },
+      { messageId: 'user-1', text: 'first' },
+    )
+    session.addCheckpoint({
+      id: 'checkpoint-1',
+      userMessageId: 'user-1',
+      createdAt: 11,
+      hasWorkspaceChanges: false,
+      character: null,
+    }, 11)
+    session.commitAssistantMessage(
+      { eventId: 'assistant-event-1', occurredAt: 12 },
+      { messageId: 'assistant-1', display: 'first answer', source: 'text-fallback' },
+    )
+    session.acceptUserMessage(
+      { eventId: 'user-event-2', occurredAt: 13 },
+      { messageId: 'user-2', text: 'second' },
+    )
+    session.addCheckpoint({
+      id: 'checkpoint-2',
+      userMessageId: 'user-2',
+      createdAt: 13,
+      hasWorkspaceChanges: true,
+      character: {
+        characterId: 'alice',
+        emotion: 'happy',
+        stance: 'idle',
+        costume: 'default',
+        screenPose: 'center',
+      },
+    }, 13)
+    session.commitAssistantMessage(
+      { eventId: 'assistant-event-2', occurredAt: 14 },
+      { messageId: 'assistant-2', display: 'second answer', source: 'text-fallback' },
+    )
+    session.compactContext(
+      { eventId: 'compaction', occurredAt: 15 },
+      { summary: 'first and second turns', summarizedEventIds: ['user-event-1', 'assistant-event-1'] },
+    )
+    session.acceptUserMessage(
+      { eventId: 'user-event-3', occurredAt: 16 },
+      { messageId: 'user-3', text: 'third' },
+    )
+    session.addCheckpoint({
+      id: 'checkpoint-3',
+      userMessageId: 'user-3',
+      createdAt: 16,
+      hasWorkspaceChanges: true,
+      character: null,
+    }, 16)
+
+    const result = session.rollbackToUserMessage('user-2', 20)
+
+    expect(result.targetCheckpoint?.character).toMatchObject({ characterId: 'alice', emotion: 'happy' })
+    expect(result.removedCheckpointIds).toEqual(['checkpoint-2', 'checkpoint-3'])
+    expect(result.workspaceCheckpointIdsNewestFirst).toEqual(['checkpoint-3', 'checkpoint-2'])
+    expect(session.projectTranscript().map(message => message.id)).toEqual(['user-1', 'assistant-1'])
+    expect(session.projectModelContext()).toEqual([
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'first answer' },
+    ])
+    expect(session.snapshot()).toMatchObject({
+      checkpoints: [{ id: 'checkpoint-1' }],
+      contextState: { summary: null, summarizedEventIds: [] },
+      updatedAt: 20,
+    })
+  })
+
+  it('rejects checkpoint snapshots that do not belong to a user message', () => {
+    const session = createSession()
+    expect(() => session.addCheckpoint({
+      id: 'orphan',
+      userMessageId: 'missing',
+      createdAt: 11,
+      hasWorkspaceChanges: false,
+      character: null,
+    }, 11)).toThrow('Unknown checkpoint user message')
+  })
 })

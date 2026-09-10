@@ -7,7 +7,11 @@ import type {
   SessionDocument,
   ToolExecutionCompleted,
 } from '../../domain/conversation/events'
-import { SessionAggregate, type EventIdentity } from '../../domain/conversation/sessionAggregate'
+import {
+  SessionAggregate,
+  type EventIdentity,
+  type SessionRollbackResult,
+} from '../../domain/conversation/sessionAggregate'
 import { SessionCollection } from '../../domain/conversation/sessionCollection'
 import type { SessionRepository } from './sessionRepository'
 
@@ -167,6 +171,12 @@ export class SessionApplicationService {
     await this.commit(() => {
       this.requireCollection().get(sessionId).addCheckpoint(checkpoint, this.dependencies.now())
     })
+  }
+
+  async rollbackToUserMessage(sessionId: string, messageId: string): Promise<SessionRollbackResult> {
+    return this.commit(() => (
+      this.requireCollection().get(sessionId).rollbackToUserMessage(messageId, this.dependencies.now())
+    ))
   }
 
   private async persist(): Promise<void> {

@@ -27,6 +27,12 @@ export interface EventIdentity {
   occurredAt: number
 }
 
+export interface SessionRollbackResult {
+  targetCheckpoint: SessionCheckpoint | null
+  removedCheckpointIds: string[]
+  workspaceCheckpointIdsNewestFirst: string[]
+}
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -37,6 +43,33 @@ function assertNonEmpty(value: string, field: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function assertCheckpointShape(checkpoint: unknown): asserts checkpoint is SessionCheckpoint {
+  if (
+    !isRecord(checkpoint)
+    || typeof checkpoint.id !== 'string'
+    || typeof checkpoint.userMessageId !== 'string'
+    || typeof checkpoint.createdAt !== 'number'
+    || typeof checkpoint.hasWorkspaceChanges !== 'boolean'
+  ) {
+    throw new Error('Session checkpoint is invalid')
+  }
+  if (checkpoint.character === null) return
+  if (
+    !isRecord(checkpoint.character)
+    || !isNullableString(checkpoint.character.characterId)
+    || typeof checkpoint.character.emotion !== 'string'
+    || typeof checkpoint.character.stance !== 'string'
+    || typeof checkpoint.character.costume !== 'string'
+    || typeof checkpoint.character.screenPose !== 'string'
+  ) {
+    throw new Error('Session checkpoint character snapshot is invalid')
+  }
 }
 
 function assertEventShape(event: unknown): asserts event is ConversationEvent {
@@ -127,17 +160,7 @@ function assertSnapshotShape(value: unknown): asserts value is ConversationSessi
     throw new Error('Session timestamps are invalid')
   }
   value.timeline.forEach(assertEventShape)
-  for (const checkpoint of value.checkpoints) {
-    if (
-      !isRecord(checkpoint)
-      || typeof checkpoint.id !== 'string'
-      || typeof checkpoint.userMessageId !== 'string'
-      || typeof checkpoint.createdAt !== 'number'
-      || typeof checkpoint.hasWorkspaceChanges !== 'boolean'
-    ) {
-      throw new Error('Session checkpoint is invalid')
-    }
-  }
+  value.checkpoints.forEach(assertCheckpointShape)
 }
 
 /**
@@ -284,8 +307,49 @@ export class SessionAggregate {
       event.type === 'user-message-accepted' && event.messageId === checkpoint.userMessageId
     ))
     if (!userExists) throw new Error(`Unknown checkpoint user message: ${checkpoint.userMessageId}`)
+    if (this.state.checkpoints.some(item => item.userMessageId === checkpoint.userMessageId)) {
+      throw new Error(`Checkpoint already exists for user message: ${checkpoint.userMessageId}`)
+    }
     this.state.checkpoints.push(clone(checkpoint))
     this.state.updatedAt = now
+  }
+
+  rollbackToUserMessage(messageId: string, now: number): SessionRollbackResult {
+    const targetIndex = this.state.timeline.findIndex(event => (
+      event.type === 'user-message-accepted' && event.messageId === messageId
+    ))
+    if (targetIndex < 0) throw new Error(`Unknown rollback user message: ${messageId}`)
+
+    const userEventIndexes = new Map<string, number>()
+    this.state.timeline.forEach((event, index) => {
+      if (event.type === 'user-message-accepted') userEventIndexes.set(event.messageId, index)
+    })
+
+    const removedCheckpoints = this.state.checkpoints.filter(checkpoint => (
+      (userEventIndexes.get(checkpoint.userMessageId) ?? Number.POSITIVE_INFINITY) >= targetIndex
+    ))
+    const targetCheckpoint = removedCheckpoints.find(checkpoint => checkpoint.userMessageId === messageId) ?? null
+    const workspaceCheckpointIdsNewestFirst = removedCheckpoints
+      .filter(checkpoint => checkpoint.hasWorkspaceChanges)
+      .sort((left, right) => (
+        (userEventIndexes.get(right.userMessageId) ?? 0)
+        - (userEventIndexes.get(left.userMessageId) ?? 0)
+      ))
+      .map(checkpoint => checkpoint.id)
+
+    this.state.timeline = this.state.timeline.slice(0, targetIndex)
+    this.state.checkpoints = this.state.checkpoints.filter(checkpoint => (
+      (userEventIndexes.get(checkpoint.userMessageId) ?? Number.POSITIVE_INFINITY) < targetIndex
+    ))
+    this.restoreLatestContextState()
+    this.state.updatedAt = now
+    this.assertInvariants()
+
+    return {
+      targetCheckpoint: targetCheckpoint ? clone(targetCheckpoint) : null,
+      removedCheckpointIds: removedCheckpoints.map(checkpoint => checkpoint.id),
+      workspaceCheckpointIdsNewestFirst,
+    }
   }
 
   projectTranscript(): UiTranscriptMessage[] {
@@ -382,6 +446,15 @@ export class SessionAggregate {
     ))
   }
 
+  private restoreLatestContextState(): void {
+    const compaction = [...this.state.timeline]
+      .reverse()
+      .find((event): event is ContextCompacted => event.type === 'context-compacted')
+    this.state.contextState = compaction
+      ? { summary: compaction.summary, summarizedEventIds: [...compaction.summarizedEventIds] }
+      : { summary: null, summarizedEventIds: [] }
+  }
+
   private assertInvariants(): void {
     assertNonEmpty(this.state.id, 'session id')
     assertNonEmpty(this.state.title, 'session title')
@@ -391,11 +464,13 @@ export class SessionAggregate {
     const callIds = new Set<string>()
     const resultIds = new Set<string>()
     const messageIds = new Set<string>()
+    const userMessageIds = new Set<string>()
     for (const event of this.state.timeline) {
       if (event.type === 'user-message-accepted' || event.type === 'assistant-message-committed') {
         if (messageIds.has(event.messageId)) throw new Error(`Session contains duplicate message id: ${event.messageId}`)
         messageIds.add(event.messageId)
       }
+      if (event.type === 'user-message-accepted') userMessageIds.add(event.messageId)
       if (event.type === 'assistant-tool-calls-produced') {
         for (const call of event.calls) {
           if (callIds.has(call.id)) throw new Error(`Session contains duplicate tool call id: ${call.id}`)
@@ -410,6 +485,19 @@ export class SessionAggregate {
       if (event.type === 'assistant-message-revised' && !messageIds.has(event.messageId)) {
         throw new Error(`Session contains orphan assistant message revision: ${event.messageId}`)
       }
+    }
+    const checkpointIds = new Set<string>()
+    const checkpointUserMessageIds = new Set<string>()
+    for (const checkpoint of this.state.checkpoints) {
+      if (checkpointIds.has(checkpoint.id)) throw new Error(`Session contains duplicate checkpoint id: ${checkpoint.id}`)
+      if (checkpointUserMessageIds.has(checkpoint.userMessageId)) {
+        throw new Error(`Session contains duplicate checkpoint for user message: ${checkpoint.userMessageId}`)
+      }
+      if (!userMessageIds.has(checkpoint.userMessageId)) {
+        throw new Error(`Session contains orphan checkpoint: ${checkpoint.id}`)
+      }
+      checkpointIds.add(checkpoint.id)
+      checkpointUserMessageIds.add(checkpoint.userMessageId)
     }
   }
 }

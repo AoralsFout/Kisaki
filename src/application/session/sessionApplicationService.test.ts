@@ -139,4 +139,48 @@ describe('SessionApplicationService', () => {
 
     expect(repository.document?.sessions.map(session => session.title)).toEqual(['Renamed', 'Second'])
   })
+
+  it('persists rollback as one command and returns its external recovery plan', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    await service.acceptUserMessage('session-1', { messageId: 'user-1', text: 'first' })
+    await service.addCheckpoint('session-1', {
+      id: 'checkpoint-1',
+      userMessageId: 'user-1',
+      createdAt: 12,
+      hasWorkspaceChanges: true,
+      character: null,
+    })
+    await service.commitAssistantMessage('session-1', {
+      messageId: 'assistant-1', display: 'answer', source: 'text-fallback',
+    })
+
+    const result = await service.rollbackToUserMessage('session-1', 'user-1')
+
+    expect(result).toEqual({
+      targetCheckpoint: {
+        id: 'checkpoint-1',
+        userMessageId: 'user-1',
+        createdAt: 12,
+        hasWorkspaceChanges: true,
+        character: null,
+      },
+      removedCheckpointIds: ['checkpoint-1'],
+      workspaceCheckpointIdsNewestFirst: ['checkpoint-1'],
+    })
+    expect(service.current().timeline).toEqual([])
+    expect(repository.document?.sessions[0].timeline).toEqual([])
+  })
+
+  it('restores the aggregate when rollback persistence fails', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    await service.acceptUserMessage('session-1', { messageId: 'user-1', text: 'keep me' })
+    repository.save.mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(service.rollbackToUserMessage('session-1', 'user-1')).rejects.toThrow('disk full')
+
+    expect(service.current().timeline).toHaveLength(1)
+    expect(service.current().timeline[0]).toMatchObject({ messageId: 'user-1' })
+  })
 })

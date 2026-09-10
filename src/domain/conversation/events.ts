@@ -73,11 +73,20 @@ export type ConversationEvent =
   | AssistantMessageRevised
   | ContextCompacted
 
+export interface CheckpointCharacterSnapshot {
+  characterId: string | null
+  emotion: string
+  stance: string
+  costume: string
+  screenPose: string
+}
+
 export interface SessionCheckpoint {
   id: string
   userMessageId: string
   createdAt: number
   hasWorkspaceChanges: boolean
+  character: CheckpointCharacterSnapshot | null
 }
 
 export interface ContextState {
