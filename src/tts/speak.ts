@@ -18,6 +18,16 @@ import { loadCosyVoiceConfigSecure, getWsUrl, getTtsProvider, loadGptSoVitsConfi
 import { synthesizeWithGptSoVits, playAudioBlob, buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
 import { createLogger } from '../utils/logger'
 import { STORAGE_TTS_ENABLED, DEFAULT_VOICE_LANGUAGE } from '../constants'
+import type {
+  TtsPlaybackHooks,
+  TtsPlaybackResult,
+} from '../application/tts/ttsPlaybackOrchestrator'
+
+export type {
+  TtsPlaybackHooks,
+  TtsPlaybackResult,
+  TtsPlaybackStatus,
+} from '../application/tts/ttsPlaybackOrchestrator'
 
 const log = createLogger('TTS')
 
@@ -39,21 +49,6 @@ interface TtsCommandResult {
 
 /** Live2D 口型播放器：播放给定音频 URL 并驱动模型口型；signal 中止即停。 */
 export type VoicePlayer = (audioUrl: string, signal: AbortSignal) => Promise<void>
-
-export type TtsPlaybackStatus = 'played' | 'skipped' | 'failed' | 'cancelled'
-
-/** 播报调用的真实结果，避免把“未抛异常”等同于“已经播放”。 */
-export interface TtsPlaybackResult {
-  status: TtsPlaybackStatus
-  reason?: string
-}
-
-export interface TtsPlaybackHooks {
-  /** 配置校验通过、即将发起合成请求时触发。 */
-  onSynthesisStart?: () => void
-  /** 音频首次真正开始排程/播放时触发。 */
-  onFirstAudio?: () => void
-}
 
 // ============================================================
 //  TtsEngine 类 — 封装所有 TTS 状态（原模块级 currentController）

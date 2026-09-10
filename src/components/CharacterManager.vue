@@ -10,12 +10,16 @@ import { useCharacterStore } from '../stores/character'
 import type { CharacterImageData } from '../character/loader'
 import { bustImageCache, initCharacterDataDir } from '../character/loader'
 import { buildCharacterJson, type CharacterEdits } from '../character/characterJson'
-import { loadCosyVoiceConfigSecure, isCosyVoiceConfigValid, getTtsProvider } from '../tts'
+import {
+  loadCosyVoiceConfigSecure,
+  isCosyVoiceConfigValid,
+  getTtsProvider,
+  ttsPlaybackOrchestrator,
+} from '../tts'
 import { createLogger } from '../utils/logger'
 import { invoke } from '@tauri-apps/api/core'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { emit } from '@tauri-apps/api/event'
-import { speakTextStreaming, cancelSpeak } from '../tts/speak'
 
 const log = createLogger('CharacterMgr')
 import { fetchVoiceList } from '../tts/api'
@@ -136,13 +140,19 @@ const voicePreviewText = 'こんにちは、元気ですか？'
 async function previewVoice() {
   if (!selectedVoice.value) return
   if (voicePreviewing.value) {
-    cancelSpeak()
+    ttsPlaybackOrchestrator.cancel('preview-cancelled', true)
     voicePreviewing.value = false
     return
   }
   voicePreviewing.value = true
   try {
-    await speakTextStreaming(voicePreviewText, selectedVoice.value)
+    await ttsPlaybackOrchestrator.play({
+      requestId: `voice-preview:${editingId.value || 'new'}`,
+      text: voicePreviewText,
+      voiceId: selectedVoice.value,
+      voiceLanguage: selectedVoiceLang.value,
+      deduplicate: false,
+    })
   } catch {
     // 静默
   } finally {

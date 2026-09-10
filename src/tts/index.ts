@@ -10,4 +10,6 @@ export {
 export { fetchVoiceList } from './api'
 export { speakText, speakTextStreaming, cancelSpeak, isSpeaking, isTtsEnabled, setTtsEnabled, setVoicePlayer } from './speak'
 export type { VoicePlayer, TtsPlaybackHooks, TtsPlaybackResult, TtsPlaybackStatus } from './speak'
+export { ttsPlaybackOrchestrator } from './orchestrator'
+export type { TtsPlaybackSnapshot, TtsPlaybackState } from '../application/tts/ttsPlaybackOrchestrator'
 export type { CosyVoiceConfig, CosyVoiceModel, VoiceInfo, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'

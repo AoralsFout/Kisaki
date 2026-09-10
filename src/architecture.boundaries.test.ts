@@ -133,8 +133,23 @@ describe('architecture boundaries', () => {
     // The sole direct references are dependency adapters passed into the coordinator.
     expect(source.match(/chatSessionPort\.recordToolCalls\(/g)).toHaveLength(1)
     expect(source.match(/chatSessionPort\.recordToolResult\(/g)).toHaveLength(1)
-    expect(source.match(/triggerTts\(/g)).toHaveLength(2) // one event subscriber + function declaration
+    expect(source).toContain('ttsPlaybackOrchestrator.play(')
+    expect(source).not.toContain('function triggerTts(')
+    expect(source).not.toContain('lastTtsText')
+    expect(source).not.toContain('speakTextStreaming(')
+    expect(source).not.toContain('cancelSpeak(')
     expect(source.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
     expect(source.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+  })
+
+  it('routes presentation playback through the TTS playback owner', () => {
+    const violations: string[] = []
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      const path = relative(SOURCE_ROOT, file).replace(/\\/g, '/')
+      if (path.startsWith('tts/') || path.startsWith('application/tts/')) continue
+      const source = readFileSync(file, 'utf8')
+      if (/\b(?:speakTextStreaming|cancelSpeak)\s*\(/.test(source)) violations.push(path)
+    }
+    expect(violations).toEqual([])
   })
 })

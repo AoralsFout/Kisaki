@@ -33,8 +33,7 @@ import type { ToolCall, ToolDefinition, ToolResult } from '../agent'
 import { ApprovalGateway, type ApprovalDecision, type ApprovalRequest } from '../application/tools/approvalGateway'
 import { ToolExecutionCoordinator } from '../application/tools/toolExecutionCoordinator'
 import { toolExecutionPolicy } from '../agent/toolExecutionPolicy'
-import { speakTextStreaming, cancelSpeak, getTtsProvider, isTtsEnabled } from '../tts'
-import type { TtsPlaybackStatus } from '../tts'
+import { ttsPlaybackOrchestrator } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
 import { t } from '../i18n'
@@ -434,7 +433,19 @@ export const useChatStore = defineStore('chat', () => {
     },
   })
   assistantMessageCoordinator.subscribe(event => {
-    if (event.playbackText?.trim()) void triggerTts(event.playbackText, event.requestId)
+    if (!event.playbackText?.trim()) return
+    const character = useCharacterStore().data
+    log.sensitiveDebug('tts.voice_text_sensitive.debug', '送入 TTS 的语音文本', {
+      requestId: event.requestId,
+      voice_lang: character?.voiceLanguage || '?',
+      voice_text: event.playbackText,
+    })
+    void ttsPlaybackOrchestrator.play({
+      requestId: event.requestId,
+      text: event.playbackText,
+      voiceId: character?.voice || '',
+      voiceLanguage: character?.voiceLanguage || DEFAULT_VOICE_LANGUAGE,
+    })
   })
 
   // ── 工具调用过程展示（主窗口右侧列表，仅处理时临时展示，不持久化） ──
@@ -588,7 +599,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 用户发送新消息时，取消正在播放的语音
     log.trace("chat_store.send_message.trace", `[${_fn}] 取消正在播放的语音`, { fn: _fn })
-    cancelSpeak()
+    ttsPlaybackOrchestrator.cancel('new-message')
 
     if (!navigator.onLine) {
       log.warn("chat_store.send_message.warn", `[${_fn}] ✗ 网络不可用，无法发送消息`, undefined, { fn: _fn })
@@ -1198,94 +1209,6 @@ export const useChatStore = defineStore('chat', () => {
     return completionStatus !== 'failed'
   }
 
-  /** 触发角色 TTS 语音播报 */
-  let lastTtsText = ''
-  async function triggerTts(text: string, requestId?: string): Promise<TtsPlaybackStatus> {
-    const _fn = 'triggerTts'
-    const startedAt = performance.now()
-    let firstAudioReported = false
-    const complete = (status: TtsPlaybackStatus, reason?: string): TtsPlaybackStatus => {
-      const context = { requestId, status, reason, durationMs: Math.round(performance.now() - startedAt) }
-      if (status === 'failed') log.warn('tts.playback_completed', 'TTS 播放结束', undefined, context)
-      else log.info('tts.playback_completed', 'TTS 播放结束', context)
-      return status
-    }
-    log.trace("chat_store.trigger_tts.trace", `[${_fn}] ▶ 播报文本(${text.length}字)`, { fn: _fn, text_length: text.length })
-
-    if (!text.trim()) return complete('skipped', 'empty_text')
-
-    // 去重：连续播报相同文本跳过
-    if (text === lastTtsText) {
-      log.trace("chat_store.trigger_tts.trace", `[${_fn}] 跳过重复播报: text === lastTtsText`, { fn: _fn })
-      return complete('skipped', 'duplicate')
-    }
-
-    try {
-      const charStore = useCharacterStore()
-      const provider = getTtsProvider()
-      const voiceId = charStore.data?.voice
-
-      if (!isTtsEnabled()) return complete('skipped', 'disabled')
-      if (provider === 'none') {
-        log.trace("chat_store.trigger_tts.trace", `[${_fn}] TTS 已禁用（提供者为 none），跳过`, { fn: _fn })
-        return complete('skipped', 'provider_none')
-      }
-      // CosyVoice 需要 voiceId；GPT-SoVITS 不需要
-      if (provider === 'cosyvoice' && !voiceId) {
-        log.trace("chat_store.trigger_tts.trace", `[${_fn}] 无 voiceId 配置，跳过 TTS`, { fn: _fn })
-        return complete('skipped', 'missing_voice_id')
-      }
-      const voiceLang = charStore.data?.voiceLanguage || '?'
-      const ttsTimer = debugTimer(_fn)
-      log.sensitiveDebug('tts.voice_text_sensitive.debug', '送入 TTS 的语音文本', {
-        requestId,
-        provider,
-        voice_lang: voiceLang,
-        voice_text: text,
-      })
-      const result = await speakTextStreaming(text, voiceId || '', {
-        onSynthesisStart: () => {
-          log.info('tts.synthesis_started', 'TTS 合成开始', { requestId, provider, textLength: text.length, voiceLang })
-          log.info("chat_store.trigger_tts.info", `[${_fn}] 开始 TTS 播报: lang=${voiceLang} text=${text.length}字`, { fn: _fn, has_voice_id: Boolean(voiceId), voice_lang: voiceLang, text_length: text.length })
-        },
-        onFirstAudio: () => {
-          if (firstAudioReported) return
-          firstAudioReported = true
-          log.info('tts.first_audio', 'TTS 首段音频开始播放', {
-            requestId,
-            provider,
-            latencyMs: Math.round(performance.now() - startedAt),
-          })
-        },
-      })
-      ttsTimer.stop()
-
-      switch (result.status) {
-        case 'played':
-          // 仅实际播报成功后记去重，失败/跳过都允许重试同一文本
-          lastTtsText = text
-          log.info("chat_store.trigger_tts.info", `[${_fn}] ✓ TTS 播报完成 (${text.length}字)`, { fn: _fn, text_length: text.length })
-          break
-        case 'skipped':
-          log.info("chat_store.trigger_tts.info", `[${_fn}] ⏭ TTS 已跳过: ${result.reason ?? 'unknown'}`, { fn: _fn, tts_reason: result.reason })
-          break
-        case 'failed':
-          log.warn("chat_store.trigger_tts.warn", `[${_fn}] ⚠ TTS 播报失败: ${result.reason ?? 'unknown'}`, undefined, { fn: _fn, tts_reason: result.reason })
-          break
-        case 'cancelled':
-          lastTtsText = '' // 取消后允许重试，重置去重
-          log.info("chat_store.trigger_tts.info", `[${_fn}] ⏹ TTS 播报被取消`, { fn: _fn })
-          break
-      }
-      return complete(result.status, result.reason)
-    } catch (err) {
-      log.warn("chat_store.trigger_tts.warn", `[${_fn}] ⚠ TTS 播报异常 (静默): ${(err as Error).message}`, err, { fn: _fn })
-      return complete('failed', (err as Error).message)
-    } finally {
-      log.trace("chat_store.trigger_tts.trace", `[${_fn}] ◀`, { fn: _fn })
-    }
-  }
-
   function cancelResponse() {
     const _fn = 'cancelResponse'
     log.trace("chat_store.cancel_response.trace", `[${_fn}] ▶`, { fn: _fn })
@@ -1296,9 +1219,7 @@ export const useChatStore = defineStore('chat', () => {
     conversationCoordinator.cancelActive('user-cancelled')
     cancelBackgroundVoicePreparation()
 
-    cancelSpeak()
-    // 取消后重置 TTS 去重，以便重试时能再次播报被取消的同一段文本
-    lastTtsText = ''
+    ttsPlaybackOrchestrator.cancel('user-cancelled', true)
     // 隐藏正在生成的气泡与思考过程，避免残留半截内容
     hideBubble()
     currentThinking.value = ''
@@ -1351,8 +1272,7 @@ export const useChatStore = defineStore('chat', () => {
     // 先取消正在进行中的 AI 请求和后台语音，避免其回调写入已被清空的上下文。
     conversationCoordinator.cancelActive('messages-cleared')
     cancelBackgroundVoicePreparation()
-    cancelSpeak()
-    lastTtsText = ''
+    ttsPlaybackOrchestrator.cancel('messages-cleared', true)
     rejectPendingApproval()
     autoExecSession.value = false
     hideBubble()
@@ -1382,8 +1302,7 @@ export const useChatStore = defineStore('chat', () => {
     const _fn = 'resetContext'
     log.trace("chat_store.reset_context.trace", `[${_fn}] ▶`, { fn: _fn })
     cancelBackgroundVoicePreparation()
-    cancelSpeak()
-    lastTtsText = ''
+    ttsPlaybackOrchestrator.cancel('context-reset', true)
     const oldContext = chatContext
     chatContext = createChatContext()
     currentPersona = null
@@ -1402,8 +1321,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 切换、回档或恢复历史时，旧回复的后台语音不得继续写回或播放。
     cancelBackgroundVoicePreparation()
-    cancelSpeak()
-    lastTtsText = ''
+    ttsPlaybackOrchestrator.cancel('session-changed', true)
 
     // 统计消息组成
     const userCount = msgs.filter(m => m.role === 'user').length
