@@ -51,6 +51,12 @@ import {
   extractPartialSayArgs,
   parseSayArgs,
 } from '../application/conversation/modelStreamDecoder'
+import {
+  executeToolCallBatch,
+  normalizeNativeToolCalls,
+  normalizeTextToolCalls,
+  type ToolCallBatch,
+} from '../application/conversation/toolCallBatch'
 import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
 
@@ -268,28 +274,6 @@ export function normalizeTtsSafeVoice(text: string, voiceLang: string): string |
     .replace(/^,+|,+$/gu, '')
   normalized = repairJapaneseWordCommas(normalized, voiceLang)
   return normalized && isTtsSafeVoice(normalized) ? normalized : null
-}
-
-/**
- * 从一组工具调用中分出 say（说话）与动作调用。
- * 多余的 say 仅取第一个，其余忽略。
- *
- * @internal 导出以支持单元测试
- */
-export function splitSayCalls(calls: ToolCallData[]): {
-  sayCall: ToolCallData | null
-  actionCalls: ToolCallData[]
-} {
-  let sayCall: ToolCallData | null = null
-  const actionCalls: ToolCallData[] = []
-  for (const c of calls) {
-    if (c.function?.name === SAY_TOOL_NAME) {
-      if (!sayCall) sayCall = c
-    } else {
-      actionCalls.push(c)
-    }
-  }
-  return { sayCall, actionCalls }
 }
 
 /**
@@ -779,13 +763,66 @@ export const useChatStore = defineStore('chat', () => {
       hasWorkspace: Boolean(chatSessionPort.workspaceGrantId()),
     })
 
+    /** Execute native and text-fallback calls through the same normalized batch path. */
+    const executeActionBatch = async (batch: ToolCallBatch) => {
+      if (batch.actions.length > 0) conversationCoordinator.transition(requestId, 'executing-tools')
+      const toolImages: ImageAttachment[] = []
+      const toolTimers = new Map<string, ReturnType<typeof debugTimer>>()
+      const result = await executeToolCallBatch(batch.actions, executeWithPolicy, {
+        onStart: (invocation, index, count) => {
+          const { protocolCall, parseError } = invocation
+          toolCallCount++
+          toolTimers.set(protocolCall.id, debugTimer(`${_fn} tool#${index} turn#${turnsUsed - 1}`))
+          beginActivity(protocolCall.id, protocolCall.function.name || '?')
+          log.info('chat_store.tool_started', `执行工具[${index + 1}/${count}]: ${protocolCall.function.name || '?'}`, {
+            requestId,
+            turn: turnsUsed - 1,
+            toolCallId: protocolCall.id,
+            toolName: protocolCall.function.name || '?',
+            source: batch.source,
+          })
+          if (parseError) {
+            log.error('chat_store.tool_arguments_invalid', `工具参数 JSON 解析失败: ${parseError.message}`, new Error(parseError.message), {
+              requestId,
+              turn: turnsUsed - 1,
+              toolCallId: protocolCall.id,
+              toolName: protocolCall.function.name || '?',
+              source: batch.source,
+            })
+          }
+        },
+        onResult: ({ invocation, result: toolResult }) => {
+          const { protocolCall } = invocation
+          if (collectToolImages(toolResult, toolImages)) {
+            toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
+          }
+          toolTimers.get(protocolCall.id)?.stop()
+          endActivity(protocolCall.id, resultStatus(toolResult))
+          log.sensitiveDebug('chat_store.tool_result_sensitive.debug', '工具执行结果', {
+            requestId,
+            turn: turnsUsed - 1,
+            tool_name: protocolCall.function.name || '?',
+            source: batch.source,
+            tool_result_content: (toolResult.content || '').slice(0, 200),
+          })
+          chatContext.addToolResult(protocolCall.id, toolResult.content)
+          syncContextStats()
+        },
+      })
+      toolFailureCount += result.failureCount
+      return {
+        toolImages,
+        actionBatchFailed: result.failureCount > 0,
+        actionBatchNeedsFollowup: result.needsFollowup,
+      }
+    }
+
     log.trace("chat_store.send_message.trace", `[${_fn}] 工具循环开始 安全上限=${toolTurns} 轮 (model=${config.model})`, { fn: _fn, tool_turns: toolTurns, config_model: config.model })
-    for (let turn = 0; turn < toolTurns; turn++) {
+    const loopResult = await conversationCoordinator.runTurns(requestId, toolTurns, async turn => {
       turnsUsed = turn + 1
       log.trace("chat_store.send_message.trace", `[${_fn}] ——— 第 ${turn + 1}/${toolTurns} 轮 ———`, { fn: _fn, turn: turn + 1, tool_turns: toolTurns })
       const turnTimer = debugTimer(`${_fn} turn#${turn}`)
 
-      try {
         const streamDecoder = new ModelStreamDecoder()
         const chatTimer = debugTimer(`${_fn} chatOnce turn#${turn}`)
         log.trace("chat_store.send_message.trace", `[${_fn}] 第${turn}轮 chat() 发起请求...`, { fn: _fn, turn: turn })
@@ -827,7 +864,6 @@ export const useChatStore = defineStore('chat', () => {
         }
         syncContextStats()
         modelCallCount++
-        conversationCoordinator.transition(requestId, 'streaming')
         const result = await chatOnce(
           requestMessages,
           tools,
@@ -849,39 +885,23 @@ export const useChatStore = defineStore('chat', () => {
           const textCalls = agentService.extractTextToolCalls(visibleFinalText)
           if (textCalls.length > 0) {
             log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 文本动作调用: ${textCalls.length} 个`, { fn: _fn, turn: turn, text_calls_length: textCalls.length })
-            conversationCoordinator.transition(requestId, 'executing-tools')
             currentBubbleText.value = ""
             const cleanText = agentService.stripTextToolCalls(visibleFinalText)
-            // 与 FC 路径同范式：assistant 消息带 tool_calls（正文附剥离工具调用后的文本），
-            // 随后逐个写 tool 回执。避免「无 tool_calls 的孤儿 tool 结果」导致下次请求 400。
-            const textToolCallsData = textCalls.map(tc => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
-            }))
-            chatContext.addAssistantToolCall(textToolCallsData, cleanText || undefined)
+            const batch = normalizeTextToolCalls(textCalls, {
+              requestId,
+              turn,
+              sayToolName: SAY_TOOL_NAME,
+            }, cleanText || undefined)
+            // 文本兜底与原生 FC 在此之后使用完全相同的协议与执行模型。
+            chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
             syncContextStats()
-            const toolImages: ImageAttachment[] = []
-            for (let ti = 0; ti < textCalls.length; ti++) {
-              const tc = textCalls[ti]
-              toolCallCount++
-              beginActivity(tc.id, tc.name || '?')
-              log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✦ 执行文本动作[${ti + 1}/${textCalls.length}]: ${tc.name || '?'}`, { fn: _fn, turn: turn, ti: ti + 1, text_calls_length: textCalls.length, tc_name: tc.name || '?' })
-              const toolResult = await executeWithPolicy({ ...tc, requestId, turn })
-              if (isToolError(toolResult)) toolFailureCount++
-              if (collectToolImages(toolResult, toolImages)) {
-                toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
-              }
-              endActivity(tc.id, resultStatus(toolResult))
-              chatContext.addToolResult(tc.id, toolResult.content)
-              syncContextStats()
-            }
+            const { toolImages } = await executeActionBatch(batch)
             if (toolImages.length) {
-              chatContext.addToolImages(textCalls.map(call => call.id).join(', '), toolImages)
+              chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
               syncContextStats()
             }
             turnTimer.stop('text-tools — continue')
-            continue
+            return 'continue'
           }
 
           // 纯正文兜底：正文当显示文本，生成 TTS 安全的母语台词
@@ -907,13 +927,18 @@ export const useChatStore = defineStore('chat', () => {
             log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ AI 返回空文本`, undefined, { fn: _fn, turn: turn })
           }
           turnTimer.stop('done — break')
-          break
+          return 'complete'
         }
 
         // ── 模型走了工具通道（say 和/或动作工具）──────────
         if (result.type === 'tools') {
-          const { sayCall, actionCalls } = splitSayCalls(result.calls)
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 工具调用: ${result.calls.length} 个 (say=${sayCall ? '有' : '无'}, 动作=${actionCalls.length})`, { fn: _fn, turn: turn, result_calls: result.calls.length, say_call: sayCall ? '有' : '无', action_calls_length: actionCalls.length })
+          const batch = normalizeNativeToolCalls(result.calls, {
+            requestId,
+            turn,
+            sayToolName: SAY_TOOL_NAME,
+          }, result.text)
+          const { sayCall } = batch
+          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 工具调用: ${result.calls.length} 个 (say=${sayCall ? '有' : '无'}, 动作=${batch.actions.length})`, { fn: _fn, turn: turn, result_calls: result.calls.length, say_call: sayCall ? '有' : '无', action_calls_length: batch.actions.length })
           if (sayCall) {
             const rawForLog = parseSayArgs(sayCall.function?.arguments || '{}')
             log.sensitiveDebug("chat_store.say_sensitive.debug", `[${_fn}] 第${turn}轮 say 原始文本`, {
@@ -924,62 +949,13 @@ export const useChatStore = defineStore('chat', () => {
             })
           }
 
-          if (actionCalls.length > 0) conversationCoordinator.transition(requestId, 'executing-tools')
-
           // 只把「会写回执」的调用入上下文：动作工具 + 第一条 say。
           // 多余的 say 直接丢弃，否则会产生无回执的孤儿 tool_call id（下次请求 400）。
-          const keptIds = new Set<string>()
-          for (const c of actionCalls) if (c.id) keptIds.add(c.id)
-          if (sayCall?.id) keptIds.add(sayCall.id)
-          chatContext.addAssistantToolCall(result.calls.filter(c => c.id && keptIds.has(c.id)))
+          chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
           syncContextStats()
 
           // 先执行动作工具（让立绘先变）
-          const toolImages: ImageAttachment[] = []
-          let actionBatchFailed = false
-          let actionBatchNeedsFollowup = false
-          for (let ti = 0; ti < actionCalls.length; ti++) {
-            const tc = actionCalls[ti]
-            toolCallCount++
-            const toolTimer = debugTimer(`${_fn} tool#${ti} turn#${turn}`)
-            const tcName = tc.function?.name || '?'
-            beginActivity(tc.id, tcName)
-            log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 执行动作[${ti + 1}/${actionCalls.length}]: ${tcName} (id=${tc.id})`, { fn: _fn, turn: turn, ti: ti + 1, action_calls_length: actionCalls.length, tc_name: tcName, tc_id: tc.id })
-            log.sensitiveDebug("chat_store.tool_arguments_sensitive.debug", `[${_fn}] 第${turn}轮 ★ 工具参数`, { fn: _fn, turn, arguments: (tc.function?.arguments || '{}').slice(0, 300) })
-            let toolCall: ToolCall
-            try {
-              toolCall = {
-                id: tc.id,
-                name: tc.function.name,
-                arguments: JSON.parse(tc.function.arguments || '{}'),
-                requestId,
-                turn,
-              }
-            } catch (parseErr) {
-              toolFailureCount++
-              actionBatchFailed = true
-              actionBatchNeedsFollowup = true
-              log.error("chat_store.send_message.error", `[${_fn}] 第${turn}轮 ★ 工具参数 JSON 解析失败: ${(parseErr as Error).message}`, parseErr, { fn: _fn, turn: turn })
-              endActivity(tc.id, 'error')
-              chatContext.addToolResult(tc.id, '参数解析失败')
-              syncContextStats()
-              continue
-            }
-            const toolResult = await executeWithPolicy(toolCall)
-            if (isToolError(toolResult)) {
-              toolFailureCount++
-              actionBatchFailed = true
-            }
-            if (resultStatus(toolResult) !== 'done') actionBatchNeedsFollowup = true
-            if (collectToolImages(toolResult, toolImages)) {
-              toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
-            }
-            toolTimer.stop()
-            endActivity(tc.id, resultStatus(toolResult))
-            log.sensitiveDebug("chat_store.tool_result_sensitive.debug", `[${_fn}] 第${turn}轮 ★ 工具结果(${tcName})`, { fn: _fn, turn, tc_name: tcName, tool_result_content: (toolResult?.content || '').slice(0, 200) })
-            chatContext.addToolResult(tc.id, toolResult.content)
-            syncContextStats()
-          }
+          const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await executeActionBatch(batch)
           // 同批调用 say 时，模型尚未见到刚读取的图片，不能把预先生成的 say 当作读图结论。
           // 先为 say 写入回执以保持协议完整，再把图片交给下一轮模型观察。
           if (sayCall && (toolImages.length || actionBatchNeedsFollowup)) {
@@ -991,10 +967,10 @@ export const useChatStore = defineStore('chat', () => {
                 ? '未说出：需要先观察刚读取的图片，再生成最终答复。'
                 : '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
             chatContext.addToolResult(sayCall.id, reason)
-            chatContext.addToolImages(actionCalls.map(call => call.id).join(', '), toolImages)
+            chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
             syncContextStats()
             turnTimer.stop(actionBatchFailed ? 'tool-failed — continue' : 'tool-images — continue')
-            continue
+            return 'continue'
           }
 
           // ── say 出现 → 字段兜底 + 渲染 + TTS + 终止 ──────
@@ -1040,14 +1016,14 @@ export const useChatStore = defineStore('chat', () => {
               }
             }
             turnTimer.stop('say — break')
-            break
+            return 'complete'
           }
 
           if (toolImages.length) {
-            chatContext.addToolImages(actionCalls.map(call => call.id).join(', '), toolImages)
+            chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
             syncContextStats()
             turnTimer.stop('tool-images — continue')
-            continue
+            return 'continue'
           }
 
           // ── 仅动作、无 say ──────────────────────────────
@@ -1063,25 +1039,23 @@ export const useChatStore = defineStore('chat', () => {
           }
           turnTimer.stop('actions — continue')
           log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ★ 仅动作无 say，继续下一轮`, { fn: _fn, turn: turn })
-          continue
+          return 'continue'
         }
-      } catch (err) {
-        const errMsg = (err as Error).message
-        const errName = (err as Error).name
-        if (errName === 'AbortError') {
-          wasCancelled = true
-          log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ⏹ 请求被取消 (AbortError)`, { fn: _fn, turn: turn })
-          break
-        }
-        log.error("chat.turn_failed", "对话执行失败", err, {
-          operation: _fn,
-          turn,
-          requestId,
-        })
-        failed = true
-        showBubbleText(t('app.bubble.error', { msg: errMsg }), false)
-        break
-      }
+        return 'complete'
+    })
+    turnsUsed = loopResult.turnsUsed
+    if (loopResult.status === 'cancelled') {
+      wasCancelled = true
+      log.info("chat_store.send_message.info", `[${_fn}] ⏹ 请求被取消`, { fn: _fn, turns_used: turnsUsed })
+    } else if (loopResult.status === 'failed') {
+      const errMsg = loopResult.error instanceof Error ? loopResult.error.message : String(loopResult.error)
+      log.error("chat.turn_failed", "对话执行失败", loopResult.error, {
+        operation: _fn,
+        turn: Math.max(0, turnsUsed - 1),
+        requestId,
+      })
+      failed = true
+      showBubbleText(t('app.bubble.error', { msg: errMsg }), false)
     }
 
     // ── 循环结束 ────────────────────────────────────────
@@ -1098,6 +1072,9 @@ export const useChatStore = defineStore('chat', () => {
     if (wasCancelled) {
       // 用户主动取消：不展示兜底气泡
       log.info("chat_store.send_message.info", `[${_fn}] 已取消，跳过兜底提示`, { fn: _fn })
+    } else if (failed) {
+      terminalReason = 'error'
+      log.info("chat_store.send_message.info", `[${_fn}] 请求失败，保留具体错误提示`, { fn: _fn })
     } else if (!deliveredFinal) {
       // 模型始终未调 say 就触达安全上限（异常：通常是模型陷入工具死循环），展示兜底提示
       terminalReason = turnsUsed >= toolTurns ? 'tool_turn_limit' : 'empty_response'

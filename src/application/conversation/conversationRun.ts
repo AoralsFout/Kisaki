@@ -121,6 +121,14 @@ export class ConversationRun {
 
 type ConversationCoordinatorListener = (snapshot: ConversationRunSnapshot | null) => void
 
+export type ConversationTurnDirective = 'continue' | 'complete'
+
+export type ConversationLoopResult =
+  | { status: 'completed'; turnsUsed: number }
+  | { status: 'cancelled'; turnsUsed: number }
+  | { status: 'failed'; turnsUsed: number; error: unknown }
+  | { status: 'turn-limit'; turnsUsed: number }
+
 /**
  * Owns which run may project into the shared UI. Starting a run supersedes the
  * previous one, and all state changes are addressed by run id to reject stale work.
@@ -171,6 +179,38 @@ export class ConversationCoordinator {
 
   mayProject(id: string): boolean {
     return this.active?.id === id && isConversationRunActive(this.active.snapshot().state)
+  }
+
+  /**
+   * Owns bounded model-turn iteration and cancellation/error classification.
+   * Turn handlers describe only whether the domain workflow needs another model turn.
+   */
+  async runTurns(
+    id: string,
+    maxTurns: number,
+    performTurn: (turn: number) => Promise<ConversationTurnDirective>,
+  ): Promise<ConversationLoopResult> {
+    if (!Number.isInteger(maxTurns) || maxTurns < 1) throw new Error('maxTurns must be a positive integer')
+    if (this.active?.id !== id) throw new Error(`Conversation run is not active: ${id}`)
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      const turnsUsed = turn + 1
+      if (!this.mayProject(id) || this.active.signal.aborted) return { status: 'cancelled', turnsUsed: turn }
+      this.transition(id, 'streaming')
+      try {
+        const directive = await performTurn(turn)
+        if (!this.mayProject(id) || this.active.signal.aborted) return { status: 'cancelled', turnsUsed }
+        if (directive === 'complete') return { status: 'completed', turnsUsed }
+      } catch (error) {
+        if (
+          !this.mayProject(id)
+          || this.active.signal.aborted
+          || (error instanceof Error && error.name === 'AbortError')
+        ) return { status: 'cancelled', turnsUsed }
+        return { status: 'failed', turnsUsed, error }
+      }
+    }
+    return { status: 'turn-limit', turnsUsed: maxTurns }
   }
 
   private publish(): void {

@@ -2,7 +2,7 @@
  * Chat Store 核心逻辑单元测试
  *
  * 覆盖：
- * - splitSayCalls / parseSayArgs / resolveSayContent / resolveContentFallback —— say 机制
+ * - parseSayArgs / resolveSayContent / resolveContentFallback —— say 机制
  * - addMessage / clearMessages / resetContext 消息管理
  * - showBubbleText / hideBubble 气泡控制
  * - toggleInput / openInput / closeInput 输入框控制
@@ -15,44 +15,10 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-// ─── say 工具调用拆分 / 解析 / 兜底 ──────────────────────────
-
-/** 构造一个 OpenAI 风格的工具调用 */
-function toolCall(name: string, args: string, id = name) {
-  return { id, type: 'function' as const, function: { name, arguments: args } }
-}
+// ─── say 工具调用解析 / 兜底 ──────────────────────────
 
 /** 翻译桩：把目标语言代码作为前缀返回，便于断言"是否/向哪种语言调用了翻译" */
 const fakeTranslate = async (text: string, target: string) => `[${target}]${text}`
-
-describe('splitSayCalls', () => {
-  it('分出 say 与动作调用', async () => {
-    const { splitSayCalls } = await import('../chat')
-    const calls = [
-      toolCall('set_character_emotion', '{"emotion":"开心"}'),
-      toolCall('say', '{"voice":"やあ","display":"嗨"}'),
-    ]
-    const { sayCall, actionCalls } = splitSayCalls(calls)
-    expect(sayCall?.function.name).toBe('say')
-    expect(actionCalls).toHaveLength(1)
-    expect(actionCalls[0].function.name).toBe('set_character_emotion')
-  })
-
-  it('多个 say 只取第一个，其余忽略', async () => {
-    const { splitSayCalls } = await import('../chat')
-    const calls = [toolCall('say', '{"voice":"1"}', 's1'), toolCall('say', '{"voice":"2"}', 's2')]
-    const { sayCall, actionCalls } = splitSayCalls(calls)
-    expect(sayCall?.id).toBe('s1')
-    expect(actionCalls).toHaveLength(0)
-  })
-
-  it('无 say 时 sayCall 为 null', async () => {
-    const { splitSayCalls } = await import('../chat')
-    const { sayCall, actionCalls } = splitSayCalls([toolCall('get_time', '{}')])
-    expect(sayCall).toBeNull()
-    expect(actionCalls).toHaveLength(1)
-  })
-})
 
 describe('parseSayArgs', () => {
   it('解析 voice 与 display', async () => {

@@ -36,6 +36,8 @@ describe('send result contract', () => {
     expect(await store.sendMessage('draft')).toBe(false)
     expect(store.messages.some(m => m.role === 'user' && m.text === 'draft')).toBe(true)
     expect(store.isProcessing).toBe(false)
+    expect(store.currentBubbleText).toContain('connection failed')
+    expect(store.conversationRunState).toBe('failed')
   })
 
   it('reports an empty model response as failed', async () => {
@@ -61,6 +63,7 @@ describe('send result contract', () => {
     expect(await store.sendMessage('draft')).toBe(true)
     expect(store.messages.some(m => m.role === 'assistant' && m.text === '你好')).toBe(true)
     expect(store.isProcessing).toBe(false)
+    expect(store.conversationRunState).toBe('completed')
   })
 
   it('renders visible streamed text immediately and hides think content', async () => {
@@ -257,6 +260,7 @@ describe('send result contract', () => {
     await vi.waitFor(() => {
       expect(store.pendingApproval?.id).toBe('write-awaiting-confirmation')
     })
+    expect(store.conversationRunState).toBe('awaiting-approval')
 
     store.cancelResponse()
     await sending
@@ -264,6 +268,7 @@ describe('send result contract', () => {
     expect(store.pendingApproval).toBeNull()
     expect(store.isProcessing).toBe(false)
     expect(store.isUsingTools).toBe(false)
+    expect(store.conversationRunState).toBe('cancelled')
     expect(store.currentBubbleText).toBe('')
     setChatSessionPort(null)
   })

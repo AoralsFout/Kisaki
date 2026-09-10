@@ -99,4 +99,43 @@ describe('ConversationCoordinator', () => {
       'cancelled',
     ])
   })
+
+  it('owns model turn iteration and stops when the workflow completes', async () => {
+    const coordinator = new ConversationCoordinator()
+    coordinator.start('request-1')
+    const turns: number[] = []
+
+    const result = await coordinator.runTurns('request-1', 5, async turn => {
+      turns.push(turn)
+      return turn === 1 ? 'complete' : 'continue'
+    })
+
+    expect(result).toEqual({ status: 'completed', turnsUsed: 2 })
+    expect(turns).toEqual([0, 1])
+  })
+
+  it('classifies cancellation and failures without terminalizing presentation early', async () => {
+    const coordinator = new ConversationCoordinator()
+    coordinator.start('cancelled')
+    const cancelled = await coordinator.runTurns('cancelled', 2, async () => {
+      coordinator.cancelActive('user')
+      return 'continue'
+    })
+    expect(cancelled).toEqual({ status: 'cancelled', turnsUsed: 1 })
+
+    coordinator.start('failed')
+    const error = new Error('network')
+    const failed = await coordinator.runTurns('failed', 2, async () => { throw error })
+    expect(failed).toEqual({ status: 'failed', turnsUsed: 1, error })
+    expect(coordinator.mayProject('failed')).toBe(true)
+  })
+
+  it('reports the safety limit when every turn requests continuation', async () => {
+    const coordinator = new ConversationCoordinator()
+    coordinator.start('request-1')
+    await expect(coordinator.runTurns('request-1', 2, async () => 'continue')).resolves.toEqual({
+      status: 'turn-limit',
+      turnsUsed: 2,
+    })
+  })
 })
