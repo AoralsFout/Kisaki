@@ -11,7 +11,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { useChatStore } from './chat'
+import { setChatSessionPort, useChatStore } from './chat'
 import type { ChatMessage } from './chat'
 import type { ChatContextSnapshot } from '../ai'
 import { useCharacterStore } from './character'
@@ -712,6 +712,17 @@ export const useSessionStore = defineStore('session', () => {
     log.info("session_store.rollback_to.info", `已回档到消息 ${messageId}（保留 ${kept.length} 条，还原 ${fileCpIdsNewestFirst.length} 个文件检查点）`, { message_id: messageId, kept_length: kept.length, file_cp_ids_newest_first_length: fileCpIdsNewestFirst.length })
     return true
   }
+
+  // 过渡期由 SessionStore 单向实现 ChatStore 所需端口，避免 ChatStore 反向导入本模块。
+  setChatSessionPort({
+    currentSessionId: () => currentSessionId.value,
+    workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
+    persistCurrent: saveCurrentSession,
+    beginCheckpoint,
+    backupFile,
+    markCheckpointFiles,
+    clearCheckpoints,
+  })
 
   return {
     // 状态

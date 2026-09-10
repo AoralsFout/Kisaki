@@ -65,4 +65,9 @@ describe('architecture boundaries', () => {
     }
     expect(violations).toEqual([])
   })
+
+  it('does not allow ChatStore to import SessionStore', () => {
+    const chatStore = join(SOURCE_ROOT, 'stores', 'chat.ts')
+    expect(importsOf(readFileSync(chatStore, 'utf8'))).not.toContain('./session')
+  })
 })

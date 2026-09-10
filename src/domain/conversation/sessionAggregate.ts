@@ -1,5 +1,6 @@
 import type {
   AssistantMessageCommitted,
+  AssistantMessageRevised,
   AssistantToolCallsProduced,
   ContextCompacted,
   ConversationEvent,
@@ -50,6 +51,7 @@ function assertEventShape(event: unknown): asserts event is ConversationEvent {
     'assistant-tool-calls-produced',
     'tool-execution-completed',
     'assistant-message-committed',
+    'assistant-message-revised',
     'context-compacted',
   ])
   if (!supported.has(event.type as ConversationEvent['type'])) {
@@ -87,6 +89,16 @@ function assertEventShape(event: unknown): asserts event is ConversationEvent {
         || !['say', 'text-fallback'].includes(String(event.source))
       ) {
         throw new Error('Assistant message event is invalid')
+      }
+      break
+    case 'assistant-message-revised':
+      if (
+        typeof event.messageId !== 'string'
+        || (event.display === undefined && event.voice === undefined)
+        || (event.display !== undefined && typeof event.display !== 'string')
+        || (event.voice !== undefined && typeof event.voice !== 'string')
+      ) {
+        throw new Error('Assistant message revision event is invalid')
       }
       break
     case 'context-compacted':
@@ -235,6 +247,19 @@ export class SessionAggregate {
     this.append({ ...identity, type: 'assistant-message-committed', ...input })
   }
 
+  reviseAssistantMessage(
+    identity: EventIdentity,
+    input: Omit<AssistantMessageRevised, keyof EventIdentity | 'type'>,
+  ): void {
+    if (input.display === undefined && input.voice === undefined) {
+      throw new Error('Assistant message revision must contain display or voice')
+    }
+    if (!this.hasAssistantMessage(input.messageId)) {
+      throw new Error(`Unknown assistant message id: ${input.messageId}`)
+    }
+    this.append({ ...identity, type: 'assistant-message-revised', ...input })
+  }
+
   compactContext(
     identity: EventIdentity,
     input: Omit<ContextCompacted, keyof EventIdentity | 'type'>,
@@ -265,6 +290,7 @@ export class SessionAggregate {
 
   projectTranscript(): UiTranscriptMessage[] {
     const messages: UiTranscriptMessage[] = []
+    const assistantIndexes = new Map<string, number>()
     for (const event of this.state.timeline) {
       if (event.type === 'user-message-accepted') {
         messages.push({
@@ -275,6 +301,7 @@ export class SessionAggregate {
           images: event.images.length ? clone(event.images) : undefined,
         })
       } else if (event.type === 'assistant-message-committed') {
+        assistantIndexes.set(event.messageId, messages.length)
         messages.push({
           id: event.messageId,
           role: 'assistant',
@@ -282,6 +309,11 @@ export class SessionAggregate {
           voice: event.voice,
           occurredAt: event.occurredAt,
         })
+      } else if (event.type === 'assistant-message-revised') {
+        const index = assistantIndexes.get(event.messageId)
+        if (index === undefined) continue
+        if (event.display !== undefined) messages[index].text = event.display
+        if (event.voice !== undefined) messages[index].voice = event.voice
       }
     }
     return messages
@@ -289,6 +321,7 @@ export class SessionAggregate {
 
   projectModelContext(): ModelContextMessage[] {
     const context: ModelContextMessage[] = []
+    const fallbackIndexes = new Map<string, number>()
     if (this.state.contextState.summary) {
       context.push({ role: 'system', content: this.state.contextState.summary })
     }
@@ -306,8 +339,16 @@ export class SessionAggregate {
           context.push({ role: 'tool', content: event.content, toolCallId: event.callId })
           break
         case 'assistant-message-committed':
-          if (event.source === 'text-fallback') context.push({ role: 'assistant', content: event.display })
+          if (event.source === 'text-fallback') {
+            fallbackIndexes.set(event.messageId, context.length)
+            context.push({ role: 'assistant', content: event.display })
+          }
           break
+        case 'assistant-message-revised': {
+          const index = fallbackIndexes.get(event.messageId)
+          if (index !== undefined && event.display !== undefined) context[index].content = event.display
+          break
+        }
       }
     }
     return context
@@ -335,6 +376,12 @@ export class SessionAggregate {
     ))
   }
 
+  private hasAssistantMessage(messageId: string): boolean {
+    return this.state.timeline.some(event => (
+      event.type === 'assistant-message-committed' && event.messageId === messageId
+    ))
+  }
+
   private assertInvariants(): void {
     assertNonEmpty(this.state.id, 'session id')
     assertNonEmpty(this.state.title, 'session title')
@@ -343,7 +390,12 @@ export class SessionAggregate {
 
     const callIds = new Set<string>()
     const resultIds = new Set<string>()
+    const messageIds = new Set<string>()
     for (const event of this.state.timeline) {
+      if (event.type === 'user-message-accepted' || event.type === 'assistant-message-committed') {
+        if (messageIds.has(event.messageId)) throw new Error(`Session contains duplicate message id: ${event.messageId}`)
+        messageIds.add(event.messageId)
+      }
       if (event.type === 'assistant-tool-calls-produced') {
         for (const call of event.calls) {
           if (callIds.has(call.id)) throw new Error(`Session contains duplicate tool call id: ${call.id}`)
@@ -354,6 +406,9 @@ export class SessionAggregate {
         if (!callIds.has(event.callId)) throw new Error(`Session contains orphan tool result: ${event.callId}`)
         if (resultIds.has(event.callId)) throw new Error(`Session contains duplicate tool result: ${event.callId}`)
         resultIds.add(event.callId)
+      }
+      if (event.type === 'assistant-message-revised' && !messageIds.has(event.messageId)) {
+        throw new Error(`Session contains orphan assistant message revision: ${event.messageId}`)
       }
     }
   }

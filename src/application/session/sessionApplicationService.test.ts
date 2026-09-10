@@ -85,4 +85,58 @@ describe('SessionApplicationService', () => {
     expect(service.snapshot().sessions.map(session => session.title)).toEqual(['First'])
     expect(service.snapshot().currentSessionId).toBe('session-1')
   })
+
+  it('records conversation facts through explicit application commands', async () => {
+    const { service } = setup()
+    await service.initialize('First')
+
+    await service.acceptUserMessage('session-1', { messageId: 'user-1', text: 'hello' })
+    await service.recordToolCalls('session-1', {
+      stepId: 'step-1',
+      calls: [{ id: 'say-1', name: 'say', arguments: { display: 'hi' } }],
+    })
+    await service.recordToolResult('session-1', {
+      callId: 'say-1', content: 'spoken', status: 'succeeded',
+    })
+    await service.commitAssistantMessage('session-1', {
+      messageId: 'answer-1', display: 'hi', source: 'say',
+    })
+    await service.reviseAssistantMessage('session-1', {
+      messageId: 'answer-1', voice: 'hello',
+    })
+
+    expect(service.current().timeline.map(event => event.type)).toEqual([
+      'user-message-accepted',
+      'assistant-tool-calls-produced',
+      'tool-execution-completed',
+      'assistant-message-committed',
+      'assistant-message-revised',
+    ])
+  })
+
+  it('serializes overlapping commands so an older save cannot win the race', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    repository.save.mockClear()
+    let releaseCreate!: () => void
+    const createBlocked = new Promise<void>(resolve => { releaseCreate = resolve })
+    repository.save
+      .mockImplementationOnce(async document => {
+        await createBlocked
+        repository.document = structuredClone(document)
+      })
+      .mockImplementationOnce(async document => {
+        repository.document = structuredClone(document)
+      })
+
+    const creating = service.create({ title: 'Second' })
+    const renaming = service.rename('session-1', 'Renamed')
+    await Promise.resolve()
+    expect(repository.save).toHaveBeenCalledTimes(1)
+
+    releaseCreate()
+    await Promise.all([creating, renaming])
+
+    expect(repository.document?.sessions.map(session => session.title)).toEqual(['Renamed', 'Second'])
+  })
 })

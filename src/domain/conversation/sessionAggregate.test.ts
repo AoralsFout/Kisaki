@@ -130,4 +130,27 @@ describe('SessionAggregate', () => {
     ])
     expect(session.projectTranscript()).toHaveLength(3)
   })
+
+  it('records background display and voice completion as an explicit revision event', () => {
+    const session = createSession()
+    session.commitAssistantMessage(
+      { eventId: 'commit', occurredAt: 11 },
+      { messageId: 'answer', display: 'preview', voice: 'draft', source: 'text-fallback' },
+    )
+    session.reviseAssistantMessage(
+      { eventId: 'revision', occurredAt: 12 },
+      { messageId: 'answer', display: 'final', voice: 'spoken final' },
+    )
+
+    expect(session.projectTranscript()[0]).toMatchObject({ text: 'final', voice: 'spoken final' })
+    expect(session.projectModelContext()).toEqual([{ role: 'assistant', content: 'final' }])
+  })
+
+  it('rejects a revision without an earlier committed assistant message', () => {
+    const session = createSession()
+    expect(() => session.reviseAssistantMessage(
+      { eventId: 'revision', occurredAt: 11 },
+      { messageId: 'missing', display: 'orphan' },
+    )).toThrow('Unknown assistant message id')
+  })
 })

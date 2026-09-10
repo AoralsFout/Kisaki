@@ -52,6 +52,13 @@ export interface AssistantMessageCommitted extends EventEnvelope {
   source: 'say' | 'text-fallback'
 }
 
+export interface AssistantMessageRevised extends EventEnvelope {
+  type: 'assistant-message-revised'
+  messageId: string
+  display?: string
+  voice?: string
+}
+
 export interface ContextCompacted extends EventEnvelope {
   type: 'context-compacted'
   summary: string
@@ -63,6 +70,7 @@ export type ConversationEvent =
   | AssistantToolCallsProduced
   | ToolExecutionCompleted
   | AssistantMessageCommitted
+  | AssistantMessageRevised
   | ContextCompacted
 
 export interface SessionCheckpoint {

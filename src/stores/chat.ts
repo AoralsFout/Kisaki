@@ -47,7 +47,7 @@ import type { TtsPlaybackStatus } from '../tts'
 import { useCharacterStore } from '../character'
 import { createLogger } from '../utils/logger'
 import { t } from '../i18n'
-import { useSessionStore } from './session'
+import type { ChatSessionPort } from '../application/conversation/chatSessionPort'
 import { DEFAULT_VOICE_LANGUAGE } from '../constants'
 import { resolveDisplayLanguage } from './language'
 
@@ -140,6 +140,22 @@ export interface CurrentContextInspection extends ChatContextInspection {
 
 /** 角色身份来源：由 App 注入（避免 store 直接依赖 Pinia 角色状态） */
 let characterIdentity: (() => { id: string; name: string } | null) | null = null
+
+const detachedSessionPort: ChatSessionPort = {
+  currentSessionId: () => '',
+  workspaceGrantId: () => null,
+  persistCurrent: () => {},
+  beginCheckpoint: messageId => messageId,
+  backupFile: async () => {},
+  markCheckpointFiles: () => {},
+  clearCheckpoints: async () => {},
+}
+let chatSessionPort: ChatSessionPort = detachedSessionPort
+
+/** Installed by the composition owner; ChatStore never imports SessionStore directly. */
+export function setChatSessionPort(port: ChatSessionPort | null): void {
+  chatSessionPort = port ?? detachedSessionPort
+}
 
 /** 注入角色身份读取函数，assistant 消息落库时记录身份快照 */
 export function setChatCharacterIdentity(getter: () => { id: string; name: string } | null): void {
@@ -809,7 +825,7 @@ export const useChatStore = defineStore('chat', () => {
     log.trace("chat_store.send_message.trace", `[${_fn}] 用户消息已加入 ChatContext`, { fn: _fn })
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
-    const checkpointId = useSessionStore().beginCheckpoint(userMsgId)
+    const checkpointId = chatSessionPort.beginCheckpoint(userMsgId)
 
     // ── 准备气泡 ────────────────────────────────────────
     showBubble.value = true
@@ -830,7 +846,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // ── 收集工具定义（含 say 说话工具）────────────────────
-    const hasWorkspace = Boolean(useSessionStore().currentSession?.workspaceId)
+    const hasWorkspace = Boolean(chatSessionPort.workspaceGrantId())
     const tools = [...agentService.getToolDefinitions(undefined, { hasWorkspace }), SAY_TOOL_DEF]
     log.debug("chat_store.send_message.debug", `[${_fn}] 工具定义数量: ${tools.length} (含 say)`, { fn: _fn, tools_length: tools.length })
     {
@@ -894,7 +910,7 @@ export const useChatStore = defineStore('chat', () => {
       translate: TranslateFn,
       displayPreview: string,
     ) => {
-      const sessionId = useSessionStore().currentSessionId
+      const sessionId = chatSessionPort.currentSessionId()
       const voiceStartedAt = performance.now()
       let playbackStarted = false
       const completeBeforePlayback = (status: 'cancelled' | 'failed', reason: string) => {
@@ -916,7 +932,7 @@ export const useChatStore = defineStore('chat', () => {
             completeBeforePlayback('cancelled', 'voice_preparation_cancelled')
             return
           }
-          if (useSessionStore().currentSessionId !== sessionId) {
+          if (chatSessionPort.currentSessionId() !== sessionId) {
             completeBeforePlayback('cancelled', 'session_changed')
             return
           }
@@ -932,7 +948,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           if (voice) message.voice = voice
           if (display && display !== message.text) message.text = display
-          useSessionStore().saveCurrentSession()
+          chatSessionPort.persistCurrent()
           if (currentBubbleText.value === displayPreview && display && display !== displayPreview) {
             currentBubbleText.value = display
           }
@@ -1055,8 +1071,8 @@ export const useChatStore = defineStore('chat', () => {
         const rel = mutatingPath(tc.name, tc.arguments)
         if (rel) {
           try {
-            await useSessionStore().backupFile(checkpointId, rel)
-            useSessionStore().markCheckpointFiles(checkpointId)
+            await chatSessionPort.backupFile(checkpointId, rel)
+            chatSessionPort.markCheckpointFiles(checkpointId)
           } catch (e) {
             log.warn("chat_store.execute_with_policy.warn", `[${_fn}] ⚠ 文件备份失败（继续执行）: ${(e as Error).message}`, e, { fn: _fn })
           }
@@ -1444,7 +1460,7 @@ export const useChatStore = defineStore('chat', () => {
 
       // 即使本轮没有最终 say（错误、上限或仅工具），也保存脱敏后的工具上下文，
       // 避免重启后完全丢失已经完成的操作事实。
-      useSessionStore().saveCurrentSession()
+      chatSessionPort.persistCurrent()
     }
 
     // 完成状态分级：取消 > 硬错误 > 有工具失败但仍有输出 > 全部成功
@@ -1635,7 +1651,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 保存到当前会话
     const saveTimer = debugTimer(`${_fn} saveSession`)
-    useSessionStore().saveCurrentSession()
+    chatSessionPort.persistCurrent()
     saveTimer.stop()
     log.trace("chat_store.add_message.trace", `[${_fn}] ◀`, { fn: _fn })
     return id
@@ -1678,9 +1694,9 @@ export const useChatStore = defineStore('chat', () => {
     log.trace("chat_store.clear_messages.trace", `[${_fn}] chatContext → createChatContext()`, { fn: _fn })
 
     // 保存清空状态到当前会话
-    useSessionStore().saveCurrentSession()
+    chatSessionPort.persistCurrent()
     // 清空本会话的回档检查点与文件备份
-    void useSessionStore().clearCheckpoints()
+    void chatSessionPort.clearCheckpoints()
     log.info("chat_store.clear_messages.info", `[${_fn}] ✓ 已清空 ${prevCount} 条聊天记录`, { fn: _fn, prev_count: prevCount })
     log.trace("chat_store.clear_messages.trace", `[${_fn}] ◀`, { fn: _fn })
   }
@@ -1831,7 +1847,7 @@ export const useChatStore = defineStore('chat', () => {
       .map(msg => ({ text: msg.text, images: msg.images })))
     configReady.value = isConfigValid(loadConfig())
     syncContextStats()
-    useSessionStore().saveCurrentSession()
+    chatSessionPort.persistCurrent()
     log.info("chat_store.refresh_model_context.info", `模型配置已刷新，上下文预算=${contextStats.value.maxContextTokens}`, { context_stats_value: contextStats.value.maxContextTokens })
   }
 
@@ -1846,7 +1862,7 @@ export const useChatStore = defineStore('chat', () => {
   function inspectContext(): CurrentContextInspection {
     const tools = [
       ...agentService.getToolDefinitions(useCharacterStore().data, {
-        hasWorkspace: Boolean(useSessionStore().currentSession?.workspaceId),
+        hasWorkspace: Boolean(chatSessionPort.workspaceGrantId()),
       }),
       SAY_TOOL_DEF,
     ] as ToolDefinition[]
