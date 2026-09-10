@@ -42,6 +42,12 @@ export class SessionCollection {
     return this.sessions.get(this.currentId)!
   }
 
+  get(sessionId: string): SessionAggregate {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error(`Session does not exist: ${sessionId}`)
+    return session
+  }
+
   list(): ConversationSessionSnapshot[] {
     return [...this.sessions.values()]
       .map(session => session.snapshot())

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const SOURCE_ROOT = join(process.cwd(), 'src')
 const DOMAIN_ROOT = join(SOURCE_ROOT, 'domain')
+const APPLICATION_ROOT = join(SOURCE_ROOT, 'application')
 const FORBIDDEN_DOMAIN_IMPORTS = [
   'vue',
   'pinia',
@@ -36,6 +37,28 @@ describe('architecture boundaries', () => {
       const imports = importsOf(readFileSync(file, 'utf8'))
       for (const dependency of imports) {
         if (FORBIDDEN_DOMAIN_IMPORTS.some(forbidden => dependency.includes(forbidden))) {
+          violations.push(`${relative(SOURCE_ROOT, file)} -> ${dependency}`)
+        }
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('keeps application services independent from UI, stores, and infrastructure', () => {
+    const forbidden = [
+      'vue',
+      'pinia',
+      '@tauri-apps/',
+      '/stores/',
+      '/components/',
+      '/infrastructure/',
+      '/presentation/',
+    ]
+    const violations: string[] = []
+    for (const file of sourceFiles(APPLICATION_ROOT)) {
+      const imports = importsOf(readFileSync(file, 'utf8'))
+      for (const dependency of imports) {
+        if (forbidden.some(candidate => dependency.includes(candidate))) {
           violations.push(`${relative(SOURCE_ROOT, file)} -> ${dependency}`)
         }
       }

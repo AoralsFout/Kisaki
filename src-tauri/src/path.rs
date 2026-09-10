@@ -82,6 +82,14 @@ pub(crate) fn sessions_file() -> PathBuf {
         .join("sessions.json")
 }
 
+/// 新会话领域模型的数据文件。迁移期间与旧 sessions.json 隔离，避免两种 schema 相互覆盖。
+pub(crate) fn sessions_v2_file() -> PathBuf {
+    SESSIONS_DIR
+        .get()
+        .expect("SESSIONS_DIR 未初始化")
+        .join("sessions-v2.json")
+}
+
 /// 路径安全校验 — 防止 path traversal 攻击
 ///
 /// 验证路径组件不包含 `..`、路径分隔符等危险字符。

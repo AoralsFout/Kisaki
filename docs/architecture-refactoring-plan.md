@@ -164,7 +164,9 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
 - [ ] 阶段 1：Session Aggregate。
   - [x] 新格式事件模型、单会话 Aggregate 与纯投影。
   - [x] SessionCollection 与 Repository 端口。
-  - [ ] Tauri v2 存储适配器和 Store 切换。
+  - [x] 独立 `sessions-v2.json` 的 Tauri 存储适配器。
+  - [x] SessionApplicationService 命令入口。
+  - [ ] Store 切换与 ChatStore 双向依赖解除。
 - [ ] 阶段 2：CharacterRuntime。
 - [ ] 阶段 3：ToolExecutionCoordinator。
 - [ ] 阶段 4：ConversationRun。

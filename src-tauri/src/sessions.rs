@@ -10,7 +10,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::path::sessions_file;
+use crate::path::{sessions_file, sessions_v2_file};
 
 /// 原子写入：先写临时文件再替换目标，防止进程中断导致 JSON 损坏。
 fn atomic_write(path: &Path, data: &str) -> Result<(), String> {
@@ -50,6 +50,37 @@ pub(crate) fn sessions_clear() -> Result<(), String> {
     let p = sessions_file();
     if p.exists() {
         fs::remove_file(&p).map_err(|e| format!("删除会话文件失败: {}", e))?;
+    }
+    Ok(())
+}
+
+/// 读取 v2 会话领域模型文件；不尝试解析或迁移旧 sessions.json。
+#[tauri::command]
+pub(crate) fn sessions_v2_load() -> Result<Option<String>, String> {
+    let p = sessions_v2_file();
+    if !p.exists() {
+        return Ok(None);
+    }
+    fs::read_to_string(&p)
+        .map(Some)
+        .map_err(|e| format!("读取 v2 会话文件失败: {}", e))
+}
+
+/// 原子保存 v2 会话领域模型文件。schema 校验由领域适配器负责。
+#[tauri::command]
+pub(crate) fn sessions_v2_save(data: String) -> Result<(), String> {
+    let p = sessions_v2_file();
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建会话目录失败: {}", e))?;
+    }
+    atomic_write(&p, &data)
+}
+
+#[tauri::command]
+pub(crate) fn sessions_v2_clear() -> Result<(), String> {
+    let p = sessions_v2_file();
+    if p.exists() {
+        fs::remove_file(&p).map_err(|e| format!("删除 v2 会话文件失败: {}", e))?;
     }
     Ok(())
 }
@@ -96,6 +127,14 @@ mod tests {
         // 清空
         sessions_clear().unwrap();
         assert_eq!(sessions_load().unwrap(), None);
+
+        // v2 使用独立文件，不读取或覆盖旧格式。
+        let v2 = r#"{"schemaVersion":2,"currentSessionId":"a","sessions":[]}"#;
+        sessions_v2_save(v2.to_string()).unwrap();
+        assert_eq!(sessions_v2_load().unwrap(), Some(v2.to_string()));
+        assert_eq!(sessions_load().unwrap(), None);
+        sessions_v2_clear().unwrap();
+        assert_eq!(sessions_v2_load().unwrap(), None);
 
         let _ = fs::remove_dir_all(&root);
     }

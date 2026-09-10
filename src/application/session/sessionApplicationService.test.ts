@@ -1,0 +1,88 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { SessionDocument } from '../../domain/conversation/events'
+import type { SessionRepository } from './sessionRepository'
+import { SessionApplicationService } from './sessionApplicationService'
+
+class MemorySessionRepository implements SessionRepository {
+  document: SessionDocument | null = null
+  save = vi.fn(async (document: SessionDocument) => {
+    this.document = structuredClone(document)
+  })
+
+  async load(): Promise<SessionDocument | null> {
+    return this.document && structuredClone(this.document)
+  }
+}
+
+function setup() {
+  const repository = new MemorySessionRepository()
+  let now = 10
+  let id = 0
+  const service = new SessionApplicationService({
+    repository,
+    now: () => now++,
+    nextId: () => `session-${++id}`,
+  })
+  return { repository, service }
+}
+
+describe('SessionApplicationService', () => {
+  it('creates and persists the first v2 session when storage is empty', async () => {
+    const { repository, service } = setup()
+
+    const result = await service.initialize('New conversation')
+
+    expect(result.schemaVersion).toBe(2)
+    expect(result.currentSessionId).toBe('session-1')
+    expect(repository.save).toHaveBeenCalledOnce()
+  })
+
+  it('coordinates create, switch, rename, and delete through one owner', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    const second = await service.create({ title: 'Second', characterId: 'alice' })
+    await service.rename('session-1', 'Renamed')
+    await service.switchTo('session-1')
+    const current = await service.delete('session-1')
+
+    expect(second.characterId).toBe('alice')
+    expect(current.id).toBe('session-2')
+    expect(service.snapshot().sessions.map(session => session.title)).toEqual(['Second'])
+    expect(repository.save).toHaveBeenCalledTimes(5)
+  })
+
+  it('restores an existing strict document without rewriting it', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    repository.save.mockClear()
+
+    const restored = new SessionApplicationService({
+      repository,
+      now: () => 99,
+      nextId: () => 'unused',
+    })
+
+    await restored.initialize('Ignored')
+
+    expect(restored.current().title).toBe('First')
+    expect(repository.save).not.toHaveBeenCalled()
+  })
+
+  it('rejects commands before initialization', async () => {
+    const { service } = setup()
+
+    expect(() => service.snapshot()).toThrow('not initialized')
+    await expect(service.create({ title: 'Too early' })).rejects.toThrow('not initialized')
+  })
+
+  it('rolls back the in-memory command when persistence fails', async () => {
+    const { repository, service } = setup()
+    await service.initialize('First')
+    repository.save.mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(service.create({ title: 'Unsaved' })).rejects.toThrow('disk full')
+
+    expect(service.snapshot().sessions.map(session => session.title)).toEqual(['First'])
+    expect(service.snapshot().currentSessionId).toBe('session-1')
+  })
+})
