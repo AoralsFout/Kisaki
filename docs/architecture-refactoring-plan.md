@@ -183,7 +183,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] ApprovalGateway 统一文件、命令、截图三类 pending/resolver/timeout/abort 生命周期。
   - [x] ToolExecutionCoordinator 固定执行前置条件 → 批准 → 检查点 → handler → 结构化结果。
   - [x] 原生与文本工具调用复用同一 Coordinator 路径。
-- [ ] 阶段 4：ConversationRun。
+- [x] 阶段 4：ConversationRun。
   - [x] 建立无框架依赖的显式状态机与合法转换约束。
   - [x] 发送、工具执行、统一批准、取消、清空和会话切换接入同一 Run 状态源。
   - [x] `isProcessing` / `isUsingTools` 改为状态机投影，删除分散写入和 `AbortController` 身份判断。
@@ -192,7 +192,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 原生/文本工具调用统一适配为 ToolCallBatch，并复用同一顺序执行与结果模型。
   - [x] 单轮模型返回解释移入 `ModelTurnInterpreter`，Store 不再判断 provider 返回通道。
   - [x] 建立 `AssistantMessageCoordinator` 提交边界；TTS 仅订阅已提交/修订事件。
-  - [ ] 将工具上下文写入从 ChatStore 移入 ConversationCoordinator。
+  - [x] 将工具调用/结果的会话事实写入与模型上下文投影顺序移入 ConversationCoordinator；旧请求在异步持久化后不得污染新请求上下文。
   - [x] SessionStore 切换到 v2 后，将提交端口接到 Session aggregate 的原子 `AssistantCommitted`。
 - [ ] 阶段 5：TTS 管道。
 - [ ] 阶段 6：设置与网络。

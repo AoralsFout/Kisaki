@@ -1,3 +1,6 @@
+import type { ConversationImage, RecordedToolCall } from '../../domain/conversation/events'
+import type { ProtocolToolCall } from './toolCallBatch'
+
 export type ConversationRunState =
   | 'idle'
   | 'preparing'
@@ -121,6 +124,44 @@ export class ConversationRun {
 
 type ConversationCoordinatorListener = (snapshot: ConversationRunSnapshot | null) => void
 
+export interface ConversationToolTurnPorts {
+  session: {
+    recordToolCalls(step: {
+      sessionId: string
+      stepId: string
+      calls: RecordedToolCall[]
+      visibleText?: string
+    }): Promise<boolean>
+    recordToolResult(result: {
+      sessionId: string
+      callId: string
+      content: string
+      status: 'succeeded' | 'failed' | 'rejected'
+      code?: string
+    }): Promise<boolean>
+  }
+  modelContext: {
+    addToolCalls(calls: readonly ProtocolToolCall[], visibleText?: string): void
+    addToolResult(callId: string, content: string): void
+    addToolImages(toolCallIds: string, images: readonly ConversationImage[]): void
+  }
+}
+
+export interface CommitConversationToolCalls {
+  sessionId: string
+  stepId: string
+  calls: readonly ProtocolToolCall[]
+  visibleText?: string
+}
+
+export interface CommitConversationToolResult {
+  sessionId: string
+  callId: string
+  content: string
+  status: 'succeeded' | 'failed' | 'rejected'
+  code?: string
+}
+
 export type ConversationTurnDirective = 'continue' | 'complete'
 
 export type ConversationLoopResult =
@@ -138,7 +179,10 @@ export class ConversationCoordinator {
   private unsubscribeRun: (() => void) | null = null
   private readonly listeners = new Set<ConversationCoordinatorListener>()
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly toolTurns?: ConversationToolTurnPorts,
+  ) {}
 
   current(): ConversationRunSnapshot | null {
     return this.active?.snapshot() ?? null
@@ -181,6 +225,60 @@ export class ConversationCoordinator {
     return this.active?.id === id && isConversationRunActive(this.active.snapshot().state)
   }
 
+  /** Persist the canonical tool-call fact before exposing it to the live model context. */
+  async commitToolCalls(id: string, input: CommitConversationToolCalls): Promise<void> {
+    const ports = this.requireToolTurnPorts()
+    this.assertMayProject(id)
+    const recorded = await ports.session.recordToolCalls({
+      sessionId: input.sessionId,
+      stepId: input.stepId,
+      calls: input.calls.map(call => ({
+        id: call.id,
+        name: call.function.name,
+        arguments: recordedArguments(call.function.arguments),
+      })),
+      visibleText: input.visibleText,
+    })
+    if (!recorded) throw new Error('工具调用未能写入当前会话')
+    this.assertMayProject(id)
+    ports.modelContext.addToolCalls(input.calls, input.visibleText)
+  }
+
+  /** Persist a tool result before making it available to the next model turn. */
+  async commitToolResult(id: string, input: CommitConversationToolResult): Promise<void> {
+    const ports = this.requireToolTurnPorts()
+    this.assertMayProject(id)
+    const recorded = await ports.session.recordToolResult(input)
+    if (!recorded) throw new Error('工具结果未能写入当前会话')
+    this.assertMayProject(id)
+    ports.modelContext.addToolResult(input.callId, input.content)
+  }
+
+  /** Images are ephemeral model context; the tool result itself remains the persisted fact. */
+  appendToolImages(
+    id: string,
+    toolCallIds: string,
+    images: readonly ConversationImage[],
+  ): void {
+    this.assertMayProject(id)
+    this.requireToolTurnPorts().modelContext.addToolImages(toolCallIds, images)
+  }
+
+  /**
+   * A provider text fallback is shaped as a synthetic say exchange in model context.
+   * It is deliberately not persisted as a real provider tool call.
+   */
+  appendSyntheticToolExchange(
+    id: string,
+    call: ProtocolToolCall,
+    result: string,
+  ): void {
+    this.assertMayProject(id)
+    const context = this.requireToolTurnPorts().modelContext
+    context.addToolCalls([call])
+    context.addToolResult(call.id, result)
+  }
+
   /**
    * Owns bounded model-turn iteration and cancellation/error classification.
    * Turn handlers describe only whether the domain workflow needs another model turn.
@@ -217,4 +315,26 @@ export class ConversationCoordinator {
     const snapshot = this.current()
     for (const listener of this.listeners) listener(snapshot)
   }
+
+  private requireToolTurnPorts(): ConversationToolTurnPorts {
+    if (!this.toolTurns) throw new Error('Conversation tool turn ports are not configured')
+    return this.toolTurns
+  }
+
+  private assertMayProject(id: string): void {
+    if (this.mayProject(id)) return
+    const error = new Error(`Conversation run cannot project tool context: ${id}`)
+    error.name = 'AbortError'
+    throw error
+  }
+}
+
+function recordedArguments(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw || '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch { /* preserve malformed provider output below */ }
+  return { _raw: raw, _invalid: true }
 }

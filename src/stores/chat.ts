@@ -170,15 +170,6 @@ const detachedSessionPort: ChatSessionPort = {
   clearConversation: async () => {},
 }
 
-function recordedArguments(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw || '{}')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-  } catch { /* preserve malformed provider output below */ }
-  return { _raw: raw, _invalid: true }
-}
 let chatSessionPort: ChatSessionPort = detachedSessionPort
 
 /** Installed by the composition owner; ChatStore never imports SessionStore directly. */
@@ -398,7 +389,27 @@ export const useChatStore = defineStore('chat', () => {
   /** 当前是否正在执行工具（子状态） */
   const isUsingTools = ref(false)
   const conversationRunState = ref<ConversationRunState>('idle')
-  const conversationCoordinator = new ConversationCoordinator()
+  let chatContext = createChatContext()
+  const conversationCoordinator = new ConversationCoordinator(Date.now, {
+    session: {
+      recordToolCalls: input => chatSessionPort.recordToolCalls(input),
+      recordToolResult: input => chatSessionPort.recordToolResult(input),
+    },
+    modelContext: {
+      addToolCalls: (calls, visibleText) => {
+        chatContext.addAssistantToolCall([...calls], visibleText)
+        syncContextStats()
+      },
+      addToolResult: (callId, content) => {
+        chatContext.addToolResult(callId, content)
+        syncContextStats()
+      },
+      addToolImages: (toolCallIds, images) => {
+        chatContext.addToolImages(toolCallIds, images)
+        syncContextStats()
+      },
+    },
+  })
   conversationCoordinator.subscribe(snapshot => {
     const state = snapshot?.state ?? 'idle'
     conversationRunState.value = state
@@ -507,7 +518,6 @@ export const useChatStore = defineStore('chat', () => {
     return new ChatContext()
   }
 
-  let chatContext = createChatContext()
   let currentPersona: {
     prompt: string
     voiceLang?: string
@@ -807,13 +817,11 @@ export const useChatStore = defineStore('chat', () => {
       // 已取消：不污染上下文
       if (conversationRun.signal.aborted) return
       const sayId = `say_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      chatContext.addAssistantToolCall([{
+      conversationCoordinator.appendSyntheticToolExchange(requestId, {
         id: sayId,
         type: 'function',
         function: { name: SAY_TOOL_NAME, arguments: JSON.stringify({ voice, display }) },
-      }])
-      chatContext.addToolResult(sayId, '已说出')
-      syncContextStats()
+      }, '已说出')
     }
 
     const toolExecutionCoordinator = new ToolExecutionCoordinator({
@@ -880,16 +888,13 @@ export const useChatStore = defineStore('chat', () => {
             source: batch.source,
             tool_result_content: (toolResult.content || '').slice(0, 200),
           })
-          const recorded = await chatSessionPort.recordToolResult({
+          await conversationCoordinator.commitToolResult(requestId, {
             sessionId: requestSessionId,
             callId: protocolCall.id,
             content: toolResult.content,
             status: isToolSkipped(toolResult) ? 'rejected' : isToolError(toolResult) ? 'failed' : 'succeeded',
             code: toolResult.code,
           })
-          if (!recorded) throw new Error('工具结果未能写入当前会话')
-          chatContext.addToolResult(protocolCall.id, toolResult.content)
-          syncContextStats()
         },
       })
       toolFailureCount += result.failureCount
@@ -1013,19 +1018,12 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         currentBubbleText.value = ""
-        const callsRecorded = await chatSessionPort.recordToolCalls({
+        await conversationCoordinator.commitToolCalls(requestId, {
           sessionId: requestSessionId,
           stepId: `${requestId}:${turn}`,
-          calls: batch.protocolCalls.map(call => ({
-            id: call.id,
-            name: call.function.name,
-            arguments: recordedArguments(call.function.arguments),
-          })),
+          calls: batch.protocolCalls,
           visibleText: batch.assistantText,
         })
-        if (!callsRecorded) throw new Error('工具调用未能写入当前会话')
-        chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
-        syncContextStats()
         const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await executeActionBatch(batch)
 
         // say 不能抢在同批动作的图片、失败或拒绝结果之前成为最终答复。
@@ -1036,16 +1034,18 @@ export const useChatStore = defineStore('chat', () => {
             : toolImages.length
               ? '未说出：需要先观察刚读取的图片，再生成最终答复。'
               : '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
-          if (!await chatSessionPort.recordToolResult({
+          await conversationCoordinator.commitToolResult(requestId, {
             sessionId: requestSessionId,
             callId: sayCall.id,
             content: reason,
             status: 'rejected',
             code: 'SAY_DEFERRED',
-          })) throw new Error('say 工具结果未能写入当前会话')
-          chatContext.addToolResult(sayCall.id, reason)
-          chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
-          syncContextStats()
+          })
+          conversationCoordinator.appendToolImages(
+            requestId,
+            batch.actions.map(action => action.protocolCall.id).join(', '),
+            toolImages,
+          )
           turnTimer.stop(actionBatchFailed ? 'tool-failed — continue' : 'tool-followup — continue')
           return 'continue'
         }
@@ -1066,14 +1066,12 @@ export const useChatStore = defineStore('chat', () => {
             currentBubbleText.value = displayPreview
             isTyping.value = false
           }
-          if (!await chatSessionPort.recordToolResult({
+          await conversationCoordinator.commitToolResult(requestId, {
             sessionId: requestSessionId,
             callId: sayCall.id,
             content: '已说出',
             status: 'succeeded',
-          })) throw new Error('say 工具结果未能写入当前会话')
-          chatContext.addToolResult(sayCall.id, '已说出')
-          syncContextStats()
+          })
           if (displayPreview) {
             const messageId = await commitAssistantMessage(displayPreview, raw.voice, 'say')
             if (messageId) finalizeVoiceInBackground(messageId, raw, voiceLang, displayLang, translate, displayPreview)
@@ -1087,8 +1085,11 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         if (toolImages.length) {
-          chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
-          syncContextStats()
+          conversationCoordinator.appendToolImages(
+            requestId,
+            batch.actions.map(action => action.protocolCall.id).join(', '),
+            toolImages,
+          )
         }
         isTyping.value = false
         if (batch.assistantText?.trim()) {

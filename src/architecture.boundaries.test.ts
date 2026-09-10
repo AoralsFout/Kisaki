@@ -117,7 +117,7 @@ describe('architecture boundaries', () => {
 
   it('keeps conversation lifecycle and stream protocol parsing outside ChatStore', () => {
     const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
-    expect(source).toContain('new ConversationCoordinator()')
+    expect(source).toContain('new ConversationCoordinator(')
     expect(source).toContain('conversationCoordinator.runTurns(')
     expect(source).toContain('new ModelStreamDecoder()')
     expect(source).toContain('interpretModelTurn(')
@@ -128,6 +128,11 @@ describe('architecture boundaries', () => {
     expect(source).not.toContain("result.type === 'done'")
     expect(source).not.toContain("result.type === 'tools'")
     expect(source).not.toContain('JSON.parse(tc.function.arguments')
+    expect(source).toContain('conversationCoordinator.commitToolCalls(')
+    expect(source).toContain('conversationCoordinator.commitToolResult(')
+    // The sole direct references are dependency adapters passed into the coordinator.
+    expect(source.match(/chatSessionPort\.recordToolCalls\(/g)).toHaveLength(1)
+    expect(source.match(/chatSessionPort\.recordToolResult\(/g)).toHaveLength(1)
     expect(source.match(/triggerTts\(/g)).toHaveLength(2) // one event subscriber + function declaration
     expect(source.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
     expect(source.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
