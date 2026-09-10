@@ -152,4 +152,12 @@ describe('architecture boundaries', () => {
     }
     expect(violations).toEqual([])
   })
+
+  it('keeps buffered provider protocols out of the central TTS engine', () => {
+    const source = readFileSync(join(SOURCE_ROOT, 'tts', 'speak.ts'), 'utf8')
+    expect(source).toContain('provider.synthesize(')
+    expect(source).not.toContain('synthesizeWithGptSoVits(')
+    expect(source).not.toMatch(/invoke<[^>]+>\('cosyvoice_tts'/)
+    expect(source).not.toContain('getGptSoVitsCharacterParams')
+  })
 })
