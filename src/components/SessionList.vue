@@ -42,15 +42,15 @@ watch(() => props.visible, (v) => {
   if (!v) { editingId.value = null; deleteTarget.value = null }
 })
 
-function handleSelect(id: string) {
+async function handleSelect(id: string) {
   if (id !== sessionStore.currentSessionId) {
-    sessionStore.switchSession(id)
+    await sessionStore.switchSession(id)
   }
   emit('close')
 }
 
-function handleCreate() {
-  sessionStore.createSession()
+async function handleCreate() {
+  await sessionStore.createSession()
   emit('close')
 }
 
@@ -59,9 +59,9 @@ function handleDelete(id: string) {
   if (session) deleteTarget.value = { id, name: session.name }
 }
 
-function confirmDelete() {
+async function confirmDelete() {
   if (!deleteTarget.value) return
-  sessionStore.deleteSession(deleteTarget.value.id)
+  await sessionStore.deleteSession(deleteTarget.value.id)
   deleteTarget.value = null
 }
 
@@ -76,9 +76,9 @@ function startRename(id: string) {
   })
 }
 
-function confirmRename(id: string) {
+async function confirmRename(id: string) {
   if (editingId.value !== id) return
-  sessionStore.renameSession(id, editName.value)
+  await sessionStore.renameSession(id, editName.value)
   editingId.value = null
 }
 

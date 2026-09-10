@@ -32,15 +32,15 @@ async function pickDirectory() {
       title: t('app.workspace.pickTitle'),
     })
     if (grant) {
-      sessionStore.setWorkspace(grant)
+      await sessionStore.setWorkspace(grant)
     }
   } catch (err) {
     log.warn("workspace_chip.pick_directory.warn", `选择工作目录失败: ${(err as Error).message}`, err)
   }
 }
 
-function clearWorkspace() {
-  sessionStore.clearWorkspace()
+async function clearWorkspace() {
+  await sessionStore.clearWorkspace()
 }
 </script>
 

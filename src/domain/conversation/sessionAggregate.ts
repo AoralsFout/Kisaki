@@ -33,6 +33,10 @@ export interface SessionRollbackResult {
   workspaceCheckpointIdsNewestFirst: string[]
 }
 
+export interface ClearedConversationResult {
+  workspaceCheckpointIdsNewestFirst: string[]
+}
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -147,6 +151,13 @@ function assertSnapshotShape(value: unknown): asserts value is ConversationSessi
   if (typeof value.id !== 'string' || typeof value.title !== 'string') {
     throw new Error('Session identity is invalid')
   }
+  if (
+    !isNullableString(value.characterId)
+    || typeof value.characterLocked !== 'boolean'
+    || !isNullableString(value.workspaceGrantId)
+  ) {
+    throw new Error('Session bindings are invalid')
+  }
   if (!Array.isArray(value.timeline) || !Array.isArray(value.checkpoints)) {
     throw new Error('Session timeline or checkpoints are invalid')
   }
@@ -182,6 +193,7 @@ export class SessionAggregate {
       id: options.id,
       title: options.title,
       characterId: options.characterId ?? null,
+      characterLocked: false,
       workspaceGrantId: options.workspaceGrantId ?? null,
       timeline: [],
       checkpoints: [],
@@ -207,6 +219,9 @@ export class SessionAggregate {
   }
 
   bindCharacter(characterId: string | null, now: number): void {
+    if (this.state.characterLocked && characterId !== this.state.characterId) {
+      throw new Error('Cannot change character after the conversation has started')
+    }
     this.state.characterId = characterId
     this.state.updatedAt = now
   }
@@ -230,6 +245,7 @@ export class SessionAggregate {
       text: input.text,
       images: clone(input.images ?? []),
     } satisfies UserMessageAccepted)
+    this.state.characterLocked = true
   }
 
   recordToolCalls(
@@ -312,6 +328,25 @@ export class SessionAggregate {
     }
     this.state.checkpoints.push(clone(checkpoint))
     this.state.updatedAt = now
+  }
+
+  markCheckpointWorkspaceChanges(checkpointId: string, now: number): void {
+    const checkpoint = this.state.checkpoints.find(item => item.id === checkpointId)
+    if (!checkpoint) throw new Error(`Unknown checkpoint: ${checkpointId}`)
+    checkpoint.hasWorkspaceChanges = true
+    this.state.updatedAt = now
+  }
+
+  clearConversation(now: number): ClearedConversationResult {
+    const workspaceCheckpointIdsNewestFirst = [...this.state.checkpoints]
+      .filter(checkpoint => checkpoint.hasWorkspaceChanges)
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map(checkpoint => checkpoint.id)
+    this.state.timeline = []
+    this.state.checkpoints = []
+    this.state.contextState = { summary: null, summarizedEventIds: [] }
+    this.state.updatedAt = now
+    return { workspaceCheckpointIdsNewestFirst }
   }
 
   rollbackToUserMessage(messageId: string, now: number): SessionRollbackResult {
@@ -498,6 +533,9 @@ export class SessionAggregate {
       }
       checkpointIds.add(checkpoint.id)
       checkpointUserMessageIds.add(checkpoint.userMessageId)
+    }
+    if (userMessageIds.size > 0 && !this.state.characterLocked) {
+      throw new Error('Session with user messages must have a locked character')
     }
   }
 }

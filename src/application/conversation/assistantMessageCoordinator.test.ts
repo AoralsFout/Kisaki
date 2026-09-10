@@ -3,19 +3,19 @@ import { AssistantMessageCoordinator, type AssistantMessageCommitPort } from './
 
 function port(): AssistantMessageCommitPort {
   return {
-    commit: vi.fn(() => 'message-1'),
-    revise: vi.fn(() => true),
+    commit: vi.fn(async () => 'message-1'),
+    revise: vi.fn(async () => true),
   }
 }
 
 describe('AssistantMessageCoordinator', () => {
-  it('publishes AssistantCommitted only after the commit port succeeds', () => {
+  it('publishes AssistantCommitted only after the commit port succeeds', async () => {
     const adapter = port()
     const coordinator = new AssistantMessageCoordinator(adapter)
     const listener = vi.fn()
     coordinator.subscribe(listener)
 
-    const event = coordinator.commit({
+    const event = await coordinator.commit({
       requestId: 'request-1',
       sessionId: 'session-1',
       display: 'hello',
@@ -29,23 +29,45 @@ describe('AssistantMessageCoordinator', () => {
     expect(listener).toHaveBeenCalledWith(event)
   })
 
-  it('does not publish when the commit port rejects a stale session', () => {
+  it('does not publish when the commit port rejects a stale session', async () => {
     const adapter = port()
-    vi.mocked(adapter.commit).mockReturnValue(null)
+    vi.mocked(adapter.commit).mockResolvedValue(null)
     const coordinator = new AssistantMessageCoordinator(adapter)
     const listener = vi.fn()
     coordinator.subscribe(listener)
 
-    expect(coordinator.commit({
+    await expect(coordinator.commit({
       requestId: 'request-1',
       sessionId: 'stale',
       display: 'hello',
       source: 'say',
-    })).toBeNull()
+    })).resolves.toBeNull()
     expect(listener).not.toHaveBeenCalled()
   })
 
-  it('publishes revisions after persistence and validates their payload', () => {
+  it('does not publish before the asynchronous commit boundary finishes', async () => {
+    let release!: (messageId: string) => void
+    const adapter = port()
+    vi.mocked(adapter.commit).mockImplementation(() => new Promise(resolve => { release = resolve }))
+    const coordinator = new AssistantMessageCoordinator(adapter)
+    const listener = vi.fn()
+    coordinator.subscribe(listener)
+
+    const committing = coordinator.commit({
+      requestId: 'request-1',
+      sessionId: 'session-1',
+      display: 'hello',
+      source: 'say',
+    })
+    await Promise.resolve()
+    expect(listener).not.toHaveBeenCalled()
+
+    release('message-1')
+    await committing
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('publishes revisions after persistence and validates their payload', async () => {
     const adapter = port()
     const coordinator = new AssistantMessageCoordinator(adapter)
     const listener = vi.fn()
@@ -58,13 +80,13 @@ describe('AssistantMessageCoordinator', () => {
       playbackText: 'prepared voice',
     }
 
-    expect(coordinator.revise(revision)).toMatchObject({ type: 'assistant-revised', ...revision })
+    await expect(coordinator.revise(revision)).resolves.toMatchObject({ type: 'assistant-revised', ...revision })
     expect(adapter.revise).toHaveBeenCalledWith(revision)
     expect(listener).toHaveBeenCalledOnce()
-    expect(() => coordinator.revise({
+    await expect(coordinator.revise({
       requestId: 'request-1',
       sessionId: 'session-1',
       messageId: 'message-1',
-    })).toThrow('must contain display or voice')
+    })).rejects.toThrow('must contain display or voice')
   })
 })

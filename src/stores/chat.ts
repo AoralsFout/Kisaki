@@ -159,11 +159,25 @@ let characterIdentity: (() => { id: string; name: string } | null) | null = null
 const detachedSessionPort: ChatSessionPort = {
   currentSessionId: () => '',
   workspaceGrantId: () => null,
-  persistCurrent: () => {},
-  beginCheckpoint: messageId => messageId,
+  acceptUserMessage: async () => true,
+  recordToolCalls: async () => true,
+  recordToolResult: async () => true,
+  commitAssistantMessage: async () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  reviseAssistantMessage: async () => true,
+  beginCheckpoint: async (_sessionId, messageId) => messageId,
   backupFile: async () => {},
-  markCheckpointFiles: () => {},
-  clearCheckpoints: async () => {},
+  markCheckpointFiles: async () => {},
+  clearConversation: async () => {},
+}
+
+function recordedArguments(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw || '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch { /* preserve malformed provider output below */ }
+  return { _raw: raw, _invalid: true }
 }
 let chatSessionPort: ChatSessionPort = detachedSessionPort
 
@@ -392,17 +406,19 @@ export const useChatStore = defineStore('chat', () => {
     isUsingTools.value = isConversationRunUsingTools(state)
   })
   const assistantMessageCoordinator = new AssistantMessageCoordinator({
-    commit: message => {
+    commit: async message => {
       if (chatSessionPort.currentSessionId() !== message.sessionId) return null
-      return addMessage('assistant', message.display, message.thinking, message.voice)
+      const messageId = await chatSessionPort.commitAssistantMessage(message)
+      if (!messageId) return null
+      return addMessage('assistant', message.display, message.thinking, message.voice, undefined, messageId)
     },
-    revise: revision => {
+    revise: async revision => {
       if (chatSessionPort.currentSessionId() !== revision.sessionId) return false
+      if (!await chatSessionPort.reviseAssistantMessage(revision)) return false
       const message = messages.value.find(item => item.id === revision.messageId)
       if (!message) return false
       if (revision.voice !== undefined) message.voice = revision.voice
       if (revision.display !== undefined) message.text = revision.display
-      chatSessionPort.persistCurrent()
       return true
     },
   })
@@ -602,14 +618,34 @@ export const useChatStore = defineStore('chat', () => {
     log.info("chat_store.send_message.info", `[${_fn}] 用户消息: ${userText.length} 字符${images.length ? ` + ${images.length} 图` : ''}`, { fn: _fn, user_text_length: userText.length, images_length: images.length })
     log.debug("chat_store.send_message.debug", `[${_fn}] 消息长度: ${userText.length} 字符, 图片: ${images.length} 张`, { fn: _fn, user_text_length: userText.length, images_length: images.length })
 
-    // ── 添加用户消息 ────────────────────────────────────
+    // ── 先提交会话事实，再更新当前 UI 投影 ───────────────
+    const userMsgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const accepted = await chatSessionPort.acceptUserMessage({
+      sessionId: requestSessionId,
+      messageId: userMsgId,
+      text: userText,
+      images,
+    })
+    if (!accepted) {
+      conversationCoordinator.transition(requestId, 'failed', 'session-persistence-failed')
+      showBubbleText(t('app.bubble.error', { msg: '会话保存失败' }), false)
+      return false
+    }
     chatContext.addUserMessage(userText, images)
     syncContextStats()
-    const userMsgId = addMessage('user', userText, undefined, undefined, images)
+    addMessage('user', userText, undefined, undefined, images, userMsgId)
     log.trace("chat_store.send_message.trace", `[${_fn}] 用户消息已加入 ChatContext`, { fn: _fn })
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）
-    const checkpointId = chatSessionPort.beginCheckpoint(userMsgId)
+    let checkpointId: string
+    try {
+      checkpointId = await chatSessionPort.beginCheckpoint(requestSessionId, userMsgId)
+    } catch (error) {
+      log.error('chat.session_checkpoint_failed', '会话检查点保存失败', error, { requestId })
+      conversationCoordinator.transition(requestId, 'failed', 'session-persistence-failed')
+      showBubbleText(t('app.bubble.error', { msg: '会话保存失败' }), false)
+      return false
+    }
 
     // ── 准备气泡 ────────────────────────────────────────
     showBubble.value = true
@@ -654,18 +690,18 @@ export const useChatStore = defineStore('chat', () => {
     const toolTurns = MAX_TOOL_TURNS
 
     /** 把最终可见文本落地：写气泡、入 UI 历史。 */
-    const commitAssistantMessage = (
+    const commitAssistantMessage = async (
       display: string,
       voice: string | undefined,
       source: AssistantMessageSource,
       playbackText?: string,
-    ): string | null => {
+    ): Promise<string | null> => {
       // 已取消：翻译兜底期间被用户中止时，不交付、不落盘、不播报
       if (conversationRun.signal.aborted) return null
       conversationCoordinator.transition(requestId, 'finalizing')
       currentBubbleText.value = display
       isTyping.value = false
-      const committed = assistantMessageCoordinator.commit({
+      const committed = await assistantMessageCoordinator.commit({
         requestId,
         sessionId: requestSessionId,
         display,
@@ -681,8 +717,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     /** 把最终台词落地：写气泡、入 UI 历史、触发 TTS */
-    const deliver = (source: AssistantMessageSource, voice: string, display: string) => {
-      const messageId = commitAssistantMessage(display, voice, source, voice)
+    const deliver = async (source: AssistantMessageSource, voice: string, display: string) => {
+      const messageId = await commitAssistantMessage(display, voice, source, voice)
       if (!messageId) return
       // 气泡立即可见；TTS 订阅已提交事件，不属于 Run 完成条件。
       ttsRequested = true
@@ -731,7 +767,7 @@ export const useChatStore = defineStore('chat', () => {
             voice,
             display,
           })
-          const revised = assistantMessageCoordinator.revise({
+          const revised = await assistantMessageCoordinator.revise({
             requestId,
             sessionId,
             messageId,
@@ -785,8 +821,8 @@ export const useChatStore = defineStore('chat', () => {
       policy: toolExecutionPolicy,
       execute: tc => agentService.execute(tc),
       checkpoint: async path => {
-        await chatSessionPort.backupFile(checkpointId, path)
-        chatSessionPort.markCheckpointFiles(checkpointId)
+        await chatSessionPort.backupFile(requestSessionId, checkpointId, path)
+        await chatSessionPort.markCheckpointFiles(requestSessionId, checkpointId)
       },
       onCheckpointError: (error, path) => {
         log.warn('chat_store.tool_checkpoint_failed', `文件备份失败（继续执行）: ${path}`, error)
@@ -830,7 +866,7 @@ export const useChatStore = defineStore('chat', () => {
             })
           }
         },
-        onResult: ({ invocation, result: toolResult }) => {
+        onResult: async ({ invocation, result: toolResult }) => {
           const { protocolCall } = invocation
           if (collectToolImages(toolResult, toolImages)) {
             toolResult.content += `\n部分图片未附加：单轮最多 ${MAX_IMAGE_COUNT} 张且总计不超过 ${Math.floor(MAX_TOTAL_IMAGE_BYTES / 1024 / 1024)}MB。`
@@ -844,6 +880,14 @@ export const useChatStore = defineStore('chat', () => {
             source: batch.source,
             tool_result_content: (toolResult.content || '').slice(0, 200),
           })
+          const recorded = await chatSessionPort.recordToolResult({
+            sessionId: requestSessionId,
+            callId: protocolCall.id,
+            content: toolResult.content,
+            status: isToolSkipped(toolResult) ? 'rejected' : isToolError(toolResult) ? 'failed' : 'succeeded',
+            code: toolResult.code,
+          })
+          if (!recorded) throw new Error('工具结果未能写入当前会话')
           chatContext.addToolResult(protocolCall.id, toolResult.content)
           syncContextStats()
         },
@@ -911,6 +955,11 @@ export const useChatStore = defineStore('chat', () => {
           { requestId, turn },
         )
         chatTimer.stop()
+        if (conversationRun.signal.aborted) {
+          const cancelled = new Error('Conversation run cancelled')
+          cancelled.name = 'AbortError'
+          throw cancelled
+        }
 
         const interpreted = interpretModelTurn(result, streamDecoder.snapshot(), {
           requestId,
@@ -944,7 +993,7 @@ export const useChatStore = defineStore('chat', () => {
           isTyping.value = true
           const { voice, display } = await resolveContentFallback(visibleText, voiceLang, displayLang, translate)
           commitSyntheticSay(voice, display)
-          deliver('text-fallback', voice, display)
+          await deliver('text-fallback', voice, display)
           log.info("chat_store.send_message.info", `[${_fn}] 第${turn}轮 ✓ 纯正文兜底完成 (显示:${display.length}字, TTS:${voice.length}字)`, { fn: _fn, turn, display_length: display.length, voice_length: voice.length })
           turnTimer.stop('text — break')
           return 'complete'
@@ -964,6 +1013,17 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         currentBubbleText.value = ""
+        const callsRecorded = await chatSessionPort.recordToolCalls({
+          sessionId: requestSessionId,
+          stepId: `${requestId}:${turn}`,
+          calls: batch.protocolCalls.map(call => ({
+            id: call.id,
+            name: call.function.name,
+            arguments: recordedArguments(call.function.arguments),
+          })),
+          visibleText: batch.assistantText,
+        })
+        if (!callsRecorded) throw new Error('工具调用未能写入当前会话')
         chatContext.addAssistantToolCall(batch.protocolCalls, batch.assistantText)
         syncContextStats()
         const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await executeActionBatch(batch)
@@ -976,6 +1036,13 @@ export const useChatStore = defineStore('chat', () => {
             : toolImages.length
               ? '未说出：需要先观察刚读取的图片，再生成最终答复。'
               : '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
+          if (!await chatSessionPort.recordToolResult({
+            sessionId: requestSessionId,
+            callId: sayCall.id,
+            content: reason,
+            status: 'rejected',
+            code: 'SAY_DEFERRED',
+          })) throw new Error('say 工具结果未能写入当前会话')
           chatContext.addToolResult(sayCall.id, reason)
           chatContext.addToolImages(batch.actions.map(action => action.protocolCall.id).join(', '), toolImages)
           syncContextStats()
@@ -999,14 +1066,20 @@ export const useChatStore = defineStore('chat', () => {
             currentBubbleText.value = displayPreview
             isTyping.value = false
           }
+          if (!await chatSessionPort.recordToolResult({
+            sessionId: requestSessionId,
+            callId: sayCall.id,
+            content: '已说出',
+            status: 'succeeded',
+          })) throw new Error('say 工具结果未能写入当前会话')
           chatContext.addToolResult(sayCall.id, '已说出')
           syncContextStats()
           if (displayPreview) {
-            const messageId = commitAssistantMessage(displayPreview, raw.voice, 'say')
+            const messageId = await commitAssistantMessage(displayPreview, raw.voice, 'say')
             if (messageId) finalizeVoiceInBackground(messageId, raw, voiceLang, displayLang, translate, displayPreview)
           } else {
             const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
-            if (voice || display) deliver('say', voice, display)
+            if (voice || display) await deliver('say', voice, display)
             else log.warn("chat_store.send_message.warn", `[${_fn}] 第${turn}轮 ⚠ say 内容为空`, undefined, { fn: _fn, turn })
           }
           turnTimer.stop('say — break')
@@ -1078,10 +1151,6 @@ export const useChatStore = defineStore('chat', () => {
       } else {
         showToolActivity.value = false
       }
-
-      // 即使本轮没有最终 say（错误、上限或仅工具），也保存脱敏后的工具上下文，
-      // 避免重启后完全丢失已经完成的操作事实。
-      chatSessionPort.persistCurrent()
     }
 
     // 完成状态分级：取消 > 硬错误 > 有工具失败但仍有输出 > 全部成功
@@ -1242,9 +1311,10 @@ export const useChatStore = defineStore('chat', () => {
     thinking?: string,
     voice?: string,
     images?: ImageAttachment[],
+    messageId?: string,
   ): string {
     const _fn = 'addMessage'
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const id = messageId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const msgLen = text.length
     const thinkLen = thinking?.length || 0
 
@@ -1268,10 +1338,6 @@ export const useChatStore = defineStore('chat', () => {
 
     log.debug("chat_store.add_message.debug", `[${_fn}] ✓ 已添加: 当前消息总数=${messages.value.length} 最新ID=${id}`, { fn: _fn, messages_value: messages.value.length, id: id })
 
-    // 保存到当前会话
-    const saveTimer = debugTimer(`${_fn} saveSession`)
-    chatSessionPort.persistCurrent()
-    saveTimer.stop()
     log.trace("chat_store.add_message.trace", `[${_fn}] ◀`, { fn: _fn })
     return id
   }
@@ -1305,10 +1371,8 @@ export const useChatStore = defineStore('chat', () => {
     syncContextStats()
     log.trace("chat_store.clear_messages.trace", `[${_fn}] chatContext → createChatContext()`, { fn: _fn })
 
-    // 保存清空状态到当前会话
-    chatSessionPort.persistCurrent()
-    // 清空本会话的回档检查点与文件备份
-    void chatSessionPort.clearCheckpoints()
+    // 会话事实与检查点由 Session Aggregate 一次性清空。
+    void chatSessionPort.clearConversation(chatSessionPort.currentSessionId())
     log.info("chat_store.clear_messages.info", `[${_fn}] ✓ 已清空 ${prevCount} 条聊天记录`, { fn: _fn, prev_count: prevCount })
     log.trace("chat_store.clear_messages.trace", `[${_fn}] ◀`, { fn: _fn })
   }
@@ -1451,7 +1515,6 @@ export const useChatStore = defineStore('chat', () => {
       .map(msg => ({ text: msg.text, images: msg.images })))
     configReady.value = isConfigValid(loadConfig())
     syncContextStats()
-    chatSessionPort.persistCurrent()
     log.info("chat_store.refresh_model_context.info", `模型配置已刷新，上下文预算=${contextStats.value.maxContextTokens}`, { context_stats_value: contextStats.value.maxContextTokens })
   }
 

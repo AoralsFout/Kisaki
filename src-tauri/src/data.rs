@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::path::{backups_dir, characters_dir, log_dir, sessions_file};
+use crate::path::{backups_dir, characters_dir, legacy_sessions_file, log_dir, sessions_v2_file};
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 const MAX_ENTRIES: usize = 100_000;
 const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -108,9 +108,9 @@ pub(crate) fn export_data_backup(dest_path: String, settings_json: String) -> Re
     zip.start_file("settings.json", options).map_err(|e| e.to_string())?;
     zip.write_all(settings_json.as_bytes()).map_err(|e| e.to_string())?;
 
-    let session = sessions_file();
+    let session = sessions_v2_file();
     if session.is_file() {
-        zip.start_file("sessions.json", options).map_err(|e| e.to_string())?;
+        zip.start_file("sessions-v2.json", options).map_err(|e| e.to_string())?;
         let mut source = fs::File::open(session).map_err(|e| e.to_string())?;
         std::io::copy(&mut source, &mut zip).map_err(|e| e.to_string())?;
     }
@@ -126,7 +126,7 @@ pub(crate) fn export_data_backup(dest_path: String, settings_json: String) -> Re
 fn allowed_backup_path(path: &Path) -> bool {
     path == Path::new("manifest.json")
         || path == Path::new("settings.json")
-        || path == Path::new("sessions.json")
+        || path == Path::new("sessions-v2.json")
         || path.starts_with("characters")
 }
 
@@ -198,20 +198,26 @@ pub(crate) fn import_data_backup(src_path: String) -> Result<String, String> {
         {
             return Err("备份设置损坏".to_string());
         }
-        let staged_sessions = stage.join("sessions.json");
+        let staged_sessions = stage.join("sessions-v2.json");
         if staged_sessions.exists() {
-            serde_json::from_str::<serde_json::Value>(
+            let session_document = serde_json::from_str::<serde_json::Value>(
                 &fs::read_to_string(&staged_sessions).map_err(|e| e.to_string())?,
             )
             .map_err(|_| "备份会话数据损坏".to_string())?;
+            if session_document.get("schemaVersion").and_then(|value| value.as_u64()) != Some(2)
+                || !session_document.get("sessions").map(|value| value.is_array()).unwrap_or(false)
+                || !session_document.get("currentSessionId").map(|value| value.is_string()).unwrap_or(false)
+            {
+                return Err("备份会话格式不受支持".to_string());
+            }
         }
 
         let recovery = backups_dir().join(format!("recovery-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&recovery).map_err(|e| e.to_string())?;
         let chars = characters_dir();
         copy_tree(&chars, &recovery.join("characters"))?;
-        if sessions_file().is_file() {
-            fs::copy(sessions_file(), recovery.join("sessions.json")).map_err(|e| e.to_string())?;
+        if sessions_v2_file().is_file() {
+            fs::copy(sessions_v2_file(), recovery.join("sessions-v2.json")).map_err(|e| e.to_string())?;
         }
 
         if chars.exists() {
@@ -224,9 +230,9 @@ pub(crate) fn import_data_backup(src_path: String) -> Result<String, String> {
             fs::create_dir_all(&chars).map_err(|e| e.to_string())?;
         }
         if staged_sessions.exists() {
-            fs::copy(&staged_sessions, sessions_file()).map_err(|e| e.to_string())?;
-        } else if sessions_file().exists() {
-            fs::remove_file(sessions_file()).map_err(|e| e.to_string())?;
+            fs::copy(&staged_sessions, sessions_v2_file()).map_err(|e| e.to_string())?;
+        } else if sessions_v2_file().exists() {
+            fs::remove_file(sessions_v2_file()).map_err(|e| e.to_string())?;
         }
         Ok(settings)
     })();
@@ -245,8 +251,11 @@ pub(crate) fn reset_all_local_data() -> Result<(), String> {
     if chars.exists() {
         fs::remove_dir_all(&chars).map_err(|e| format!("删除角色失败: {e}"))?;
     }
-    if sessions_file().exists() {
-        fs::remove_file(sessions_file()).map_err(|e| format!("删除会话失败: {e}"))?;
+    if sessions_v2_file().exists() {
+        fs::remove_file(sessions_v2_file()).map_err(|e| format!("删除会话失败: {e}"))?;
+    }
+    if legacy_sessions_file().exists() {
+        fs::remove_file(legacy_sessions_file()).map_err(|e| format!("删除旧会话备份失败: {e}"))?;
     }
     if logs.exists() {
         fs::remove_dir_all(&logs).map_err(|e| format!("删除日志失败: {e}"))?;
@@ -267,7 +276,9 @@ mod tests {
     #[test]
     fn backup_paths_are_allowlisted() {
         assert!(allowed_backup_path(Path::new("manifest.json")));
+        assert!(allowed_backup_path(Path::new("sessions-v2.json")));
         assert!(allowed_backup_path(Path::new("characters/a/character.json")));
+        assert!(!allowed_backup_path(Path::new("sessions.json")));
         assert!(!allowed_backup_path(Path::new("logs/app.jsonl")));
         assert!(!allowed_backup_path(Path::new("../secret")));
     }

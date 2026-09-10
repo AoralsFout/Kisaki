@@ -1,301 +1,182 @@
-﻿/**
- * 会话管理 Store 单元测试
- */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { useSessionStore } from '../session'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import type { SessionDocument } from '../../domain/conversation/events'
+
+const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: invokeMock,
+}))
+
 import { useChatStore } from '../chat'
-import type { ChatMessage } from '../chat'
+import { useSessionStore } from '../session'
 
-// 模拟 localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {}
+function document(): SessionDocument {
   return {
-    getItem: vi.fn((key: string) => store[key] ?? null),
-    setItem: vi.fn((key: string, value: string) => { store[key] = value }),
-    removeItem: vi.fn((key: string) => { delete store[key] }),
-    clear: vi.fn(() => { store = {} }),
+    schemaVersion: 2,
+    currentSessionId: 'session-1',
+    sessions: [{
+      id: 'session-1',
+      title: 'Saved session',
+      characterId: 'alice',
+      characterLocked: false,
+      workspaceGrantId: null,
+      timeline: [],
+      checkpoints: [],
+      contextState: { summary: null, summarizedEventIds: [] },
+      createdAt: 1,
+      updatedAt: 1,
+    }],
   }
-})()
+}
 
-Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
+function useTauriDocument(saved: SessionDocument | null = null): { saves: SessionDocument[] } {
+  const saves: SessionDocument[] = []
+  invokeMock.mockImplementation((command: string, args?: { data?: string; workspaceId?: string }) => {
+    if (command === 'sessions_v2_load') return Promise.resolve(saved ? JSON.stringify(saved) : null)
+    if (command === 'sessions_v2_save') {
+      saves.push(JSON.parse(args?.data ?? '{}') as SessionDocument)
+      return Promise.resolve()
+    }
+    if (command === 'agent_resolve_workspace') return Promise.resolve(`C:\\workspace\\${args?.workspaceId}`)
+    return Promise.resolve()
+  })
+  return { saves }
+}
 
-describe('useSessionStore', () => {
+describe('SessionStore v2 projection facade', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    localStorageMock.clear()
-    vi.clearAllMocks()
+    invokeMock.mockReset()
+    localStorage.clear()
   })
 
-  it('首次启动时自动创建默认会话', async () => {
+  it('creates and persists only a strict v2 document on first launch', async () => {
+    const { saves } = useTauriDocument()
     const store = useSessionStore()
-    expect(store.ready).toBe(false)
+
     await store.init()
+
     expect(store.ready).toBe(true)
     expect(store.sessionList).toHaveLength(1)
-    expect(store.currentSession).not.toBeNull()
-    expect(store.currentSession!.name).toBe('新对话')
-    expect(store.currentSession!.messages).toEqual([])
-    expect(store.canChangeCharacter).toBe(true)
+    expect(store.currentSession?.name).toBe('新对话')
+    expect(store.currentSession?.messages).toEqual([])
+    expect(saves[0]).toMatchObject({ schemaVersion: 2 })
+    expect(invokeMock).not.toHaveBeenCalledWith('sessions_load', expect.anything())
+    expect(localStorage.length).toBe(0)
   })
 
-  it('首条用户消息发送后永久锁定当前会话角色', async () => {
+  it('projects one timeline into UI history and protocol context', async () => {
+    const saved = document()
+    saved.sessions[0].timeline = [
+      {
+        type: 'user-message-accepted', eventId: 'event-user', occurredAt: 2,
+        messageId: 'user-1', text: 'read it', images: [],
+      },
+      {
+        type: 'assistant-tool-calls-produced', eventId: 'event-calls', occurredAt: 3,
+        stepId: 'step-1', calls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'a.txt' } }],
+      },
+      {
+        type: 'tool-execution-completed', eventId: 'event-result', occurredAt: 4,
+        callId: 'call-1', content: 'contents', status: 'succeeded',
+      },
+      {
+        type: 'assistant-message-committed', eventId: 'event-answer', occurredAt: 5,
+        messageId: 'assistant-1', display: 'done', voice: 'done', source: 'say',
+      },
+    ]
+    saved.sessions[0].characterLocked = true
+    saved.sessions[0].updatedAt = 5
+    useTauriDocument(saved)
+
     const store = useSessionStore()
     await store.init()
-    const chat = useChatStore()
 
-    chat.addMessage('user', '你好')
+    expect(store.currentSession?.messages.map(message => message.text)).toEqual(['read it', 'done'])
+    expect(useChatStore().messages.map(message => message.id)).toEqual(['user-1', 'assistant-1'])
+    expect(useChatStore().exportContext().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', tool_calls: [expect.objectContaining({ id: 'call-1' })] }),
+      expect.objectContaining({ role: 'tool', tool_call_id: 'call-1', content: 'contents' }),
+    ]))
     expect(store.canChangeCharacter).toBe(false)
-    expect(store.currentSession!.characterLocked).toBe(true)
-
-    chat.clearMessages()
-    expect(chat.messages).toHaveLength(0)
-    expect(store.canChangeCharacter).toBe(false)
-
-    store.createSession('可换角色的新对话')
-    expect(store.canChangeCharacter).toBe(true)
   })
 
-  it('本地存储写入失败时置 persistError 并记录日志', async () => {
+  it('coordinates create, rename, switch, and delete through the application service', async () => {
+    useTauriDocument()
     const store = useSessionStore()
     await store.init()
-    expect(store.persistError).toBe(false)
+    const firstId = store.currentSessionId
 
-    // 模拟配额耗尽：setItem 抛 QuotaExceededError
-    const originalSetItem = localStorageMock.setItem.getMockImplementation()
-    localStorageMock.setItem.mockImplementation(() => {
-      throw new Error('QuotaExceededError')
+    const second = await store.createSession('Work')
+    expect(store.currentSessionId).toBe(second.id)
+    expect(await store.renameSession(second.id, 'Renamed')).toBe(true)
+    expect(store.currentSession?.name).toBe('Renamed')
+    expect(await store.switchSession(firstId)).toBe(true)
+    expect(await store.deleteSession(second.id)).toBe(true)
+    expect(store.sessionList.map(session => session.name)).toEqual(['新对话'])
+    expect(await store.deleteSession(firstId)).toBe(false)
+  })
+
+  it('keeps workspace paths as runtime projections of persisted grants', async () => {
+    const saved = document()
+    saved.sessions[0].workspaceGrantId = 'grant-1'
+    useTauriDocument(saved)
+    const store = useSessionStore()
+
+    await store.init()
+
+    expect(store.currentSession).toMatchObject({
+      workspaceId: 'grant-1',
+      workspaceRoot: 'C:\\workspace\\grant-1',
     })
-    store.createSession()
+    await store.setWorkspace({ id: 'grant-2', path: 'D:\\project' })
+    expect(store.currentSession).toMatchObject({ workspaceId: 'grant-2', workspaceRoot: 'D:\\project' })
+    await store.clearWorkspace()
+    expect(store.currentSession).toMatchObject({ workspaceId: null, workspaceRoot: null })
+  })
+
+  it('rolls back through the aggregate and then executes its file recovery plan', async () => {
+    const saved = document()
+    saved.sessions[0].timeline = [{
+      type: 'user-message-accepted', eventId: 'event-user', occurredAt: 2,
+      messageId: 'user-1', text: 'change file', images: [],
+    }]
+    saved.sessions[0].characterLocked = true
+    saved.sessions[0].checkpoints = [{
+      id: 'user-1',
+      userMessageId: 'user-1',
+      createdAt: 2,
+      hasWorkspaceChanges: true,
+      character: null,
+    }]
+    useTauriDocument(saved)
+    const store = useSessionStore()
+    await store.init()
+
+    expect(await store.rollbackTo('user-1')).toBe(true)
+
+    expect(store.currentSession?.messages).toEqual([])
+    expect(useChatStore().messages).toEqual([])
+    expect(invokeMock).toHaveBeenCalledWith('agent_checkpoint_rollback', {
+      sessionId: 'session-1',
+      checkpointIds: ['user-1'],
+    })
+  })
+
+  it('does not parse or overwrite a legacy document', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'sessions_v2_load') {
+        return Promise.resolve(JSON.stringify({ sessions: [], currentId: '' }))
+      }
+      return Promise.resolve()
+    })
+    const store = useSessionStore()
+
+    await store.init()
 
     expect(store.persistError).toBe(true)
-    localStorageMock.setItem.mockImplementation(originalSetItem!)
-  })
-
-  it('可以创建新会话', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    const s = store.createSession()
-    expect(store.sessionList).toHaveLength(2)
-    expect(s.name).toBe('新对话 2')
-    expect(s.messages).toEqual([])
-  })
-
-  it('删除旧会话后新建会话沿用最大编号+1，不产生重名', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    // 默认「新对话」+ 自动命名依次得到「新对话 2」「新对话 3」
-    const a = store.createSession() // 新对话 2
-    const b = store.createSession() // 新对话 3
-    expect(a.name).toBe('新对话 2')
-    expect(b.name).toBe('新对话 3')
-
-    // 删除中间编号「新对话 2」，再新建时不应复用它导致重名
-    expect(store.deleteSession(a.id)).toBe(true)
-    const c = store.createSession()
-    const names = store.sessionList.map(s => s.name)
-    expect(new Set(names).size).toBe(names.length) // 所有名称唯一
-    expect(c.name).toBe('新对话 4')                // 按最大编号 3 + 1，而非「会话数 2 + 1」
-  })
-
-  it('可以创建指定名称的会话', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    store.createSession('工作记录')
-    const named = store.getSessionById(
-      store.sessionList.find(s => s.name === '工作记录')!.id,
-    )
-    expect(named).not.toBeNull()
-    expect(named!.name).toBe('工作记录')
-  })
-
-  it('切换会话时保存当前消息并加载目标消息', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    const chat = useChatStore()
-    chat.loadMessages([
-      { id: '1', role: 'user', text: '你好', timestamp: Date.now() },
-    ])
-    // 手动保存（loadMessages 仅加载到 ChatStore，需主动持久化）
-    store.saveCurrentSession()
-
-    // 确保当前会话有消息
-    expect(store.currentSession!.messages).toHaveLength(1)
-
-    // 创建新会话
-    const s2 = store.createSession('新会话 2')
-    // 切换到新会话
-    store.switchSession(s2.id)
-
-    expect(store.currentSessionId).toBe(s2.id)
-    // 当前会话已保存（之前的会话应有消息）
-    const orig = store.getSessionById(
-      store.sessionList.find(s => s.name === '新对话')!.id,
-    )
-    expect(orig!.messages).toHaveLength(1)
-
-    // 新会话消息为空
-    expect(chat.messages).toHaveLength(0)
-  })
-
-  it('不能删除最后一个会话', async () => {
-    const store = useSessionStore()
-    await store.init()
     expect(store.sessionList).toHaveLength(1)
-
-    const ok = store.deleteSession(store.currentSessionId)
-    expect(ok).toBe(false)
-    expect(store.sessionList).toHaveLength(1)
-  })
-
-  it('可以删除非当前会话', async () => {
-    const store = useSessionStore()
-    await store.init()
-    store.createSession()
-    expect(store.sessionList).toHaveLength(2)
-
-    // 删除非当前会话
-    const otherId = store.sessionList.find(s => s.id !== store.currentSessionId)!.id
-    const ok = store.deleteSession(otherId)
-    expect(ok).toBe(true)
-    expect(store.sessionList).toHaveLength(1)
-  })
-
-  it('可以重命名会话', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    const ok = store.renameSession(store.currentSessionId, '重命名测试')
-    expect(ok).toBe(true)
-    expect(store.currentSession!.name).toBe('重命名测试')
-  })
-
-  it('拒绝空名称重命名', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    const ok = store.renameSession(store.currentSessionId, '  ')
-    expect(ok).toBe(false)
-    expect(store.currentSession!.name).toBe('新对话')
-  })
-
-  it('数据持久化到 localStorage', async () => {
-    const store = useSessionStore()
-    await store.init()
-    store.createSession()
-    store.createSession()
-
-    // 验证写入了 localStorage
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      'deskpet-sessions',
-      expect.any(String),
-    )
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      'deskpet-current-session',
-      expect.any(String),
-    )
-
-    // 验证存储的会话数量（取最后一次写入）
-    const allCalls = localStorageMock.setItem.mock.calls as Array<[string, string]>
-    const sessionCalls = allCalls.filter(([k]) => k === 'deskpet-sessions')
-    const saved = JSON.parse(sessionCalls[sessionCalls.length - 1][1])
-    expect(saved).toHaveLength(3)
-  })
-
-  it('从 localStorage 恢复会话', async () => {
-    // 预先存储数据
-    const now = Date.now()
-    const sessions = [
-      { id: 's1', name: '会话 A', messages: [
-        { id: 'm1', role: 'user', text: '测试1', timestamp: now },
-      ] as ChatMessage[], createdAt: now, updatedAt: now },
-      { id: 's2', name: '会话 B', messages: [], createdAt: now, updatedAt: now },
-    ]
-    localStorageMock.setItem('deskpet-sessions', JSON.stringify(sessions))
-    localStorageMock.setItem('deskpet-current-session', JSON.stringify('s2'))
-
-    const store = useSessionStore()
-    await store.init()
-
-    expect(store.ready).toBe(true)
-    expect(store.sessionList).toHaveLength(2)
-    expect(store.currentSessionId).toBe('s2')
-    expect(store.currentSession!.name).toBe('会话 B')
-
-    // 验证消息加载到 ChatStore
-    const chat = useChatStore()
-    expect(chat.messages).toHaveLength(0) // 会话 B 没有消息
-  })
-
-  it('从 localStorage 恢复时自动加载消息到 ChatStore', async () => {
-    const now = Date.now()
-    const sessions = [
-      { id: 's1', name: '有历史', messages: [
-        { id: 'm1', role: 'user', text: '你好', timestamp: now },
-        { id: 'm2', role: 'assistant', text: '嘿', timestamp: now },
-      ] as ChatMessage[], createdAt: now, updatedAt: now },
-    ]
-    localStorageMock.setItem('deskpet-sessions', JSON.stringify(sessions))
-    localStorageMock.setItem('deskpet-current-session', JSON.stringify('s1'))
-
-    const store = useSessionStore()
-    await store.init()
-
-    const chat = useChatStore()
-    expect(chat.messages).toHaveLength(2)
-    expect(chat.messages[0].text).toBe('你好')
-    expect(chat.messages[1].text).toBe('嘿')
-    expect(store.currentSession!.characterLocked).toBe(true)
-    expect(store.canChangeCharacter).toBe(false)
-  })
-
-  it('会话列表按创建时间正序排列', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    store.createSession('旧会话')
-    // 模拟不同时间
-    vi.useFakeTimers()
-    vi.advanceTimersByTime(1000)
-    store.createSession('新会话')
-    vi.useRealTimers()
-
-    const list = store.sessionList
-    // 最早的（默认）应排在首位
-    expect(list[0].name).toBe('新对话')
-    // 最新的排最后
-    expect(list[list.length - 1].name).toBe('新会话')
-  })
-
-  it('saveCurrentSession 保存 ChatStore 消息', async () => {
-    const store = useSessionStore()
-    await store.init()
-
-    const chat = useChatStore()
-    chat.addMessage('user', '测试消息')
-    chat.addMessage('assistant', '回复')
-
-    store.saveCurrentSession()
-    expect(store.currentSession!.messages).toHaveLength(2)
-  })
-
-  it('保存脱敏协议上下文，但不长期持久化思考过程', async () => {
-    const store = useSessionStore()
-    await store.init()
-    const chat = useChatStore()
-    chat.loadMessages([
-      { id: 'u1', role: 'user', text: '继续任务', timestamp: 1 },
-      { id: 'a1', role: 'assistant', text: '已完成', thinking: '内部推理', voice: '完成しました', timestamp: 2 },
-    ])
-
-    store.saveCurrentSession()
-
-    expect(store.currentSession!.messages[1].thinking).toBeUndefined()
-    expect(store.currentSession!.context?.version).toBe(1)
-    expect(store.currentSession!.context?.messages.some(m => m.role === 'tool')).toBe(true)
+    expect(invokeMock).not.toHaveBeenCalledWith('sessions_v2_save', expect.anything())
   })
 })

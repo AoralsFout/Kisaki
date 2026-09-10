@@ -98,6 +98,7 @@ export interface ConversationSessionSnapshot {
   id: string
   title: string
   characterId: string | null
+  characterLocked: boolean
   workspaceGrantId: string | null
   timeline: ConversationEvent[]
   checkpoints: SessionCheckpoint[]

@@ -231,11 +231,15 @@ describe('send result contract', () => {
     setChatSessionPort({
       currentSessionId: () => 'session-1',
       workspaceGrantId: () => 'workspace-1',
-      persistCurrent: () => {},
-      beginCheckpoint: () => 'checkpoint-1',
+      acceptUserMessage: async () => true,
+      recordToolCalls: async () => true,
+      recordToolResult: async () => true,
+      commitAssistantMessage: async () => 'assistant-1',
+      reviseAssistantMessage: async () => true,
+      beginCheckpoint: async () => 'checkpoint-1',
       backupFile: async () => {},
-      markCheckpointFiles: () => {},
-      clearCheckpoints: async () => {},
+      markCheckpointFiles: async () => {},
+      clearConversation: async () => {},
     })
     const store = useChatStore()
     let modelTurn = 0

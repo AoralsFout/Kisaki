@@ -37,8 +37,8 @@ const WORKSPACE_ID = 'ws_test'
 async function setupSessionWithWorkspace(root: string | null) {
   const store = useSessionStore()
   await store.init()
-  if (root) store.setWorkspace({ id: WORKSPACE_ID, path: root })
-  else store.clearWorkspace()
+  if (root) await store.setWorkspace({ id: WORKSPACE_ID, path: root })
+  else await store.clearWorkspace()
   return store
 }
 

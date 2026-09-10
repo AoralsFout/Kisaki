@@ -58,6 +58,7 @@ interface ConversationSession {
   id: string
   title: string
   characterId: string | null
+  characterLocked: boolean
   workspaceGrantId: string | null
   timeline: ConversationEvent[]
   checkpoints: Checkpoint[]
@@ -161,7 +162,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 新 Domain 层框架隔离约束。
   - [x] 文件确认等待期取消契约。
   - [ ] 完成批准、角色和 TTS 契约矩阵。
-- [ ] 阶段 1：Session Aggregate。
+- [x] 阶段 1：Session Aggregate。
   - [x] 新格式事件模型、单会话 Aggregate 与纯投影。
   - [x] SessionCollection 与 Repository 端口。
   - [x] 独立 `sessions-v2.json` 的 Tauri 存储适配器。
@@ -169,7 +170,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 对话事实事件命令、后台回复修订事件与串行持久化。
   - [x] 回档提升为 Aggregate 命令，统一裁剪 timeline、检查点与压缩上下文，并输出外部文件/角色恢复计划。
   - [x] ChatStore → SessionStore 直接依赖解除，并以架构测试防回归。
-  - [ ] SessionStore 切换为 v2 投影门面，删除旧快照保存逻辑。
+  - [x] SessionStore 切换为 v2 投影门面，删除旧 `messages/context` 快照保存、localStorage 迁移和旧 Rust 命令。
 - [x] 阶段 2：CharacterRuntime。
   - [x] 无框架依赖的 canonical state、能力校验和 Renderer 端口。
   - [x] renderer 未 ready 时接收命令并在 attach 后应用最新快照。
@@ -192,7 +193,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 单轮模型返回解释移入 `ModelTurnInterpreter`，Store 不再判断 provider 返回通道。
   - [x] 建立 `AssistantMessageCoordinator` 提交边界；TTS 仅订阅已提交/修订事件。
   - [ ] 将工具上下文写入从 ChatStore 移入 ConversationCoordinator。
-  - [ ] SessionStore 切换到 v2 后，将提交端口接到 Session aggregate 的原子 `AssistantCommitted`。
+  - [x] SessionStore 切换到 v2 后，将提交端口接到 Session aggregate 的原子 `AssistantCommitted`。
 - [ ] 阶段 5：TTS 管道。
 - [ ] 阶段 6：设置与网络。
 - [ ] 阶段 7：清理。

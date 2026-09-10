@@ -88,7 +88,7 @@ describe('SessionAggregate', () => {
       context: { messages: [] },
       createdAt: 1,
       updatedAt: 1,
-    })).toThrow('Session timeline or checkpoints are invalid')
+    })).toThrow('Session bindings are invalid')
   })
 
   it('restores only a valid new-format snapshot and validates protocol pairing', () => {
@@ -234,5 +234,33 @@ describe('SessionAggregate', () => {
       hasWorkspaceChanges: false,
       character: null,
     }, 11)).toThrow('Unknown checkpoint user message')
+  })
+
+  it('marks workspace changes and clears all conversation-owned state atomically', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'user-event', occurredAt: 11 },
+      { messageId: 'user-1', text: 'change it' },
+    )
+    session.addCheckpoint({
+      id: 'checkpoint-1',
+      userMessageId: 'user-1',
+      createdAt: 11,
+      hasWorkspaceChanges: false,
+      character: null,
+    }, 11)
+
+    session.markCheckpointWorkspaceChanges('checkpoint-1', 12)
+    const result = session.clearConversation(13)
+
+    expect(result.workspaceCheckpointIdsNewestFirst).toEqual(['checkpoint-1'])
+    expect(session.snapshot()).toMatchObject({
+      characterLocked: true,
+      timeline: [],
+      checkpoints: [],
+      contextState: { summary: null, summarizedEventIds: [] },
+      updatedAt: 13,
+    })
+    expect(() => session.bindCharacter('another-character', 14)).toThrow('Cannot change character')
   })
 })

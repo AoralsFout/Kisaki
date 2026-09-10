@@ -71,6 +71,19 @@ describe('architecture boundaries', () => {
     expect(importsOf(readFileSync(chatStore, 'utf8'))).not.toContain('./session')
   })
 
+  it('keeps SessionStore on the single v2 aggregate persistence path', () => {
+    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'session.ts'), 'utf8')
+    expect(source).toContain('new SessionApplicationService(')
+    expect(source).toContain('new TauriSessionRepository()')
+    expect(source).not.toContain("invoke('sessions_load'")
+    expect(source).not.toContain("invoke('sessions_save'")
+    expect(source).not.toContain('localStorage')
+    expect(source).not.toContain('exportContext()')
+    expect(source).not.toContain('saveCurrentSession')
+    expect(source).not.toMatch(/session\.messages\s*=/)
+    expect(source).not.toMatch(/session\.context\s*=/)
+  })
+
   it('does not restore the legacy character controller registries', () => {
     const legacyModules = new Set([
       join(SOURCE_ROOT, 'character', 'commandBus'),

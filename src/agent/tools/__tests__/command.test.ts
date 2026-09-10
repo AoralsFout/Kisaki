@@ -34,7 +34,7 @@ describe('结构化任务执行工具', () => {
     invokeMock.mockRejectedValue(new Error('not in tauri'))
     const session = useSessionStore()
     await session.init()
-    session.setWorkspace({ id: 'ws_test', path: 'C:\\work\\project' })
+    await session.setWorkspace({ id: 'ws_test', path: 'C:\\work\\project' })
   })
 
   it('准备进程计划时注入工作区能力并保持参数边界', async () => {

@@ -117,8 +117,8 @@ export interface ToolCallBatchResult {
 }
 
 export interface ToolCallBatchHooks {
-  onStart?: (invocation: NormalizedToolInvocation, index: number, count: number) => void
-  onResult?: (outcome: ToolCallOutcome, index: number, count: number) => void
+  onStart?: (invocation: NormalizedToolInvocation, index: number, count: number) => unknown | Promise<unknown>
+  onResult?: (outcome: ToolCallOutcome, index: number, count: number) => unknown | Promise<unknown>
 }
 
 function invalidArgumentsResult(invocation: NormalizedToolInvocation): ToolResult {
@@ -144,13 +144,13 @@ export async function executeToolCallBatch(
 
   for (let index = 0; index < actions.length; index++) {
     const current = actions[index]
-    hooks.onStart?.(current, index, actions.length)
+    await hooks.onStart?.(current, index, actions.length)
     const result = current.call ? await execute(current.call) : invalidArgumentsResult(current)
     const outcome = { invocation: current, result }
     outcomes.push(outcome)
     if (result.ok === false && result.code !== 'USER_REJECTED') failureCount++
     if (result.ok === false || result.code === 'USER_REJECTED') needsFollowup = true
-    hooks.onResult?.(outcome, index, actions.length)
+    await hooks.onResult?.(outcome, index, actions.length)
   }
 
   return { outcomes, failureCount, needsFollowup }

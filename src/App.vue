@@ -462,7 +462,7 @@ async function openSettingsWindow(tab?: string) {
 async function handleSelectCharacter(charId: string) {
   if (!sessionStore.canChangeCharacter || charId === charStore.currentId) return
   await charStore.loadCharacter(charId, true)
-  sessionStore.saveCurrentSession()
+  await sessionStore.bindCurrentCharacter()
   chat.resetContext()
   // resetContext 会清除旧角色人设；切换完成后将新角色人设写入新上下文。
   applyCharacterPersona()

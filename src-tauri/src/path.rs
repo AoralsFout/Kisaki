@@ -74,20 +74,20 @@ pub(crate) fn backups_dir() -> PathBuf {
     dir
 }
 
-/// 会话数据文件（聊天历史持久化，见 sessions.rs）
-pub(crate) fn sessions_file() -> PathBuf {
-    SESSIONS_DIR
-        .get()
-        .expect("SESSIONS_DIR 未初始化")
-        .join("sessions.json")
-}
-
-/// 新会话领域模型的数据文件。迁移期间与旧 sessions.json 隔离，避免两种 schema 相互覆盖。
+/// v2 会话领域模型的数据文件。
 pub(crate) fn sessions_v2_file() -> PathBuf {
     SESSIONS_DIR
         .get()
         .expect("SESSIONS_DIR 未初始化")
         .join("sessions-v2.json")
+}
+
+/// Removed v1 storage location. Used only by explicit privacy deletion.
+pub(crate) fn legacy_sessions_file() -> PathBuf {
+    SESSIONS_DIR
+        .get()
+        .expect("SESSIONS_DIR 未初始化")
+        .join("sessions.json")
 }
 
 /// 路径安全校验 — 防止 path traversal 攻击

@@ -9,6 +9,7 @@ import type {
 } from '../../domain/conversation/events'
 import {
   SessionAggregate,
+  type ClearedConversationResult,
   type EventIdentity,
   type SessionRollbackResult,
 } from '../../domain/conversation/sessionAggregate'
@@ -116,9 +117,14 @@ export class SessionApplicationService {
   async acceptUserMessage(
     sessionId: string,
     message: { messageId: string; text: string; images?: ConversationImage[] },
+    characterId?: string | null,
   ): Promise<void> {
     await this.commit(() => {
-      this.requireCollection().get(sessionId).acceptUserMessage(this.eventIdentity(), message)
+      const session = this.requireCollection().get(sessionId)
+      if (!session.snapshot().characterLocked && characterId !== undefined) {
+        session.bindCharacter(characterId, this.dependencies.now())
+      }
+      session.acceptUserMessage(this.eventIdentity(), message)
     })
   }
 
@@ -171,6 +177,21 @@ export class SessionApplicationService {
     await this.commit(() => {
       this.requireCollection().get(sessionId).addCheckpoint(checkpoint, this.dependencies.now())
     })
+  }
+
+  async markCheckpointWorkspaceChanges(sessionId: string, checkpointId: string): Promise<void> {
+    await this.commit(() => {
+      this.requireCollection().get(sessionId).markCheckpointWorkspaceChanges(
+        checkpointId,
+        this.dependencies.now(),
+      )
+    })
+  }
+
+  async clearConversation(sessionId: string): Promise<ClearedConversationResult> {
+    return this.commit(() => (
+      this.requireCollection().get(sessionId).clearConversation(this.dependencies.now())
+    ))
   }
 
   async rollbackToUserMessage(sessionId: string, messageId: string): Promise<SessionRollbackResult> {

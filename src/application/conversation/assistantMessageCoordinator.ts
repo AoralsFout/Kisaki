@@ -25,8 +25,8 @@ export type AssistantMessageEvent =
   | ({ type: 'assistant-revised' } & ReviseAssistantMessage)
 
 export interface AssistantMessageCommitPort {
-  commit(message: CommitAssistantMessage): string | null
-  revise(message: ReviseAssistantMessage): boolean
+  commit(message: CommitAssistantMessage): Promise<string | null>
+  revise(message: ReviseAssistantMessage): Promise<boolean>
 }
 
 type AssistantMessageListener = (event: AssistantMessageEvent) => void
@@ -45,20 +45,20 @@ export class AssistantMessageCoordinator {
     return () => this.listeners.delete(listener)
   }
 
-  commit(message: CommitAssistantMessage): AssistantMessageEvent | null {
+  async commit(message: CommitAssistantMessage): Promise<AssistantMessageEvent | null> {
     if (!message.display.trim()) throw new Error('Assistant display text must not be empty')
-    const messageId = this.port.commit(message)
+    const messageId = await this.port.commit(message)
     if (!messageId) return null
     const event = { type: 'assistant-committed' as const, ...message, messageId }
     this.publish(event)
     return event
   }
 
-  revise(message: ReviseAssistantMessage): AssistantMessageEvent | null {
+  async revise(message: ReviseAssistantMessage): Promise<AssistantMessageEvent | null> {
     if (message.display === undefined && message.voice === undefined) {
       throw new Error('Assistant revision must contain display or voice')
     }
-    if (!this.port.revise(message)) return null
+    if (!await this.port.revise(message)) return null
     const event = { type: 'assistant-revised' as const, ...message }
     this.publish(event)
     return event

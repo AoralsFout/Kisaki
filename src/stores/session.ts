@@ -1,754 +1,523 @@
-/**
- * 会话管理状态（Pinia）
- *
- * 功能：
- * - 创建/删除/重命名会话
- * - 在不同会话间切换（自动保存当前会话）
- * - 自动持久化：Tauri 环境写入 Rust 管理的 sessions.json（原子写入），
- *   非 Tauri 环境回退 localStorage；旧数据首次启动自动迁移
- * - 与 ChatStore 协同：切换会话时加载/保存消息
- */
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { setChatSessionPort, useChatStore } from './chat'
+import type { ChatContextSnapshot, ChatMessage as ProtocolMessage } from '../ai'
 import type { ChatMessage } from './chat'
-import type { ChatContextSnapshot } from '../ai'
-import { useCharacterStore } from './character'
-import type { CharacterVisualState } from './character'
+import { setChatSessionPort, useChatStore } from './chat'
+import { useCharacterStore, type CharacterVisualState } from './character'
 import { DEFAULT_POSE } from '../character/poses'
+import { SessionApplicationService } from '../application/session/sessionApplicationService'
+import type {
+  CommitAssistantMessage,
+  ReviseAssistantMessage,
+} from '../application/conversation/assistantMessageCoordinator'
+import type {
+  ConversationSessionSnapshot,
+  RecordedToolCall,
+  SessionCheckpoint,
+} from '../domain/conversation/events'
+import { SessionAggregate } from '../domain/conversation/sessionAggregate'
+import { TauriSessionRepository } from '../infrastructure/session/tauriSessionRepository'
+import { MemorySessionRepository } from '../infrastructure/session/memorySessionRepository'
 import { createLogger } from '../utils/logger'
-import {
-  STORAGE_SESSIONS,
-  STORAGE_CURRENT_SESSION,
-} from '../constants'
 
 const log = createLogger('SessionStore')
 
-// ─── 类型定义 ─────────────────────────────────────────────
-
+/** UI-only projection. Only ConversationSessionSnapshot is persisted. */
 export interface Session {
   id: string
   name: string
   messages: ChatMessage[]
-  /** 脱敏后的协议级模型上下文；旧会话缺失时由界面消息兼容重建。 */
-  context?: ChatContextSnapshot
-  /** 会话关联的角色 ID（切回会话时自动切到该角色） */
+  context: ChatContextSnapshot
   characterId?: string
-  /** 首条用户消息发送后锁定角色；清空/回档消息不会解除，只能新建会话。 */
-  characterLocked?: boolean
-  /** 会话关联的角色视觉状态（情绪/姿势/服装/屏幕位置） */
-  characterState?: CharacterVisualState
-  /** 本会话授权给 AI 读写的工作目录绝对路径；null/undefined = 未授权 */
-  workspaceRoot?: string | null
-  /** Rust 原生目录选择器签发的不透明工作目录能力。绝对路径不再作为授权凭据。 */
-  workspaceId?: string | null
-  /** 回档检查点：每条用户消息一个，记录回合前的视觉状态；hasFiles 标记是否有文件备份 */
-  checkpoints?: Checkpoint[]
+  characterLocked: boolean
+  workspaceRoot: string | null
+  workspaceId: string | null
+  checkpoints: SessionCheckpoint[]
   createdAt: number
   updatedAt: number
 }
 
-/**
- * 回档检查点 —— 对应一次用户消息触发的回合（id = 该用户消息 id）。
- * 文件备份本身存在 Rust 缓存目录（见 src-tauri/src/backup.rs），此处仅存对话/视觉侧元信息。
- */
-export interface Checkpoint {
-  /** = 触发该回合的用户消息 id */
-  id: string
-  createdAt: number
-  /** 回合开始前的角色 id */
-  characterId?: string
-  /** 回合开始前的角色视觉状态 */
-  visualState?: CharacterVisualState
-  /** 本回合是否对文件做过备份（决定回档时是否需要还原文件） */
-  hasFiles: boolean
-  /** 备份时的工作根（仅记录，实际还原以 Rust manifest 为准） */
-  workspaceRoot?: string | null
+function nextId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-// ─── 工具函数 ─────────────────────────────────────────────
-
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function loadJSON<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return fallback
-}
-
-function saveJSON(key: string, value: unknown): boolean {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-    return true
-  } catch (e) {
-    // 典型原因：localStorage 配额耗尽（WebView 通常约 10MB）。
-    // 不再静默忽略——否则用户会以为历史已保存，重启后才发现丢失。
-    log.error("session.local_storage_write_failed", "本地存储写入失败，数据未能持久化", e, { key })
-    return false
+function toProtocolSnapshot(snapshot: ConversationSessionSnapshot): ChatContextSnapshot {
+  const aggregate = SessionAggregate.restore(snapshot)
+  const messages: ProtocolMessage[] = aggregate.projectModelContext()
+    .filter(message => message.role !== 'system')
+    .map(message => ({
+      role: message.role,
+      content: message.content,
+      tool_call_id: message.toolCallId,
+      tool_calls: message.toolCalls?.map(call => ({
+        id: call.id,
+        type: 'function' as const,
+        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+      })),
+    }))
+  const summarized = new Set(snapshot.contextState.summarizedEventIds)
+  const summarizedRounds = snapshot.timeline.filter(event => (
+    event.type === 'user-message-accepted' && summarized.has(event.eventId)
+  )).length
+  return {
+    version: 1,
+    messages,
+    rollingSummary: snapshot.contextState.summary ?? '',
+    summarizedRounds,
   }
 }
 
-/** 兼容旧数据：界面消息或协议上下文任一含用户消息，都表示会话已经开始。 */
-function hasUserMessage(session: Session): boolean {
-  return session.messages.some(message => message.role === 'user')
-    || session.context?.messages.some(message => message.role === 'user') === true
-}
-
-// ─── 文件持久化（Tauri）与 localStorage 回退 ────────────────
-// 会话数据（聊天历史、角色状态、检查点）是用户资产且体积可能远超
-// localStorage 配额（WebView 约 10MB），故迁移到 Rust 管理的
-// sessions.json（原子写入）。浏览器环境（非 Tauri）自动回退 localStorage。
-
-/** true=文件模式；false=localStorage 回退；init 前为 null */
-let fileMode: boolean | null = null
-/** 合并短时间内的重复全量保存：只保留最新快照，真正落盘时才序列化。 */
-let pendingFileSnapshot: { sessions: Session[]; currentId: string } | null = null
-let pendingFileWaiters: Array<(ok: boolean) => void> = []
-let fileWriteRunning = false
-let fileFlushTimer: ReturnType<typeof setTimeout> | null = null
-/** 脏状态合并窗口：250–500 ms，兼顾回调及时性与低频落盘。 */
-const FILE_FLUSH_DELAY = 300
-/** 只注册一次页面隐藏/关闭落盘监听。 */
-let sessionFlushRegistered = false
-
-type FileLoadResult =
-  | { ok: true; data: { sessions: Session[]; currentId: string } | null }
-  | { ok: false }
-
-async function loadFromFile(): Promise<FileLoadResult> {
-  try {
-    const raw = await invoke<string | null>('sessions_load')
-    if (raw == null) return { ok: true, data: null }
-    const parsed = JSON.parse(raw) as { sessions?: Session[]; currentId?: string }
-    if (!Array.isArray(parsed.sessions) || typeof parsed.currentId !== 'string') {
-      log.warn("session_store.load_from_file.warn", "会话文件格式异常，按无数据处理（不会覆盖文件直到下次保存）")
-      return { ok: true, data: null }
-    }
-    return { ok: true, data: { sessions: parsed.sessions, currentId: parsed.currentId } }
-  } catch (e) {
-    log.warn("session_store.load_from_file.warn", `读取会话文件失败（非 Tauri 环境？），回退 localStorage: ${(e as Error)?.message || String(e)}`, e)
-    return { ok: false }
+function toView(snapshot: ConversationSessionSnapshot, workspaceRoot: string | null): Session {
+  const aggregate = SessionAggregate.restore(snapshot)
+  const messages: ChatMessage[] = aggregate.projectTranscript().map(message => ({
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    voice: message.voice,
+    images: message.images,
+    timestamp: message.occurredAt,
+    charId: message.role === 'assistant' ? snapshot.characterId ?? undefined : undefined,
+  }))
+  return {
+    id: snapshot.id,
+    name: snapshot.title,
+    messages,
+    context: toProtocolSnapshot(snapshot),
+    characterId: snapshot.characterId ?? undefined,
+    characterLocked: snapshot.characterLocked,
+    workspaceRoot,
+    workspaceId: snapshot.workspaceGrantId,
+    checkpoints: snapshot.checkpoints,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
   }
 }
-
-// ─── Store ────────────────────────────────────────────────
 
 export const useSessionStore = defineStore('session', () => {
-  // ── 状态 ──
   const sessions = ref<Session[]>([])
-  const currentSessionId = ref<string>('')
+  const currentSessionId = ref('')
   const ready = ref(false)
-  /** 本地存储是否发生写入失败（配额满等）；成功后自动清除 */
   const persistError = ref(false)
+  const workspaceRoots = new Map<string, string>()
+  let service: SessionApplicationService | null = null
+  let initializing: Promise<void> | null = null
 
-  // ── 计算属性 ──
-  const currentSession = computed(() =>
-    sessions.value.find(s => s.id === currentSessionId.value) ?? null,
-  )
+  const currentSession = computed(() => (
+    sessions.value.find(session => session.id === currentSessionId.value) ?? null
+  ))
+  const sessionList = computed(() => [...sessions.value].sort((a, b) => a.createdAt - b.createdAt))
+  const canChangeCharacter = computed(() => Boolean(currentSession.value && !currentSession.value.characterLocked))
 
-  /** 当前会话尚未发送过消息时才允许更换角色。 */
-  const canChangeCharacter = computed(() => {
-    const session = currentSession.value
-    if (!session) return false
-    return !session.characterLocked && !hasUserMessage(session)
-  })
-
-  /** 会话列表，按创建时间正序（旧→新） */
-  const sessionList = computed(() =>
-    [...sessions.value].sort((a, b) => a.createdAt - b.createdAt),
-  )
-
-  // ── 初始化 ──
-
-  /**
-   * 加载数据并恢复上次会话。
-   * 优先读 Rust 管理的会话文件（Tauri），不可用时回退 localStorage；
-   * 旧 localStorage 数据会在文件可用时自动迁移（成功后清除旧副本）。
-   * 应在 ChatStore 初始化后调用。启动时可先读取会话，再据此选择首个角色；
-   * 角色 system prompt 后续设定时会保留这里恢复的历史上下文。
-   */
-  async function init() {
-    const file = await loadFromFile()
-    fileMode = file.ok
-
-    let saved: Session[] = []
-    let source: 'file' | 'local' | 'none' = 'none'
-    if (file.ok && file.data) {
-      saved = file.data.sessions
-      source = 'file'
-    } else {
-      const local = loadJSON<Session[]>(STORAGE_SESSIONS, [])
-      if (local.length > 0) {
-        saved = local
-        source = 'local'
-      }
-    }
-
-    let toRestore: Session | null = null
-
-    if (saved.length > 0) {
-      sessions.value = saved
-      // v2 授权迁移：旧会话只有前端路径、没有后端能力，不能静默恢复。
-      // 清除旧路径并要求用户通过原生选择器重新授权一次。
-      for (const session of sessions.value) {
-        if (session.workspaceRoot && !session.workspaceId) {
-          session.workspaceRoot = null
-        }
-        // 旧会话没有 characterLocked 字段：只要已有用户消息就视为已锁定。
-        if (hasUserMessage(session)) {
-          session.characterLocked = true
-        }
-      }
-      // 恢复上次使用的会话
-      const lastId = file.ok && file.data
-        ? file.data.currentId
-        : loadJSON<string>(STORAGE_CURRENT_SESSION, '')
-      if (lastId && sessions.value.some(s => s.id === lastId)) {
-        currentSessionId.value = lastId
-      } else {
-        // 默认选最新的
-        currentSessionId.value = sessions.value.reduce((a, b) =>
-          a.updatedAt > b.updatedAt ? a : b,
-        ).id
-      }
-
-      // 将当前会话的消息和角色状态加载到对应的 Store
-      const curr = currentSession.value
-      if (curr) {
-        const chatStore = useChatStore()
-        if (curr.messages.length > 0 || curr.context) {
-          chatStore.loadMessages(curr.messages, curr.context)
-        }
-        toRestore = curr
-      }
-    } else {
-      // 首次使用：创建默认会话
-      const now = Date.now()
-      const defaultSession: Session = {
-        id: generateId(),
-        name: '新对话',
-        messages: [],
-        characterLocked: false,
-        createdAt: now,
-        updatedAt: now,
-      }
-      sessions.value = [defaultSession]
-      currentSessionId.value = defaultSession.id
-      persistSessions()
-    }
-
-    // 迁移：localStorage 旧数据 → 会话文件（文件写入成功后才清除旧副本，避免丢数据）
-    if (source === 'local' && file.ok) {
-      const migrated = await persistToFile(sessions.value, currentSessionId.value)
-      if (migrated) {
-        try {
-          localStorage.removeItem(STORAGE_SESSIONS)
-          localStorage.removeItem(STORAGE_CURRENT_SESSION)
-        } catch { /* ignore */ }
-        log.info("session_store.init.info", "会话数据已从 localStorage 迁移到会话文件")
-      }
-    }
-
-    ready.value = true
-    log.info("session_store.init.info", `初始化完成: ${sessions.value.length} 个会话`, { sessions_count: sessions.value.length, current_session_id: currentSessionId.value })
-
-    // 页面隐藏/关闭时强制落盘，避免脏状态合并窗口内的快照丢失。
-    if (typeof window !== 'undefined' && !sessionFlushRegistered) {
-      sessionFlushRegistered = true
-      window.addEventListener('pagehide', () => { void flushFilePersist() })
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') void flushFilePersist()
-      })
-    }
-
-    // 恢复当前会话绑定的角色与视觉状态（可能异步切角色，不阻塞 ready）
-    if (toRestore) await restoreSessionState(toRestore)
+  function requireService(): SessionApplicationService {
+    if (!service) throw new Error('SessionStore is not initialized')
+    return service
   }
 
-  // ── 持久化 ──
-
-  /**
-   * 写会话文件（串行队列，保证保存顺序）。返回是否成功。
-   * 失败时置 persistError，供 UI 提示用户。
-   */
-  function persistToFile(sessions: Session[], currentId: string): Promise<boolean> {
-    // 只保留最新快照，真正落盘时才 JSON.stringify。
-    pendingFileSnapshot = { sessions, currentId }
-    const result = new Promise<boolean>(resolve => pendingFileWaiters.push(resolve))
-    scheduleFileFlush()
-    return result
+  function refreshProjection(): void {
+    const document = requireService().snapshot()
+    currentSessionId.value = document.currentSessionId
+    sessions.value = document.sessions.map(snapshot => (
+      toView(snapshot, workspaceRoots.get(snapshot.id) ?? null)
+    ))
   }
 
-  function scheduleFileFlush() {
-    if (fileWriteRunning) return
-    if (fileFlushTimer != null) return
-    fileFlushTimer = setTimeout(() => { fileFlushTimer = null; void flushFilePersist() }, FILE_FLUSH_DELAY)
-  }
-
-  async function flushFilePersist() {
-    if (fileWriteRunning) return
-    const snapshot = pendingFileSnapshot
-    if (snapshot == null) return
-    pendingFileSnapshot = null
-    if (fileFlushTimer != null) { clearTimeout(fileFlushTimer); fileFlushTimer = null }
-    const waiters = pendingFileWaiters
-    pendingFileWaiters = []
-    fileWriteRunning = true
-    let ok = true
+  async function runCommand<T>(operation: () => Promise<T>): Promise<T> {
     try {
-      const payload = JSON.stringify(snapshot)
-      await invoke('sessions_save', { data: payload })
-    } catch (e) {
-      ok = false
-      log.error("session.file_write_failed", "会话写入磁盘失败，历史可能无法保存", e, undefined)
+      const result = await operation()
+      refreshProjection()
+      persistError.value = false
+      return result
+    } catch (error) {
       persistError.value = true
-    } finally {
-      fileWriteRunning = false
-      for (const resolve of waiters) resolve(ok)
-      if (pendingFileSnapshot != null) scheduleFileFlush()
+      log.error('session.command_failed', '会话命令执行失败', error)
+      throw error
     }
   }
 
-  function persistSessions() {
-    if (fileMode === true) {
-      void persistToFile(sessions.value, currentSessionId.value).then(ok => {
-        if (ok) persistError.value = false
+  async function initializeService(): Promise<void> {
+    service = new SessionApplicationService({
+      repository: new TauriSessionRepository(),
+      now: Date.now,
+      nextId,
+    })
+    try {
+      await service.initialize('新对话')
+    } catch (error) {
+      // Browser previews have no Tauri command channel. Keep a volatile v2 document;
+      // never read or rewrite the legacy session formats.
+      log.warn('session.persistence_unavailable', '会话文件接口不可用，使用内存会话', error)
+      persistError.value = true
+      service = new SessionApplicationService({
+        repository: new MemorySessionRepository(),
+        now: Date.now,
+        nextId,
       })
+      await service.initialize('新对话')
+    }
+  }
+
+  async function resolveWorkspace(snapshot: ConversationSessionSnapshot): Promise<void> {
+    if (!snapshot.workspaceGrantId) {
+      workspaceRoots.delete(snapshot.id)
       return
     }
-    const sessionsOk = saveJSON(STORAGE_SESSIONS, sessions.value)
-    const currentOk = saveJSON(STORAGE_CURRENT_SESSION, currentSessionId.value)
-    const ok = sessionsOk && currentOk
-    persistError.value = !ok
-    if (!ok) {
-      log.error("session_store.persist_sessions.error", "本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复", new Error("本地存储配额可能已满，会话数据未能完整保存；删除旧会话后会自动恢复"))
+    try {
+      const path = await invoke<string>('agent_resolve_workspace', {
+        workspaceId: snapshot.workspaceGrantId,
+      })
+      workspaceRoots.set(snapshot.id, path)
+    } catch (error) {
+      workspaceRoots.delete(snapshot.id)
+      log.warn('session.workspace_grant_expired', '工作目录授权已失效，需要重新选择', error, {
+        session_id: snapshot.id,
+      })
+      await runCommand(() => requireService().setWorkspaceGrant(snapshot.id, null))
     }
   }
 
-  // ── 会话操作 ──
-
-  /** 生成「新对话 N」中比现有最大编号大 1 的唯一名称（删除旧会话后不会重名）。 */
-  function nextSessionName(existing: Session[]): string {
-    // 允许裸「新对话」视为编号 1，保持首个自动命名仍为「新对话 2」，但避免按数量+1 产生重名。
-    const re = /^新对话(?:\s*(\d+))?$/
-    let max = 1
-    for (const s of existing) {
-      const m = s.name.match(re)
-      if (!m) continue
-      const num = m[1] ? Number(m[1]) : 1
-      if (num >= max) max = num + 1
-    }
-    return `新对话 ${max}`
-  }
-
-  /**
-   * 创建新会话并立即切换到它
-   * @param name 会话名称，留空自动生成 "新对话 N"
-   */
-  function createSession(name?: string): Session {
+  async function restoreCharacter(session: Session, checkpoint?: SessionCheckpoint | null): Promise<void> {
     const charStore = useCharacterStore()
-    const session: Session = {
-      id: generateId(),
-      name: name || nextSessionName(sessions.value),
-      messages: [],
-      characterId: charStore.currentId,
-      characterLocked: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+    const checkpointCharacter = checkpoint?.character ?? null
+    const characterId = checkpointCharacter?.characterId ?? session.characterId
+    if (
+      characterId
+      && characterId !== charStore.currentId
+      && charStore.availableList.includes(characterId)
+    ) {
+      try {
+        await charStore.loadCharacter(characterId, true)
+      } catch (error) {
+        log.warn('session.character_restore_failed', '恢复会话角色失败，保持当前角色', error)
+      }
     }
-    sessions.value.push(session)
-    persistSessions()
-    // 立即切换到新会话（角色状态会自动重置为默认）
-    switchSession(session.id)
-    log.info("session_store.create_session.info", "已创建并切换到会话", { session_id: session.id })
-    log.sensitiveDebug("session_store.session_name_sensitive.debug", "会话名称", { session_id: session.id, session_name: session.name })
-    return session
-  }
-
-  /**
-   * 切换到指定会话
-   * 自动保存当前会话 → 加载目标会话的消息到 ChatStore
-   */
-  async function switchSession(sessionId: string) {
-    if (sessionId === currentSessionId.value) return
-    const target = sessions.value.find(s => s.id === sessionId)
-    if (!target) {
-      log.warn("session_store.switch_session.warn", `目标会话不存在: ${sessionId}`, undefined, { session_id: sessionId })
+    if (checkpointCharacter) {
+      charStore.applyVisualState({
+        emotion: checkpointCharacter.emotion,
+        stance: checkpointCharacter.stance,
+        costume: checkpointCharacter.costume,
+        screenPose: checkpointCharacter.screenPose,
+      } as CharacterVisualState)
       return
     }
-
-    // 保存当前会话
-    saveCurrentSession()
-
-    // 切换 ID（同步更新，UI 立即反映）
-    currentSessionId.value = target.id
-    persistSessions()
-
-    // 加载目标会话消息（同步）
-    const chatStore = useChatStore()
-    chatStore.loadMessages(target.messages, target.context)
-    // 恢复目标会话的角色与视觉状态（可能异步切角色）
-    await restoreSessionState(target)
-
-    log.info("session_store.switch_session.info", `已切换会话 (${target.messages.length} 条消息)`, { session_id: target.id, target_messages: target.messages.length })
+    const data = charStore.data
+    if (data) {
+      charStore.applyVisualState({
+        emotion: data.emotions[0] ?? '',
+        stance: data.poses[0] ?? '',
+        costume: data.costumes[0] ?? '',
+        screenPose: DEFAULT_POSE,
+      })
+    }
   }
 
-  /**
-   * 将 ChatStore 当前消息和角色视觉状态保存到当前会话
-   */
-  function saveCurrentSession() {
+  function loadCurrentChat(): void {
     const session = currentSession.value
-    if (!session) return
-
-    const chatStore = useChatStore()
-    // 思考过程只保留在当前运行时 UI，不写入长期会话文件。
-    session.messages = chatStore.messages.map(({ thinking: _thinking, ...message }) => message)
-    // 锁定是单向状态：即使之后清空消息或回档，也必须新建会话才能换角色。
-    if (hasUserMessage(session)) {
-      session.characterLocked = true
-    }
-    session.context = chatStore.exportContext()
-    // 保存角色身份与当前视觉状态
-    const charStore = useCharacterStore()
-    session.characterId = charStore.currentId
-    session.characterState = charStore.getVisualStateSnapshot()
-    session.updatedAt = Date.now()
-    persistSessions()
+    useChatStore().loadMessages(session?.messages ?? [], session?.context ?? null)
   }
 
-  /**
-   * 删除会话（至少保留一个）
-   * @returns 删除是否成功
-   */
-  function deleteSession(sessionId: string): boolean {
-    if (sessions.value.length <= 1) {
-      log.warn("session_store.delete_session.warn", "至少需要保留一个会话")
+  async function init(): Promise<void> {
+    if (ready.value) return
+    if (initializing) return initializing
+    initializing = (async () => {
+      await initializeService()
+      const document = requireService().snapshot()
+      await Promise.all(document.sessions.map(resolveWorkspace))
+      refreshProjection()
+      loadCurrentChat()
+      if (currentSession.value) await restoreCharacter(currentSession.value)
+      ready.value = true
+      log.info('session.initialized', 'v2 会话已初始化', { session_count: sessions.value.length })
+    })().finally(() => { initializing = null })
+    return initializing
+  }
+
+  function nextSessionName(): string {
+    const pattern = /^新对话(?:\s*(\d+))?$/
+    let next = 2
+    for (const session of sessions.value) {
+      const match = session.name.match(pattern)
+      if (!match) continue
+      next = Math.max(next, (match[1] ? Number(match[1]) : 1) + 1)
+    }
+    return `新对话 ${next}`
+  }
+
+  async function createSession(name?: string): Promise<Session> {
+    const created = await runCommand(() => requireService().create({
+      title: name?.trim() || nextSessionName(),
+      characterId: useCharacterStore().currentId,
+    }))
+    loadCurrentChat()
+    if (currentSession.value) await restoreCharacter(currentSession.value)
+    return sessions.value.find(session => session.id === created.id)!
+  }
+
+  async function switchSession(sessionId: string): Promise<boolean> {
+    if (sessionId === currentSessionId.value) return true
+    const target = sessions.value.find(session => session.id === sessionId)
+    if (!target) return false
+    const previousId = currentSessionId.value
+    currentSessionId.value = sessionId
+    useChatStore().loadMessages(target.messages, target.context)
+    try {
+      await runCommand(() => requireService().switchTo(sessionId))
+      if (currentSession.value) await restoreCharacter(currentSession.value)
+      return true
+    } catch {
+      currentSessionId.value = previousId
+      loadCurrentChat()
       return false
     }
-    const idx = sessions.value.findIndex(s => s.id === sessionId)
-    if (idx === -1) return false
+  }
 
-    // 清理该会话的文件备份（Rust 缓存目录）
-    void invoke('agent_checkpoint_clear_session', { sessionId }).catch(() => { /* ignore */ })
-
-    const isCurrent = sessionId === currentSessionId.value
-    sessions.value.splice(idx, 1)
-
-    if (isCurrent) {
-      // 切换到最近更新的会话
-      const next = sessions.value.reduce((a, b) =>
-        a.updatedAt > b.updatedAt ? a : b,
-      )
-      currentSessionId.value = next.id
-      const chatStore = useChatStore()
-      chatStore.loadMessages(next.messages, next.context)
-      // 恢复角色/视觉状态（可能异步切角色，fire-and-forget）
-      void restoreSessionState(next)
+  async function deleteSession(sessionId: string): Promise<boolean> {
+    if (sessions.value.length <= 1 || !sessions.value.some(session => session.id === sessionId)) return false
+    const wasCurrent = sessionId === currentSessionId.value
+    try {
+      await runCommand(() => requireService().delete(sessionId))
+    } catch {
+      return false
     }
-
-    persistSessions()
-    log.info("session_store.delete_session.info", "已删除会话")
+    workspaceRoots.delete(sessionId)
+    void invoke('agent_checkpoint_clear_session', { sessionId }).catch(() => {})
+    if (wasCurrent) {
+      loadCurrentChat()
+      if (currentSession.value) await restoreCharacter(currentSession.value)
+    }
     return true
   }
 
-  /**
-   * 重命名会话
-   * @returns 重命名是否成功
-   */
-  function renameSession(sessionId: string, newName: string): boolean {
+  async function renameSession(sessionId: string, newName: string): Promise<boolean> {
     const name = newName.trim()
-    if (!name) return false
-    const session = sessions.value.find(s => s.id === sessionId)
-    if (!session) return false
-    session.name = name
-    session.updatedAt = Date.now()
-    persistSessions()
-    return true
+    if (!name || !sessions.value.some(session => session.id === sessionId)) return false
+    try {
+      await runCommand(() => requireService().rename(sessionId, name))
+      return true
+    } catch {
+      return false
+    }
   }
 
   function getSessionById(sessionId: string): Session | undefined {
-    return sessions.value.find(s => s.id === sessionId)
+    return sessions.value.find(session => session.id === sessionId)
   }
 
-  // ── AI 工作目录 ──
+  async function bindCurrentCharacter(): Promise<void> {
+    const sessionId = currentSessionId.value
+    if (!sessionId) return
+    await runCommand(() => requireService().bindCharacter(sessionId, useCharacterStore().currentId))
+  }
 
-  /** 保存由 Rust 原生目录选择器签发的工作目录能力。 */
-  function setWorkspace(grant: { id: string; path: string }) {
+  async function setWorkspace(grant: { id: string; path: string }): Promise<void> {
     const session = currentSession.value
     if (!session) return
     const previousId = session.workspaceId
-    session.workspaceId = grant.id
-    session.workspaceRoot = grant.path
-    session.updatedAt = Date.now()
-    persistSessions()
+    await runCommand(() => requireService().setWorkspaceGrant(session.id, grant.id))
+    workspaceRoots.set(session.id, grant.path)
+    refreshProjection()
     if (previousId && previousId !== grant.id) {
-      void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => { /* ignore */ })
+      void invoke('agent_revoke_workspace', { workspaceId: previousId }).catch(() => {})
     }
-    log.info("session_store.set_workspace.info", '已设置会话工作目录')
-    log.sensitiveDebug("session_store.workspace_sensitive.debug", '工作区授权详情', {
-      workspace_id: grant.id,
-      workspace_path: grant.path,
-    })
   }
 
-  /** 取消当前会话的工作目录授权 */
-  function clearWorkspace() {
+  async function clearWorkspace(): Promise<void> {
     const session = currentSession.value
     if (!session) return
     const workspaceId = session.workspaceId
-    session.workspaceId = null
-    session.workspaceRoot = null
-    session.updatedAt = Date.now()
-    persistSessions()
-    if (workspaceId) {
-      void invoke('agent_revoke_workspace', { workspaceId }).catch((e) => {
-        log.warn("session_store.clear_workspace.warn", `撤销工作目录授权失败: ${(e as Error)?.message || String(e)}`, e)
-      })
-    }
-    log.info("session_store.clear_workspace.info", "已取消会话工作目录授权")
+    await runCommand(() => requireService().setWorkspaceGrant(session.id, null))
+    workspaceRoots.delete(session.id)
+    refreshProjection()
+    if (workspaceId) void invoke('agent_revoke_workspace', { workspaceId }).catch(() => {})
   }
 
-  // ── 角色状态恢复 ──
-
-  /**
-   * 恢复会话关联的角色与视觉状态。
-   * 1. 若会话绑定了不同的角色（characterId），先切到该角色（异步加载）。
-   * 2. 应用保存的视觉状态；无则重置为该角色默认值。
-   *
-   * characterStore 变更后，controller 的 watch 会自动同步立绘和位置；
-   * App.vue 监听 currentId 变化刷新人设（system prompt）。
-   */
-  async function restoreSessionState(session: Session) {
-    const charStore = useCharacterStore()
-
-    // 0. 验证持久化能力仍有效；能力不存在、目录被移走或已撤销时安全清除。
-    if (session.workspaceId) {
-      try {
-        session.workspaceRoot = await invoke<string>('agent_resolve_workspace', {
-          workspaceId: session.workspaceId,
-        })
-      } catch (e) {
-        log.warn("session_store.restore_session_state.warn", `恢复工作目录授权失败，需重新选择: ${(e as Error)?.message || String(e)}`, e)
-        session.workspaceId = null
-        session.workspaceRoot = null
-        persistSessions()
-      }
+  async function acceptUserMessage(message: {
+    sessionId: string
+    messageId: string
+    text: string
+    images: Array<{ id: string; name: string; mimeType: string; size: number; dataUrl: string }>
+  }): Promise<boolean> {
+    const { sessionId, ...accepted } = message
+    if (sessionId !== currentSessionId.value) return false
+    try {
+      await runCommand(() => requireService().acceptUserMessage(
+        sessionId,
+        accepted,
+        useCharacterStore().currentId || null,
+      ))
+      return currentSessionId.value === sessionId
+    } catch {
+      return false
     }
-
-    // 1. 切换到会话绑定的角色（若不同且存在）
-    if (
-      session.characterId &&
-      session.characterId !== charStore.currentId &&
-      charStore.availableList.includes(session.characterId)
-    ) {
-      try {
-        await charStore.loadCharacter(session.characterId, true)
-      } catch (err) {
-        log.warn("session_store.restore_session_state.warn", `恢复会话角色失败（保持当前角色）: ${(err as Error).message}`, err)
-      }
-    }
-
-    // 2. 恢复视觉状态
-    if (!session.characterState) {
-      // 新/空会话 → 重置为角色默认状态（首项标签 + 居中全屏）
-      const d = charStore.data
-      if (d) {
-        charStore.applyVisualState({
-          emotion: d.emotions[0] ?? '',
-          stance: d.poses[0] ?? '',
-          costume: d.costumes[0] ?? '',
-          screenPose: DEFAULT_POSE,
-        })
-      }
-      return
-    }
-    charStore.applyVisualState(session.characterState)
   }
 
-  // ── 回档检查点 ──
-
-  /**
-   * 为一次用户消息回合建立检查点：记录回合前的角色与视觉状态。
-   * 文件备份在「改文件工具执行前」由 backupFile 按需追加。
-   * @returns checkpointId（= 传入的用户消息 id）
-   */
-  function beginCheckpoint(messageId: string): string {
-    const session = currentSession.value
-    if (!session) return messageId
-    if (!session.checkpoints) session.checkpoints = []
+  async function beginCheckpoint(sessionId: string, messageId: string): Promise<string> {
+    if (sessionId !== currentSessionId.value) throw new Error('Cannot checkpoint a stale session')
     const charStore = useCharacterStore()
-    session.checkpoints.push({
+    const look = charStore.getVisualStateSnapshot()
+    await runCommand(() => requireService().addCheckpoint(sessionId, {
       id: messageId,
+      userMessageId: messageId,
       createdAt: Date.now(),
-      characterId: charStore.currentId,
-      visualState: charStore.getVisualStateSnapshot(),
-      hasFiles: false,
-      workspaceRoot: session.workspaceRoot ?? null,
-    })
-    persistSessions()
+      hasWorkspaceChanges: false,
+      character: {
+        characterId: charStore.currentId || null,
+        emotion: look.emotion,
+        stance: look.stance,
+        costume: look.costume,
+        screenPose: look.screenPose,
+      },
+    }))
     return messageId
   }
 
-  /** 标记某检查点已产生文件备份（回档时据此决定是否还原文件） */
-  function markCheckpointFiles(checkpointId: string) {
-    const cp = currentSession.value?.checkpoints?.find(c => c.id === checkpointId)
-    if (cp && !cp.hasFiles) {
-      cp.hasFiles = true
-      persistSessions()
-    }
-  }
-
-  /**
-   * 在「改文件工具执行前」备份目标文件（写时复制，幂等）。
-   * 未授权工作目录则跳过（工具本身随后会报错引导用户）。
-   */
-  async function backupFile(checkpointId: string, relPath: string): Promise<void> {
+  async function backupFile(sessionId: string, checkpointId: string, relPath: string): Promise<void> {
     const session = currentSession.value
-    const workspaceId = session?.workspaceId
-    if (!session || !workspaceId || !relPath) return
+    if (!session?.workspaceId || session.id !== sessionId || !relPath) return
     await invoke('agent_checkpoint_backup', {
       sessionId: session.id,
       checkpointId,
-      workspaceId,
+      workspaceId: session.workspaceId,
       relPath,
     })
   }
 
-  /** 清空当前会话的全部检查点与文件备份（清空对话时调用） */
-  async function clearCheckpoints(): Promise<void> {
-    const session = currentSession.value
-    if (!session) return
-    session.checkpoints = []
-    persistSessions()
+  async function markCheckpointFiles(sessionId: string, checkpointId: string): Promise<void> {
+    if (sessionId !== currentSessionId.value) return
+    await runCommand(() => requireService().markCheckpointWorkspaceChanges(
+      sessionId,
+      checkpointId,
+    ))
+  }
+
+  async function recordToolCalls(step: {
+    sessionId: string
+    stepId: string
+    calls: RecordedToolCall[]
+    visibleText?: string
+  }): Promise<boolean> {
+    const { sessionId, ...recorded } = step
+    if (sessionId !== currentSessionId.value) return false
     try {
-      await invoke('agent_checkpoint_clear_session', { sessionId: session.id })
-    } catch { /* ignore */ }
-  }
-
-  /** 恢复某检查点记录的角色与视觉状态 */
-  async function restoreCharacterCheckpoint(cp: Checkpoint) {
-    const charStore = useCharacterStore()
-    if (
-      cp.characterId &&
-      cp.characterId !== charStore.currentId &&
-      charStore.availableList.includes(cp.characterId)
-    ) {
-      try {
-        await charStore.loadCharacter(cp.characterId, true)
-      } catch (err) {
-        log.warn("session_store.restore_character_checkpoint.warn", `回档恢复角色失败（保持当前角色）: ${(err as Error).message}`, err)
-      }
-    }
-    if (cp.visualState) charStore.applyVisualState(cp.visualState)
-  }
-
-  /**
-   * 回档到某条消息：还原工作区文件 + 恢复视觉状态 + 截断该消息及其后的对话。
-   * @param messageId 目标用户消息 id（= 检查点 id）
-   * @returns 是否成功执行
-   */
-  async function rollbackTo(messageId: string): Promise<boolean> {
-    const session = currentSession.value
-    if (!session) return false
-    const chatStore = useChatStore()
-
-    // 进行中的生成先取消，避免回调写入将被截断的上下文
-    if (chatStore.isProcessing) chatStore.cancelResponse()
-
-    const msgs = chatStore.messages
-    const idx = msgs.findIndex(m => m.id === messageId)
-    if (idx < 0) {
-      log.warn("session_store.rollback_to.warn", `回档目标消息不存在: ${messageId}`, undefined, { message_id: messageId })
+      await runCommand(() => requireService().recordToolCalls(sessionId, recorded))
+      return currentSessionId.value === sessionId
+    } catch {
       return false
     }
+  }
 
-    const cps = session.checkpoints ?? []
-    // 该点及其后、且有文件备份的检查点，按消息顺序「从新到旧」传给 Rust
-    const fileCpIdsNewestFirst = cps
-      .map(cp => ({ cp, mi: msgs.findIndex(m => m.id === cp.id) }))
-      .filter(x => x.mi >= idx && x.cp.hasFiles)
-      .sort((a, b) => b.mi - a.mi)
-      .map(x => x.cp.id)
+  async function recordToolResult(result: {
+    sessionId: string
+    callId: string
+    content: string
+    status: 'succeeded' | 'failed' | 'rejected'
+    code?: string
+  }): Promise<boolean> {
+    const { sessionId, ...recorded } = result
+    if (sessionId !== currentSessionId.value) return false
+    try {
+      await runCommand(() => requireService().recordToolResult(sessionId, recorded))
+      return currentSessionId.value === sessionId
+    } catch {
+      return false
+    }
+  }
 
-    // 1. 还原文件
-    if (fileCpIdsNewestFirst.length > 0) {
+  async function commitAssistantMessage(message: CommitAssistantMessage): Promise<string | null> {
+    if (message.sessionId !== currentSessionId.value) return null
+    const messageId = nextId()
+    try {
+      await runCommand(() => requireService().commitAssistantMessage(message.sessionId, {
+        messageId,
+        display: message.display,
+        voice: message.voice,
+        source: message.source,
+      }))
+      return message.sessionId === currentSessionId.value ? messageId : null
+    } catch {
+      return null
+    }
+  }
+
+  async function reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean> {
+    if (message.sessionId !== currentSessionId.value) return false
+    try {
+      await runCommand(() => requireService().reviseAssistantMessage(message.sessionId, {
+        messageId: message.messageId,
+        display: message.display,
+        voice: message.voice,
+      }))
+      return message.sessionId === currentSessionId.value
+    } catch {
+      return false
+    }
+  }
+
+  async function clearConversation(sessionId: string): Promise<void> {
+    if (sessionId !== currentSessionId.value) return
+    try {
+      await runCommand(() => requireService().clearConversation(sessionId))
+      await invoke('agent_checkpoint_clear_session', { sessionId }).catch(() => {})
+    } catch { /* projection already exposes the persistence error */ }
+  }
+
+  async function rollbackTo(messageId: string): Promise<boolean> {
+    const session = currentSession.value
+    if (!session || !session.messages.some(message => message.id === messageId && message.role === 'user')) return false
+    const chatStore = useChatStore()
+    if (chatStore.isProcessing) chatStore.cancelResponse()
+    let result
+    try {
+      result = await runCommand(() => requireService().rollbackToUserMessage(session.id, messageId))
+    } catch {
+      return false
+    }
+    if (result.workspaceCheckpointIdsNewestFirst.length > 0) {
       try {
         await invoke('agent_checkpoint_rollback', {
           sessionId: session.id,
-          checkpointIds: fileCpIdsNewestFirst,
+          checkpointIds: result.workspaceCheckpointIdsNewestFirst,
         })
-      } catch (e) {
-        log.error("session.rollback_failed", "回档还原文件失败", e, {
-          sessionId: session.id,
-          checkpointCount: fileCpIdsNewestFirst.length,
-        })
+      } catch (error) {
+        log.error('session.rollback_files_failed', '回档已提交，但工作区文件恢复失败', error)
       }
     }
-
-    // 2. 恢复目标检查点的视觉状态 / 角色
-    const targetCp = cps.find(c => c.id === messageId)
-    if (targetCp) await restoreCharacterCheckpoint(targetCp)
-
-    // 3. 截断对话到目标消息之前，并丢弃 >= 目标的检查点
-    const kept = msgs.slice(0, idx)
-    session.messages = [...kept]
-    session.checkpoints = cps.filter(cp => {
-      const mi = msgs.findIndex(m => m.id === cp.id)
-      return mi >= 0 && mi < idx
-    })
-    session.characterId = useCharacterStore().currentId
-    session.characterState = useCharacterStore().getVisualStateSnapshot()
-    session.updatedAt = Date.now()
-    // 4. 重建 chat 上下文（loadMessages 会按 say 范式重放消息）
-    chatStore.loadMessages(kept)
-    session.context = chatStore.exportContext()
-    persistSessions()
-
-    log.info("session_store.rollback_to.info", `已回档到消息 ${messageId}（保留 ${kept.length} 条，还原 ${fileCpIdsNewestFirst.length} 个文件检查点）`, { message_id: messageId, kept_length: kept.length, file_cp_ids_newest_first_length: fileCpIdsNewestFirst.length })
+    if (currentSession.value) await restoreCharacter(currentSession.value, result.targetCheckpoint)
+    loadCurrentChat()
     return true
   }
 
-  // 过渡期由 SessionStore 单向实现 ChatStore 所需端口，避免 ChatStore 反向导入本模块。
   setChatSessionPort({
     currentSessionId: () => currentSessionId.value,
     workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
-    persistCurrent: saveCurrentSession,
+    acceptUserMessage,
+    recordToolCalls,
+    recordToolResult,
+    commitAssistantMessage,
+    reviseAssistantMessage,
     beginCheckpoint,
     backupFile,
     markCheckpointFiles,
-    clearCheckpoints,
+    clearConversation,
   })
 
   return {
-    // 状态
     sessions,
     currentSessionId,
     ready,
     persistError,
-    // 计算
     currentSession,
     sessionList,
     canChangeCharacter,
-    // 方法
     init,
     createSession,
     switchSession,
-    saveCurrentSession,
     deleteSession,
     renameSession,
     getSessionById,
+    bindCurrentCharacter,
     setWorkspace,
     clearWorkspace,
-    // 回档检查点
-    beginCheckpoint,
-    markCheckpointFiles,
-    backupFile,
-    clearCheckpoints,
     rollbackTo,
   }
 })
