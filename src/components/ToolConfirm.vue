@@ -3,14 +3,14 @@
  * 文件操作确认卡 —— AI 调用「改文件」工具且未开启自动执行时弹出
  *
  * 展示：工具图标 + 可读名 + 相对路径 + 一句摘要 + 行级 diff 预览。
- * 三个动作：允许 / 拒绝 / 本会话自动允许（→ chat.resolveConfirm）。
- * 数据来自 chat store 的 pendingConfirm（非空即显示）。
+ * 三个动作：允许 / 拒绝 / 本会话自动允许（→ chat.resolveApproval）。
+ * 数据来自统一 ApprovalRequest 投影。
  */
 import { ref, computed, nextTick, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { useChatStore } from '../stores/chat'
-import type { PendingConfirm } from '../stores/chat'
+import type { FileApprovalRequest } from '../application/tools/approvalGateway'
 import { useSessionStore } from '../stores/session'
 import { toolIcon } from '../agent/toolMeta'
 import { lineDiff, sliceLines, type DiffPreview } from '../utils/diff'
@@ -21,7 +21,9 @@ const { t, te } = useI18n()
 const chat = useChatStore()
 const sessionStore = useSessionStore()
 
-const pc = computed(() => chat.pendingConfirm)
+const pc = computed<FileApprovalRequest | null>(() => (
+  chat.pendingApproval?.kind === 'file' ? chat.pendingApproval : null
+))
 const diff = ref<DiffPreview | null>(null)
 const loadingDiff = ref(false)
 /** 原文件无法读取（按新建处理） */
@@ -52,7 +54,7 @@ const summary = computed(() => {
 })
 
 /** 计算 diff 预览（按需读取原文件） */
-async function loadPreview(p: PendingConfirm) {
+async function loadPreview(p: FileApprovalRequest) {
   diff.value = null
   unreadable.value = false
   const name = p.toolName
@@ -92,7 +94,7 @@ async function loadPreview(p: PendingConfirm) {
 }
 
 watch(
-  () => chat.pendingConfirm,
+  () => pc.value,
   (p) => {
     if (!p) { diff.value = null; return }
     void nextTick(() => rejectRef.value?.focus())
@@ -142,13 +144,13 @@ watch(
 
       <!-- 动作 -->
       <div class="tc-actions">
-        <button ref="rejectRef" class="tc-btn tc-reject" @click="chat.resolveConfirm('reject')">
+        <button ref="rejectRef" class="tc-btn tc-reject" @click="chat.resolveApproval('reject')">
           <i class="fas fa-xmark"></i> {{ t('app.confirm.reject') }}
         </button>
-        <button class="tc-btn tc-auto" @click="chat.resolveConfirm('allow-session')">
+        <button class="tc-btn tc-auto" @click="chat.resolveApproval('allow-session')">
           {{ t('app.confirm.allowSession') }}
         </button>
-        <button class="tc-btn tc-allow" @click="chat.resolveConfirm('allow')">
+        <button class="tc-btn tc-allow" @click="chat.resolveApproval('allow')">
           <i class="fas fa-check"></i> {{ t('app.confirm.allow') }}
         </button>
       </div>

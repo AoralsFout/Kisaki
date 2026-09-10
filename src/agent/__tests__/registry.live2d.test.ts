@@ -7,9 +7,15 @@ import type { Tool } from '../types'
 import type { CharacterCapabilities } from '../../application/character/characterRuntime'
 import { setScreenCaptureEnabled } from '../toolPolicy'
 
-function mkTool(name: string, appliesTo?: Tool['appliesTo'], props?: Record<string, any>): Tool {
+function mkTool(
+  name: string,
+  appliesTo?: Tool['appliesTo'],
+  props?: Record<string, any>,
+  policy?: Tool['policy'],
+): Tool {
   return {
     appliesTo,
+    policy,
     definition: {
       type: 'function',
       function: { name, description: name, parameters: { type: 'object', properties: props ?? {} } },
@@ -43,7 +49,7 @@ describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
   })
 
   it('仅在用户开启权限后向模型暴露截屏工具', () => {
-    register(mkTool('capture_screen'))
+    register(mkTool('capture_screen', undefined, undefined, { approval: 'screen-capture' }))
     const ctx = context({ render: 'illustration' })
     expect(getDefinitions(ctx).map(d => d.function.name)).not.toContain('capture_screen')
     setScreenCaptureEnabled(true)
@@ -51,8 +57,8 @@ describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
   })
 
   it('没有工作区时不暴露文件工具', () => {
-    register(mkTool('read_file'))
-    register(mkTool('write_file'))
+    register(mkTool('read_file', undefined, undefined, { requiresWorkspace: true }))
+    register(mkTool('write_file', undefined, undefined, { requiresWorkspace: true }))
     const withoutWorkspace = getDefinitions(context({ render: 'illustration' }, {}, false)).map(d => d.function.name)
     const withWorkspace = getDefinitions(context({ render: 'illustration' }, {}, true)).map(d => d.function.name)
     expect(withoutWorkspace).not.toContain('read_file')

@@ -53,6 +53,7 @@ interface ImageReadResult {
 }
 
 export const readFileTool: Tool = {
+  policy: { requiresWorkspace: true },
   definition: {
     type: 'function',
     function: {
@@ -99,6 +100,7 @@ export const readFileTool: Tool = {
 }
 
 export const readImageTool: Tool<ToolOutput> = {
+  policy: { requiresWorkspace: true },
   definition: {
     type: 'function',
     function: {
@@ -137,6 +139,7 @@ export const readImageTool: Tool<ToolOutput> = {
 }
 
 export const writeFileTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -167,6 +170,7 @@ export const writeFileTool: Tool = {
 }
 
 export const appendFileTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -196,6 +200,7 @@ export const appendFileTool: Tool = {
 }
 
 export const listDirTool: Tool = {
+  policy: { requiresWorkspace: true },
   definition: {
     type: 'function',
     function: {
@@ -227,6 +232,7 @@ export const listDirTool: Tool = {
 }
 
 export const deleteFileTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -256,6 +262,7 @@ export const deleteFileTool: Tool = {
 // ─── 按行编辑（replace / insert / delete，共用 agent_edit_lines） ──────
 
 export const replaceLinesTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -289,6 +296,7 @@ export const replaceLinesTool: Tool = {
 }
 
 export const insertLinesTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -320,6 +328,7 @@ export const insertLinesTool: Tool = {
 }
 
 export const deleteLinesTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'file-session', checkpointArgument: 'path' },
   definition: {
     type: 'function',
     function: {
@@ -351,6 +360,7 @@ export const deleteLinesTool: Tool = {
 // ─── 查找 / 搜索 ───────────────────────────────────────
 
 export const findFilesTool: Tool = {
+  policy: { requiresWorkspace: true },
   definition: {
     type: 'function',
     function: {
@@ -381,6 +391,7 @@ export const findFilesTool: Tool = {
 }
 
 export const searchInFilesTool: Tool = {
+  policy: { requiresWorkspace: true },
   definition: {
     type: 'function',
     function: {

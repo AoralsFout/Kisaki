@@ -30,18 +30,9 @@ import type {
 import { agentService } from '../agent/service'
 import { SAY_TOOL_NAME, SAY_TOOL_DEF } from '../agent'
 import type { ToolCall, ToolDefinition, ToolResult } from '../agent'
-import {
-  isMutatingTool,
-  mutatingPath,
-  getAutoExecFiles,
-  shouldConfirm,
-  isDangerousTool,
-  dangerousToolSummary,
-  getScreenCaptureEnabled,
-  isScreenCaptureTool,
-} from '../agent/toolPolicy'
-import { prepareCommandExecution, approveCommandExecution } from '../agent/tools/command'
-import type { ExecutionPlan } from '../agent/tools/command'
+import { ApprovalGateway, type ApprovalDecision, type ApprovalRequest } from '../application/tools/approvalGateway'
+import { ToolExecutionCoordinator } from '../application/tools/toolExecutionCoordinator'
+import { toolExecutionPolicy } from '../agent/toolExecutionPolicy'
 import { speakTextStreaming, cancelSpeak, getTtsProvider, isTtsEnabled } from '../tts'
 import type { TtsPlaybackStatus } from '../tts'
 import { useCharacterStore } from '../character'
@@ -171,31 +162,6 @@ export interface ToolActivity {
   /** 执行状态 */
   status: 'running' | 'done' | 'error' | 'skipped'
 }
-
-/** 待确认的文件操作（非空即弹确认卡） */
-export interface PendingConfirm {
-  /** 工具调用 id */
-  id: string
-  /** 工具名，如 'write_file' */
-  toolName: string
-  /** 受影响的相对路径 */
-  path: string
-  /** 原始参数（确认卡据此计算 diff 与摘要） */
-  args: Record<string, any>
-  /** 高风险任务由 Rust 规范化后的不可变计划；普通文件确认无此字段。 */
-  executionPlan?: ExecutionPlan
-}
-
-/** 待确认的屏幕截图；每次只能允许一次或拒绝。 */
-export interface PendingScreenCaptureConfirm {
-  id: string
-  toolName: string
-  target: 'cursor_monitor' | 'primary_monitor'
-  includeKisaki: boolean
-}
-
-/** 文件操作确认决定 */
-export type ConfirmDecision = 'allow' | 'allow-session' | 'reject'
 
 /** 一次 chat() 调用的结果 */
 type ChatResult =
@@ -489,178 +455,26 @@ export const useChatStore = defineStore('chat', () => {
   /** 是否显示工具活动列表（处理时点亮，完成后延时淡出） */
   const showToolActivity = ref(false)
 
-  // ── 文件修改确认（逐个确认；本会话自动允许；全局开关见 toolPolicy） ──
-  /** 待确认的文件操作（非空即弹确认卡） */
-  const pendingConfirm = ref<PendingConfirm | null>(null)
+  // ── 统一批准请求（文件 / 命令 / 屏幕截图） ──
+  const pendingApproval = ref<ApprovalRequest | null>(null)
   /** 本会话内自动允许（运行时，不持久化；清空 / 切换会话时重置） */
   const autoExecSession = ref(false)
-  /** 等待用户确认的 resolver */
-  let confirmResolver: ((d: ConfirmDecision) => void) | null = null
-
-  /** 确认卡无响应超时（5 分钟）：超时自动拒绝，避免用户离开后永久挂起阻塞 isProcessing */
   const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
-
-  /** 设待确认项并等待用户决定（在确认卡按钮触发 resolveConfirm 后兑现） */
-  function waitUserConfirm(tc: ToolCall, signal: AbortSignal): Promise<ConfirmDecision> {
-    return new Promise((resolve) => {
-      // 已取消：直接拒绝，避免无人应答而卡住循环
-      if (signal.aborted) { resolve('reject'); return }
-
-      let settled = false
-      let timeoutId: ReturnType<typeof setTimeout> | null = null
-      function finish(d: ConfirmDecision) {
-        if (settled) return
-        settled = true
-        if (timeoutId !== null) clearTimeout(timeoutId)
-        signal.removeEventListener('abort', onAbort)
-        confirmResolver = null
-        pendingConfirm.value = null
-        resolve(d)
-      }
-      function onAbort() { finish('reject') }
-
-      timeoutId = setTimeout(() => {
-        log.warn("chat_store.wait_user_confirm.warn", `文件操作确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
-        finish('reject')
-      }, CONFIRM_TIMEOUT_MS)
-
-      pendingConfirm.value = {
-        id: tc.id,
-        toolName: tc.name,
-        path: mutatingPath(tc.name, tc.arguments) || '',
-        args: tc.arguments,
-      }
-      confirmResolver = (d) => finish(d)
-      signal.addEventListener('abort', onAbort, { once: true })
+  const approvalGateway = new ApprovalGateway(CONFIRM_TIMEOUT_MS, request => {
+    log.warn('chat_store.approval_timeout', `工具批准超时，自动拒绝: ${request.toolName}`, undefined, {
+      tool_name: request.toolName,
+      approval_kind: request.kind,
+      confirm_timeout_ms: CONFIRM_TIMEOUT_MS,
     })
+  })
+  approvalGateway.subscribe(request => { pendingApproval.value = request })
+
+  function resolveApproval(decision: ApprovalDecision): boolean {
+    return approvalGateway.resolve(decision)
   }
 
-  /** UI 调用：对当前待确认项作出决定 */
-  function resolveConfirm(decision: ConfirmDecision) {
-    confirmResolver?.(decision)
-  }
-
-  // ── 屏幕截图确认（每次都必须确认，无自动允许） ──
-  const pendingScreenCaptureConfirm = ref<PendingScreenCaptureConfirm | null>(null)
-  let screenCaptureConfirmResolver: ((d: 'allow' | 'reject') => void) | null = null
-
-  function waitScreenCaptureConfirm(
-    tc: ToolCall,
-    signal: AbortSignal,
-  ): Promise<'allow' | 'reject'> {
-    return new Promise((resolve) => {
-      if (signal.aborted) { resolve('reject'); return }
-
-      let settled = false
-      let timeoutId: ReturnType<typeof setTimeout> | null = null
-      function finish(d: 'allow' | 'reject') {
-        if (settled) return
-        settled = true
-        if (timeoutId !== null) clearTimeout(timeoutId)
-        signal.removeEventListener('abort', onAbort)
-        screenCaptureConfirmResolver = null
-        pendingScreenCaptureConfirm.value = null
-        resolve(d)
-      }
-      function onAbort() { finish('reject') }
-
-      timeoutId = setTimeout(() => {
-        log.warn("chat_store.wait_screen_capture_confirm.warn", `屏幕截图确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
-        finish('reject')
-      }, CONFIRM_TIMEOUT_MS)
-
-      pendingScreenCaptureConfirm.value = {
-        id: tc.id,
-        toolName: tc.name,
-        target: tc.arguments.target === 'primary_monitor' ? 'primary_monitor' : 'cursor_monitor',
-        includeKisaki: tc.arguments.include_kisaki === true,
-      }
-      screenCaptureConfirmResolver = finish
-      signal.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  function resolveScreenCaptureConfirm(decision: 'allow' | 'reject') {
-    screenCaptureConfirmResolver?.(decision)
-  }
-
-  function rejectPendingScreenCaptureConfirm() {
-    if (screenCaptureConfirmResolver) {
-      const resolver = screenCaptureConfirmResolver
-      screenCaptureConfirmResolver = null
-      pendingScreenCaptureConfirm.value = null
-      resolver('reject')
-    }
-  }
-
-  // ── 命令执行确认（每次都必须确认，无自动允许） ──
-  /** 待确认的命令执行（非空即弹 CommandConfirm 卡） */
-  const pendingCommandConfirm = ref<PendingConfirm | null>(null)
-  /** 等待用户确认命令的 resolver */
-  let commandConfirmResolver: ((d: 'allow' | 'reject') => void) | null = null
-
-  /** 设待确认项并等待用户决定 */
-  function waitCommandConfirm(
-    tc: ToolCall,
-    signal: AbortSignal,
-    executionPlan: ExecutionPlan,
-  ): Promise<'allow' | 'reject'> {
-    return new Promise((resolve) => {
-      if (signal.aborted) { resolve('reject'); return }
-
-      let settled = false
-      let timeoutId: ReturnType<typeof setTimeout> | null = null
-      function finish(d: 'allow' | 'reject') {
-        if (settled) return
-        settled = true
-        if (timeoutId !== null) clearTimeout(timeoutId)
-        signal.removeEventListener('abort', onAbort)
-        commandConfirmResolver = null
-        pendingCommandConfirm.value = null
-        resolve(d)
-      }
-      function onAbort() { finish('reject') }
-
-      timeoutId = setTimeout(() => {
-        log.warn("chat_store.wait_command_confirm.warn", `命令执行确认超时（${CONFIRM_TIMEOUT_MS / 60000} 分钟），自动拒绝`, undefined, { confirm_timeout_ms: CONFIRM_TIMEOUT_MS / 60000 })
-        finish('reject')
-      }, CONFIRM_TIMEOUT_MS)
-
-      pendingCommandConfirm.value = {
-        id: tc.id,
-        toolName: tc.name,
-        path: dangerousToolSummary(tc.name, tc.arguments) || '',
-        args: tc.arguments,
-        executionPlan,
-      }
-      commandConfirmResolver = (d) => finish(d)
-      signal.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  /** UI 调用：对当前待确认的命令作出决定 */
-  function resolveCommandConfirm(decision: 'allow' | 'reject') {
-    commandConfirmResolver?.(decision)
-  }
-
-  /** 取消 / 清空时兜底拒绝待确认的命令 */
-  function rejectPendingCommandConfirm() {
-    if (commandConfirmResolver) {
-      const r = commandConfirmResolver
-      commandConfirmResolver = null
-      pendingCommandConfirm.value = null
-      r('reject')
-    }
-  }
-
-  /** 取消 / 清空时兜底拒绝待确认项，避免工具循环卡死在 await */
-  function rejectPendingConfirm() {
-    if (confirmResolver) {
-      const r = confirmResolver
-      confirmResolver = null
-      pendingConfirm.value = null
-      r('reject')
-    }
+  function rejectPendingApproval(): void {
+    approvalGateway.rejectPending()
   }
 
   /** 新增一条「执行中」活动并点亮列表 */
@@ -981,99 +795,27 @@ export const useChatStore = defineStore('chat', () => {
       syncContextStats()
     }
 
-    /**
-     * 执行一个工具调用，并对「改文件」工具施加策略：
-     *   1. 需确认则弹确认卡并等待用户决定（拒绝 → 不执行，回执告知模型）。
-     *   2. 执行前对目标文件做写时复制备份（失败仅告警，不阻断）。
-     * 非改文件工具直接执行。
-     */
-    const executeWithPolicy = async (tc: ToolCall): Promise<ToolResult> => {
-      // 截图是高隐私读取：设置开关只负责暴露工具，实际每次仍需用户允许一次。
-      if (isScreenCaptureTool(tc.name)) {
-        if (!getScreenCaptureEnabled()) {
-          return {
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: '屏幕截图权限当前未开启，未执行。请提示用户在「设置 → 权限」中开启后再重试。',
-            ok: false,
-            code: 'SCREEN_CAPTURE_DISABLED',
-            retryable: true,
-          }
-        }
-        const decision = await waitScreenCaptureConfirm(tc, myAbort.signal)
-        if (decision === 'reject') {
-          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝屏幕截图`, { fn: _fn })
-          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝屏幕截图，未执行。', ok: false, code: 'USER_REJECTED', retryable: false }
-        }
-        log.info("chat_store.execute_with_policy.info", `[${_fn}] ✓ 用户允许单次屏幕截图`, { fn: _fn })
-      }
-      // 高风险工具（如命令执行）→ 每次都必须确认，无自动允许
-      if (isDangerousTool(tc.name)) {
-        let executionPlan: ExecutionPlan
-        try {
-          executionPlan = await prepareCommandExecution(tc.name, tc.arguments)
-        } catch (error) {
-          return {
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: `任务准备失败: ${(error as Error)?.message || String(error)}`,
-            ok: false,
-            code: 'COMMAND_PREPARATION_FAILED',
-            retryable: true,
-          }
-        }
-        const decision = await waitCommandConfirm(tc, myAbort.signal, executionPlan)
-        if (decision === 'reject') {
-          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝高风险操作: ${tc.name}`, { fn: _fn, tc_name: tc.name })
-          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该操作。', ok: false, code: 'USER_REJECTED', retryable: false }
-        }
-        log.info("chat_store.execute_with_policy.info", `[${_fn}] ✓ 用户允许高风险操作: ${tc.name}`, { fn: _fn, tc_name: tc.name })
-        try {
-          const approvalToken = await approveCommandExecution(executionPlan)
-          return agentService.execute({
-            ...tc,
-            arguments: {
-              ...tc.arguments,
-              __plan_id: executionPlan.id,
-              __approval_token: approvalToken,
-              __display_command: executionPlan.display_command,
-            },
-          })
-        } catch (error) {
-          return {
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: `任务批准失败: ${(error as Error)?.message || String(error)}`,
-            ok: false,
-            code: 'COMMAND_APPROVAL_FAILED',
-            retryable: true,
-          }
-        }
-      }
-      if (shouldConfirm(tc.name, { globalAuto: getAutoExecFiles(), sessionAuto: autoExecSession.value })) {
-        const decision = await waitUserConfirm(tc, myAbort.signal)
-        if (decision === 'reject') {
-          log.info("chat_store.execute_with_policy.info", `[${_fn}] ✗ 用户拒绝文件操作: ${tc.name}`, { fn: _fn, tc_name: tc.name })
-          return { role: 'tool', tool_call_id: tc.id, content: '用户已拒绝该文件操作，未执行。', ok: false, code: 'USER_REJECTED', retryable: false }
-        }
-        if (decision === 'allow-session') {
-          autoExecSession.value = true
-          log.info("chat_store.execute_with_policy.info", `[${_fn}] 用户选择「本会话自动允许」文件操作`, { fn: _fn })
-        }
-      }
-      if (isMutatingTool(tc.name)) {
-        const rel = mutatingPath(tc.name, tc.arguments)
-        if (rel) {
-          try {
-            await chatSessionPort.backupFile(checkpointId, rel)
-            chatSessionPort.markCheckpointFiles(checkpointId)
-          } catch (e) {
-            log.warn("chat_store.execute_with_policy.warn", `[${_fn}] ⚠ 文件备份失败（继续执行）: ${(e as Error).message}`, e, { fn: _fn })
-          }
-        }
-      }
-      return agentService.execute(tc)
-    }
+    const toolExecutionCoordinator = new ToolExecutionCoordinator({
+      approvalGateway,
+      policy: toolExecutionPolicy,
+      execute: tc => agentService.execute(tc),
+      checkpoint: async path => {
+        await chatSessionPort.backupFile(checkpointId, path)
+        chatSessionPort.markCheckpointFiles(checkpointId)
+      },
+      onCheckpointError: (error, path) => {
+        log.warn('chat_store.tool_checkpoint_failed', `文件备份失败（继续执行）: ${path}`, error)
+      },
+      onSessionApproval: () => {
+        autoExecSession.value = true
+        log.info('chat_store.file_approval_session', '本会话自动允许后续文件操作')
+      },
+    })
+    const executeWithPolicy = (tc: ToolCall): Promise<ToolResult> => toolExecutionCoordinator.execute(tc, {
+      signal: myAbort.signal,
+      sessionApproval: autoExecSession.value,
+      hasWorkspace: Boolean(chatSessionPort.workspaceGrantId()),
+    })
 
     log.trace("chat_store.send_message.trace", `[${_fn}] 工具循环开始 安全上限=${toolTurns} 轮 (model=${config.model})`, { fn: _fn, tool_turns: toolTurns, config_model: config.model })
     for (let turn = 0; turn < toolTurns; turn++) {
@@ -1585,9 +1327,7 @@ export const useChatStore = defineStore('chat', () => {
     log.debug("chat_store.cancel_response.debug", `[${_fn}] 取消前状态: isProcessing=${isProcessing.value} isUsingTools=${isUsingTools.value} abortController=${abortController ? '存在' : 'null'}`, { fn: _fn, is_processing_value: isProcessing.value, is_using_tools_value: isUsingTools.value, abort_controller: abortController ? '存在' : 'null' })
 
     // 兜底拒绝待确认的操作，解除工具循环的 await
-    rejectPendingConfirm()
-    rejectPendingCommandConfirm()
-    rejectPendingScreenCaptureConfirm()
+    rejectPendingApproval()
 
     if (abortController) {
       log.trace("chat_store.cancel_response.trace", `[${_fn}] 调用 abortController.abort()`, { fn: _fn })
@@ -1664,9 +1404,7 @@ export const useChatStore = defineStore('chat', () => {
     cancelBackgroundVoicePreparation()
     cancelSpeak()
     lastTtsText = ''
-    rejectPendingConfirm()
-    rejectPendingCommandConfirm()
-    rejectPendingScreenCaptureConfirm()
+    rejectPendingApproval()
     autoExecSession.value = false
     isProcessing.value = false
     isUsingTools.value = false
@@ -1742,9 +1480,7 @@ export const useChatStore = defineStore('chat', () => {
     isProcessing.value = false
     isUsingTools.value = false
     // 切换/恢复会话：解除待确认项，并重置「本会话自动允许」
-    rejectPendingConfirm()
-    rejectPendingCommandConfirm()
-    rejectPendingScreenCaptureConfirm()
+    rejectPendingApproval()
     autoExecSession.value = false
     log.trace("chat_store.load_messages.trace", `[${_fn}] 气泡状态已重置: hideBubble showInput=false thinking=""`, { fn: _fn })
 
@@ -1880,12 +1616,14 @@ export const useChatStore = defineStore('chat', () => {
         processing: isProcessing.value,
         usingTools: isUsingTools.value,
         activities: toolActivities.value.map(activity => ({ ...activity })),
-        pendingConfirmation: (pendingScreenCaptureConfirm.value ?? pendingCommandConfirm.value ?? pendingConfirm.value)
+        pendingConfirmation: pendingApproval.value
           ? {
-            toolName: (pendingScreenCaptureConfirm.value ?? pendingCommandConfirm.value ?? pendingConfirm.value)!.toolName,
-            path: pendingScreenCaptureConfirm.value?.target
-              ?? (pendingCommandConfirm.value ?? pendingConfirm.value)?.path
-              ?? '',
+            toolName: pendingApproval.value.toolName,
+            path: pendingApproval.value.kind === 'screen-capture'
+              ? pendingApproval.value.target
+              : pendingApproval.value.kind === 'command'
+                ? pendingApproval.value.summary
+                : pendingApproval.value.path,
           }
           : null,
         autoExecSession: autoExecSession.value,
@@ -1940,13 +1678,9 @@ export const useChatStore = defineStore('chat', () => {
     isUsingTools,
     toolActivities,
     showToolActivity,
-    pendingConfirm,
-    pendingCommandConfirm,
-    pendingScreenCaptureConfirm,
+    pendingApproval,
     autoExecSession,
-    resolveConfirm,
-    resolveCommandConfirm,
-    resolveScreenCaptureConfirm,
+    resolveApproval,
     init,
     sendMessage,
     cancelResponse,

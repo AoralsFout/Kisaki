@@ -6,7 +6,9 @@ import { useChatStore } from '../stores/chat'
 
 const { t } = useI18n()
 const chat = useChatStore()
-const pending = computed(() => chat.pendingScreenCaptureConfirm)
+const pending = computed(() => (
+  chat.pendingApproval?.kind === 'screen-capture' ? chat.pendingApproval : null
+))
 const rejectRef = ref<HTMLButtonElement | null>(null)
 const titleId = useId()
 
@@ -48,10 +50,10 @@ watch(pending, value => {
 
       <div class="sc-actions">
         <button ref="rejectRef" class="sc-btn sc-reject"
-          @click="chat.resolveScreenCaptureConfirm('reject')">
+          @click="chat.resolveApproval('reject')">
           <i class="fas fa-xmark"></i> {{ t('app.confirm.reject') }}
         </button>
-        <button class="sc-btn sc-allow" @click="chat.resolveScreenCaptureConfirm('allow')">
+        <button class="sc-btn sc-allow" @click="chat.resolveApproval('allow')">
           <i class="fas fa-camera"></i> {{ t('app.confirm.screen.allowOnce') }}
         </button>
       </div>

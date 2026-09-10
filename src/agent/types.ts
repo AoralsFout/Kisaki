@@ -33,6 +33,14 @@ export interface Tool<TOutput extends string | ToolOutput = string> {
    * 'both'（默认）两者皆可。registry.getDefinitions 按当前角色 render 过滤。
    */
   appliesTo?: 'illustration' | 'live2d' | 'both'
+  /** Execution requirements consumed by ToolExecutionCoordinator and registry. */
+  policy?: ToolPolicyDescriptor
+}
+
+export interface ToolPolicyDescriptor {
+  requiresWorkspace?: boolean
+  approval?: 'file-session' | 'command' | 'screen-capture'
+  checkpointArgument?: string
 }
 
 /** 工具交给多模态模型观察的图片（不会作为普通文本/base64 写入工具回执）。 */

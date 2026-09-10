@@ -500,9 +500,9 @@ async function handleSelectCharacter(charId: string) {
         <!-- 文件操作确认卡（AI 改文件且未开自动执行时弹出） -->
         <ToolConfirm v-if="!noCharacter" />
         <!-- 命令执行确认卡（AI 执行命令时弹出，每次都必须确认） -->
-        <CommandConfirm v-if="!noCharacter && chat.pendingCommandConfirm" />
+        <CommandConfirm v-if="!noCharacter && chat.pendingApproval?.kind === 'command'" />
         <!-- 屏幕截图确认卡（高隐私读取，每次只能允许一次） -->
-        <ScreenCaptureConfirm v-if="!noCharacter && chat.pendingScreenCaptureConfirm" />
+        <ScreenCaptureConfirm v-if="!noCharacter && chat.pendingApproval?.kind === 'screen-capture'" />
         <CommandExecution v-if="!noCharacter" />
       </template>
 

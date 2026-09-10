@@ -176,7 +176,11 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] IllustrationController 接入 Renderer 端口并删除重复视觉状态与双向 watch。
   - [x] Live2D 表情/屏幕位置接入 Runtime，并在 manifest ready 后收敛能力。
   - [x] 删除 commandBus 与 agent/context 两套全局控制器注册表；UI/Agent 统一经 Runtime facade 控制角色。
-- [ ] 阶段 3：ToolExecutionCoordinator。
+- [x] 阶段 3：ToolExecutionCoordinator。
+  - [x] Tool.policy 就地声明 workspace、批准与检查点要求，删除按工具名维护的平行分类表。
+  - [x] ApprovalGateway 统一文件、命令、截图三类 pending/resolver/timeout/abort 生命周期。
+  - [x] ToolExecutionCoordinator 固定执行前置条件 → 批准 → 检查点 → handler → 结构化结果。
+  - [x] 原生与文本工具调用复用同一 Coordinator 路径。
 - [ ] 阶段 4：ConversationRun。
 - [ ] 阶段 5：TTS 管道。
 - [ ] 阶段 6：设置与网络。

@@ -88,4 +88,17 @@ describe('architecture boundaries', () => {
 
     expect(violations).toEqual([])
   })
+
+  it('keeps approval lifecycle and tool policy execution outside ChatStore', () => {
+    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    expect(source).toContain('new ToolExecutionCoordinator(')
+    for (const legacy of [
+      'confirmResolver',
+      'commandConfirmResolver',
+      'screenCaptureConfirmResolver',
+      'waitUserConfirm(',
+      'waitCommandConfirm(',
+      'waitScreenCaptureConfirm(',
+    ]) expect(source).not.toContain(legacy)
+  })
 })

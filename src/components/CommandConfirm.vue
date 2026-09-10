@@ -5,18 +5,22 @@
  * 独立于 ToolConfirm（不共享 auto-allow 逻辑），每次执行都必须确认。
  * 展示：警告图标 + 描述 + 完整命令 + 工作目录 + 超时。
  * 两个动作：允许 / 拒绝（无「本会话自动允许」选项）。
- * 数据来自 chat store 的 pendingCommandConfirm（非空即显示）。
+ * 数据来自统一 ApprovalRequest 投影。
  */
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '../stores/chat'
 import { toolIcon } from '../agent/toolMeta'
+import type { CommandApprovalRequest } from '../application/tools/approvalGateway'
+import type { ExecutionPlan } from '../agent/tools/command'
 
 const { t, te } = useI18n()
 const chat = useChatStore()
 
-const pc = computed(() => chat.pendingCommandConfirm)
-const plan = computed(() => pc.value?.executionPlan)
+const pc = computed<CommandApprovalRequest | null>(() => (
+  chat.pendingApproval?.kind === 'command' ? chat.pendingApproval : null
+))
+const plan = computed(() => pc.value?.details as ExecutionPlan | undefined)
 const workspaceRoot = computed(() => plan.value?.cwd ?? '')
 const rejectRef = ref<HTMLButtonElement | null>(null)
 const titleId = useId()
@@ -34,7 +38,7 @@ const timeoutSecs = computed(() => {
 })
 
 /** 命令文本 */
-const commandText = computed(() => plan.value?.display_command ?? pc.value?.path ?? '')
+const commandText = computed(() => plan.value?.display_command ?? pc.value?.summary ?? '')
 
 /** 描述文本 */
 const descriptionText = computed(() => plan.value?.intent ?? '')
@@ -105,10 +109,10 @@ const descriptionText = computed(() => plan.value?.intent ?? '')
 
       <!-- 动作：仅拒绝和允许，无自动允许 -->
       <div class="cc-actions">
-        <button ref="rejectRef" class="cc-btn cc-reject" @click="chat.resolveCommandConfirm('reject')">
+        <button ref="rejectRef" class="cc-btn cc-reject" @click="chat.resolveApproval('reject')">
           <i class="fas fa-xmark"></i> {{ t('app.confirm.reject') }}
         </button>
-        <button class="cc-btn cc-allow" @click="chat.resolveCommandConfirm('allow')">
+        <button class="cc-btn cc-allow" @click="chat.resolveApproval('allow')">
           <i class="fas fa-terminal"></i> {{ t('app.confirm.command.execute') }}
         </button>
       </div>

@@ -224,7 +224,16 @@ describe('send result contract', () => {
   })
 
   it('等待文件操作确认时取消会解除等待并清理所有运行态', async () => {
-    const { useChatStore } = await import('../chat')
+    const { useChatStore, setChatSessionPort } = await import('../chat')
+    setChatSessionPort({
+      currentSessionId: () => 'session-1',
+      workspaceGrantId: () => 'workspace-1',
+      persistCurrent: () => {},
+      beginCheckpoint: () => 'checkpoint-1',
+      backupFile: async () => {},
+      markCheckpointFiles: () => {},
+      clearCheckpoints: async () => {},
+    })
     const store = useChatStore()
     let modelTurn = 0
     request.mockImplementation((_messages, callbacks, signal: AbortSignal) => {
@@ -246,17 +255,16 @@ describe('send result contract', () => {
 
     const sending = store.sendMessage('write a note')
     await vi.waitFor(() => {
-      expect(store.pendingConfirm?.id).toBe('write-awaiting-confirmation')
+      expect(store.pendingApproval?.id).toBe('write-awaiting-confirmation')
     })
 
     store.cancelResponse()
     await sending
 
-    expect(store.pendingConfirm).toBeNull()
-    expect(store.pendingCommandConfirm).toBeNull()
-    expect(store.pendingScreenCaptureConfirm).toBeNull()
+    expect(store.pendingApproval).toBeNull()
     expect(store.isProcessing).toBe(false)
     expect(store.isUsingTools).toBe(false)
     expect(store.currentBubbleText).toBe('')
+    setChatSessionPort(null)
   })
 })

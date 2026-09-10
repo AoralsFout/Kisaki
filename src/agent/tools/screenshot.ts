@@ -27,6 +27,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export const captureScreenTool: Tool<ToolOutput> = {
+  policy: { approval: 'screen-capture' },
   definition: {
     type: 'function',
     function: {

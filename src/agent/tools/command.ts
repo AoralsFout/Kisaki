@@ -145,6 +145,7 @@ const commonProperties = {
 }
 
 export const runProcessTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'command' },
   definition: {
     type: 'function',
     function: {
@@ -167,6 +168,7 @@ export const runProcessTool: Tool = {
 }
 
 export const runShellTool: Tool = {
+  policy: { requiresWorkspace: true, approval: 'command' },
   definition: {
     type: 'function',
     function: {
