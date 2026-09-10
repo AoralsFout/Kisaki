@@ -9,6 +9,7 @@ function character(overrides: Partial<CharacterSelection> = {}): CharacterSelect
       emotions: ['neutral', 'happy'],
       stances: ['idle', 'wave'],
       costumes: ['default', 'formal'],
+      screenPoses: ['center', 'left'],
     },
     defaults: {
       emotion: 'neutral',

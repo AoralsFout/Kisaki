@@ -172,7 +172,9 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
 - [ ] 阶段 2：CharacterRuntime。
   - [x] 无框架依赖的 canonical state、能力校验和 Renderer 端口。
   - [x] renderer 未 ready 时接收命令并在 attach 后应用最新快照。
-  - [ ] CharacterStore/Illustration/Live2D 接入并删除重复状态与注册表。
+  - [x] CharacterStore 改为 Runtime 响应式投影。
+  - [x] IllustrationController 接入 Renderer 端口并删除重复视觉状态与双向 watch。
+  - [ ] Live2D 接入并删除两套全局控制器注册表。
 - [ ] 阶段 3：ToolExecutionCoordinator。
 - [ ] 阶段 4：ConversationRun。
 - [ ] 阶段 5：TTS 管道。

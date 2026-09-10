@@ -50,4 +50,36 @@ describe('useCharacterStore init', () => {
 
     expect(store.currentId).toBe('kisaki')
   })
+
+  it('将视觉状态写入 Runtime 并从 Store 投影', async () => {
+    const store = useCharacterStore()
+    await store.init('chryso')
+
+    store.applyVisualState({ emotion: 'normal', screenPose: 'full-left' })
+
+    expect(store.getRuntimeSnapshot()).toMatchObject({
+      characterId: 'chryso',
+      look: { emotion: 'normal', stance: 'default', costume: 'default', screenPose: 'full-left' },
+    })
+    expect(store.currentScreenPose).toBe('full-left')
+  })
+
+  it('角色加载前收到的会话视觉状态在选择角色后应用', async () => {
+    const store = useCharacterStore()
+    store.applyVisualState({ screenPose: 'half-right' })
+
+    await store.init('chryso')
+
+    expect(store.currentScreenPose).toBe('half-right')
+  })
+
+  it('renderer 通过 Store 端口接收 Runtime 快照', async () => {
+    const store = useCharacterStore()
+    await store.init('chryso')
+    const apply = vi.fn()
+    store.attachRenderer('illustration', { apply })
+    await Promise.resolve()
+
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ characterId: 'chryso' }))
+  })
 })

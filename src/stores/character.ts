@@ -9,9 +9,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { clearCache, loadCharacterJson, listCharacterSummaries, imageUrl } from '../character/loader'
 import type { CharacterData } from '../character/loader'
-import { DEFAULT_POSE } from '../character/poses'
+import { ALL_POSE_KEYS, DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
 import { createLogger } from '../utils/logger'
+import {
+  CharacterRuntime,
+  type CharacterRenderer,
+  type CharacterRuntimeSnapshot,
+  type CharacterRenderKind,
+} from '../application/character/characterRuntime'
 
 const log = createLogger('CharacterStore')
 
@@ -37,6 +43,19 @@ export const useCharacterStore = defineStore('character', () => {
   const currentStance = ref('')
   const currentCostume = ref('')
   const currentScreenPose = ref<PoseKey>(DEFAULT_POSE)
+  const runtime = new CharacterRuntime(error => {
+    log.error('character_runtime.renderer_failed', '角色渲染器应用状态失败', error)
+  })
+  let pendingVisualState: Partial<CharacterVisualState> | null = null
+
+  runtime.subscribe(snapshot => {
+    if (!snapshot.characterId || !snapshot.look) return
+    currentId.value = snapshot.characterId
+    currentEmotion.value = snapshot.look.emotion
+    currentStance.value = snapshot.look.stance
+    currentCostume.value = snapshot.look.costume
+    currentScreenPose.value = snapshot.look.screenPose as PoseKey
+  })
 
   // 计算当前角色的标签列表
   const poses = computed(() => data.value?.poses ?? [])
@@ -69,7 +88,32 @@ export const useCharacterStore = defineStore('character', () => {
     try {
       const charData = await loadCharacterJson(id)
       data.value = charData
-      currentId.value = id
+      const pending = pendingVisualState
+      pendingVisualState = null
+      const supported = <T extends string>(value: T | undefined, values: readonly T[], fallback: T): T => (
+        value !== undefined && values.includes(value) ? value : fallback
+      )
+      const defaultEmotion = charData.emotions[0] ?? ''
+      const defaultStance = charData.poses[0] ?? ''
+      const defaultCostume = charData.costumes[0] ?? ''
+      runtime.selectCharacter({
+        id,
+        render: charData.render ?? 'illustration',
+        capabilities: {
+          emotions: charData.emotions,
+          stances: charData.poses,
+          costumes: charData.costumes,
+          screenPoses: ALL_POSE_KEYS,
+        },
+        defaults: {
+          emotion: supported(pending?.emotion, charData.emotions, defaultEmotion),
+          stance: supported(pending?.stance, charData.poses, defaultStance),
+          costume: supported(pending?.costume, charData.costumes, defaultCostume),
+          screenPose: pending?.screenPose && ALL_POSE_KEYS.includes(pending.screenPose)
+            ? pending.screenPose
+            : currentScreenPose.value,
+        },
+      })
     } catch (err) {
       log.error("character_store.load_character.error", "加载角色失败", err)
       throw err
@@ -121,10 +165,11 @@ export const useCharacterStore = defineStore('character', () => {
 
   /** 应用一组视觉状态（会话恢复时使用） */
   function applyVisualState(state: Partial<CharacterVisualState>) {
-    if (state.emotion !== undefined) currentEmotion.value = state.emotion
-    if (state.stance !== undefined) currentStance.value = state.stance
-    if (state.costume !== undefined) currentCostume.value = state.costume
-    if (state.screenPose !== undefined) currentScreenPose.value = state.screenPose
+    if (!runtime.snapshot().characterId) {
+      pendingVisualState = { ...pendingVisualState, ...state }
+      return
+    }
+    runtime.setLook(state)
   }
 
   /** 获取当前视觉状态快照（会话保存时使用） */
@@ -137,12 +182,20 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
+  function attachRenderer(kind: CharacterRenderKind, renderer: CharacterRenderer): () => void {
+    return runtime.attachRenderer(kind, renderer)
+  }
+
+  function getRuntimeSnapshot(): CharacterRuntimeSnapshot {
+    return runtime.snapshot()
+  }
+
   return {
     currentId, data, loading, availableList,
     poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName, getCharacterRender,
-    applyVisualState, getVisualStateSnapshot,
+    applyVisualState, getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot,
     loadCharacter, refreshList, init,
   }
 })

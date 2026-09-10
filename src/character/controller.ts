@@ -1,291 +1,160 @@
 /**
- * 角色状态控制器
- *
- * 管理三维标签（姿势/情绪/服装）和图片选择。
- * 本地 ref 为数据源，每次变更时同步写入 characterStore，
- * 同时监听 characterStore 的视觉状态变更（会话恢复导致）来同步图像。
+ * Illustration renderer adapter and command facade.
+ * CharacterRuntime owns all visual state; this controller owns only the selected bitmap.
  */
-
-import { ref, computed, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { pickRandomImage } from './config'
 import { useCharacterStore } from '../stores/character'
 import { useSessionStore } from '../stores/session'
 import type { CharacterImageData } from './config'
-import {
-  DEFAULT_POSE, getPose, ALL_POSE_KEYS,
-  type PoseKey, type PosePreset,
-} from './poses'
+import type { CharacterRuntimeSnapshot } from '../application/character/characterRuntime'
+import { ALL_POSE_KEYS, getPose, type PoseKey, type PosePreset } from './poses'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('CharacterCtrl')
 
 export function useCharacterController() {
   const charStore = useCharacterStore()
-
-  // ======== 本地状态（数据源） ========
-  const currentPoseTag = ref<string>('')
-  const currentEmotion = ref<string>('')
-  const currentCostume = ref<string>('')
   const currentImage = ref<CharacterImageData | null>(null)
-  const currentScreenPose = ref<PoseKey>(DEFAULT_POSE)
   const ready = ref(false)
-
-  // ======== 计算 ========
+  const currentPoseTag = computed(() => charStore.currentStance)
+  const currentEmotion = computed(() => charStore.currentEmotion)
+  const currentCostume = computed(() => charStore.currentCostume)
+  const currentScreenPose = computed(() => charStore.currentScreenPose)
   const screenPosePreset = computed<PosePreset>(() => getPose(currentScreenPose.value))
+  let detachRenderer: (() => void) | null = null
 
-  // ======== 从 store 数据同步标签默认值 ========
-  function syncDefaultsFromData() {
-    const d = charStore.data
-    if (!d) return false
-    // 只覆盖尚未设置的值
-    if (!currentPoseTag.value) currentPoseTag.value = d.poses[0] ?? ''
-    if (!currentEmotion.value) currentEmotion.value = d.emotions[0] ?? ''
-    if (!currentCostume.value) currentCostume.value = d.costumes[0] ?? ''
-    return true
+  function selectImage(
+    pose: string,
+    emotion: string,
+    costume: string,
+    exclude?: string,
+  ): CharacterImageData | null {
+    const data = charStore.data
+    if (!data || !pose || !emotion || !costume) return null
+    return pickRandomImage(data, { pose, emotion, costume, exclude })
   }
 
-  /** 按当前标签选图 */
-  function selectCurrentImage(): CharacterImageData | null {
-    if (!charStore.data) return null
-    if (!currentPoseTag.value || !currentEmotion.value || !currentCostume.value) return null
-    return pickRandomImage(charStore.data, {
-      pose: currentPoseTag.value,
-      emotion: currentEmotion.value,
-      costume: currentCostume.value,
-      exclude: currentImage.value?.file,
-    })
-  }
+  function applyRuntimeSnapshot(snapshot: CharacterRuntimeSnapshot): void {
+    const look = snapshot.look
+    const data = charStore.data
+    if (!look || !data || snapshot.characterId !== data.id) return
+    const exact = selectImage(look.stance, look.emotion, look.costume, currentImage.value?.file)
+    if (exact) {
+      currentImage.value = exact
+      return
+    }
 
-  // ======== 同步本地状态 → characterStore ========
-  function syncToStore() {
-    charStore.applyVisualState({
-      emotion: currentEmotion.value,
-      stance: currentPoseTag.value,
-      costume: currentCostume.value,
-      screenPose: currentScreenPose.value,
-    })
+    const fallback = selectImage(
+      data.poses[0] ?? '',
+      data.emotions[0] ?? '',
+      data.costumes[0] ?? '',
+      currentImage.value?.file,
+    ) ?? data.images[0] ?? null
+    currentImage.value = fallback
+    if (fallback) {
+      const fallbackLook = {
+        stance: fallback.pose,
+        emotion: fallback.emotions.includes(look.emotion) ? look.emotion : (fallback.emotions[0] ?? look.emotion),
+        costume: fallback.costume,
+      }
+      if (
+        fallbackLook.stance !== look.stance
+        || fallbackLook.emotion !== look.emotion
+        || fallbackLook.costume !== look.costume
+      ) charStore.applyVisualState(fallbackLook)
+      log.warn('character_ctrl.image_fallback', `立绘组合无匹配，回退图片 ${fallback.file}`)
+    }
   }
-
-  /**
-   * 选图（带兜底）：精确匹配失败时回退到角色默认标签重选，
-   * 再不行用角色首图，确保只要角色有图就不会白屏。
-   * 用于跨角色切换/会话恢复时标签可能与当前角色不匹配的场景。
-   */
-  function selectImageWithFallback(): CharacterImageData | null {
-    const exact = selectCurrentImage()
-    if (exact) return exact
-    const d = charStore.data
-    if (!d || d.images.length === 0) return null
-    // 标签与当前角色不匹配 → 重置为角色默认标签后重选
-    currentPoseTag.value = d.poses[0] ?? ''
-    currentEmotion.value = d.emotions[0] ?? ''
-    currentCostume.value = d.costumes[0] ?? ''
-    syncToStore()
-    const byDefault = selectCurrentImage()
-    if (byDefault) return byDefault
-    // 仍无匹配 → 用首图兜底
-    log.warn("character_ctrl.select_image_with_fallback.warn", `立绘兜底：标签无匹配，回退首图 ${d.images[0].file}`, undefined, { d_images: d.images[0].file })
-    return d.images[0]
-  }
-
-  // ======== 对外方法 ========
 
   function setEmotion(emotion: string) {
-    if (!charStore.data) return
-    const d = charStore.data
-
-    // 先尝试在当前姿势下找图
-    let img = pickRandomImage(d, {
-      pose: currentPoseTag.value, emotion, costume: currentCostume.value,
-      exclude: currentImage.value?.file,
-    })
-
-    // 当前姿势没有该情绪的图 → 自动搜索其他姿势
-    if (!img) {
-      for (const pose of d.poses) {
-        if (pose === currentPoseTag.value) continue
-        img = pickRandomImage(d, {
-          pose, emotion, costume: currentCostume.value,
-          exclude: currentImage.value?.file,
-        })
-        if (img) {
-          log.info("character_ctrl.set_emotion.info", `情绪"${emotion}"在当前姿势"${currentPoseTag.value}"中无匹配，自动切换到姿势"${pose}"`, { emotion: emotion, current_pose_tag_value: currentPoseTag.value, pose: pose })
-          currentPoseTag.value = pose
+    const data = charStore.data
+    if (!data) return
+    let pose = currentPoseTag.value
+    let image = selectImage(pose, emotion, currentCostume.value, currentImage.value?.file)
+    if (!image) {
+      for (const candidate of data.poses) {
+        image = selectImage(candidate, emotion, currentCostume.value, currentImage.value?.file)
+        if (image) {
+          pose = candidate
           break
         }
       }
     }
-
-    if (!img) {
-      log.warn("character_ctrl.set_emotion.warn", `未找到匹配情绪"${emotion}"的图片（所有姿势均无匹配）`, undefined, { emotion: emotion })
+    if (!image) {
+      log.warn('character_ctrl.set_emotion.warn', `未找到匹配情绪“${emotion}”的图片`)
       return
     }
-    currentEmotion.value = emotion
-    currentImage.value = img
-    syncToStore()
-    log.debug("character_ctrl.set_emotion.debug", `情绪切换: ${emotion}, 图片: ${img.file}`, { emotion: emotion, img_file: img.file })
+    currentImage.value = image
+    charStore.applyVisualState({ emotion, stance: pose })
   }
 
   function setPoseTag(pose: string) {
-    if (!charStore.data) return
-    const img = pickRandomImage(charStore.data, {
-      pose, emotion: currentEmotion.value, costume: currentCostume.value,
-      exclude: currentImage.value?.file,
-    })
-    if (!img) {
-      log.warn("character_ctrl.set_pose_tag.warn", `未找到匹配姿势"${pose}"的图片`, undefined, { pose: pose })
+    const image = selectImage(pose, currentEmotion.value, currentCostume.value, currentImage.value?.file)
+    if (!image) {
+      log.warn('character_ctrl.set_pose_tag.warn', `未找到匹配姿势“${pose}”的图片`)
       return
     }
-    currentPoseTag.value = pose
-    currentImage.value = img
-    syncToStore()
-    log.debug("character_ctrl.set_pose_tag.debug", `姿势切换: ${pose}, 图片: ${img.file}`, { pose: pose, img_file: img.file })
+    currentImage.value = image
+    charStore.applyVisualState({ stance: pose })
   }
 
   function setCostume(costume: string) {
-    if (!charStore.data) return
-    const img = pickRandomImage(charStore.data, {
-      pose: currentPoseTag.value, emotion: currentEmotion.value, costume,
-      exclude: currentImage.value?.file,
-    })
-    if (!img) {
-      log.warn("character_ctrl.set_costume.warn", `未找到匹配服装"${costume}"的图片`, undefined, { costume: costume })
+    const image = selectImage(currentPoseTag.value, currentEmotion.value, costume, currentImage.value?.file)
+    if (!image) {
+      log.warn('character_ctrl.set_costume.warn', `未找到匹配服装“${costume}”的图片`)
       return
     }
-    currentCostume.value = costume
-    currentImage.value = img
-    syncToStore()
-    log.debug("character_ctrl.set_costume.debug", `服装切换: ${costume}, 图片: ${img.file}`, { costume: costume, img_file: img.file })
+    currentImage.value = image
+    charStore.applyVisualState({ costume })
   }
 
-  function setLook(look: {
-    pose?: string
-    emotion?: string
-    costume?: string
-  }) {
-    if (!charStore.data) return
-    const d = charStore.data
-    syncDefaultsFromData()
+  function setLook(look: { pose?: string; emotion?: string; costume?: string }) {
+    const data = charStore.data
+    if (!data) return
     let pose = look.pose ?? currentPoseTag.value
     const emotion = look.emotion ?? currentEmotion.value
     const costume = look.costume ?? currentCostume.value
-    let img = pickRandomImage(d, {
-      pose, emotion, costume,
-      exclude: currentImage.value?.file,
-    })
-
-    // 只设置了情绪（未显式指定姿势）且当前姿势无匹配 → 自动搜索其他姿势
-    if (!img && !look.pose && look.emotion) {
-      for (const p of d.poses) {
-        if (p === pose) continue
-        img = pickRandomImage(d, { pose: p, emotion, costume, exclude: currentImage.value?.file })
-        if (img) {
-          log.info("character_ctrl.set_look.info", `setLook 情绪"${emotion}"在姿势"${pose}"中无匹配，自动切换到姿势"${p}"`, { emotion: emotion, pose: pose, p: p })
-          pose = p
+    let image = selectImage(pose, emotion, costume, currentImage.value?.file)
+    if (!image && !look.pose && look.emotion) {
+      for (const candidate of data.poses) {
+        image = selectImage(candidate, emotion, costume, currentImage.value?.file)
+        if (image) {
+          pose = candidate
           break
         }
       }
     }
-
-    if (!img) {
-      log.warn("character_ctrl.set_look.warn", `setLook 未找到匹配图片: ${JSON.stringify(look)}`, undefined, { look: look })
+    if (!image) {
+      log.warn('character_ctrl.set_look.warn', `未找到匹配外观: ${JSON.stringify(look)}`)
       return
     }
-    if (look.pose) currentPoseTag.value = pose
-    if (look.emotion) currentEmotion.value = emotion
-    if (look.costume) currentCostume.value = costume
-    currentImage.value = img
-    syncToStore()
-    log.info("character_ctrl.set_look.info", `外观批量更新: ${JSON.stringify(look)}`, { look: look })
+    currentImage.value = image
+    charStore.applyVisualState({ stance: pose, emotion, costume })
   }
 
   function setScreenPose(key: PoseKey) {
-    if (ALL_POSE_KEYS.includes(key)) {
-      currentScreenPose.value = key
-      syncToStore()
-      log.debug("character_ctrl.set_screen_pose.debug", `屏幕位置切换: ${key}`, { key: key })
-    }
+    if (ALL_POSE_KEYS.includes(key)) charStore.applyVisualState({ screenPose: key })
   }
 
-  // ======== 角色切换 ========
   async function switchCharacter(charId: string) {
-    log.info("character_ctrl.switch_character.info", `切换角色: ${charId}`, { char_id: charId })
+    log.info('character_ctrl.switch_character.info', `切换角色: ${charId}`, { char_id: charId })
     await charStore.loadCharacter(charId)
-    currentPoseTag.value = ''
-    currentEmotion.value = ''
-    currentCostume.value = ''
-    syncDefaultsFromData()
-    currentImage.value = selectImageWithFallback()
-    syncToStore()
-    // 将新角色写回当前会话（切回该会话时能恢复此角色）
     useSessionStore().saveCurrentSession()
-    log.info("character_ctrl.switch_character.info", `角色切换完成: ${charId} (${charStore.name})`, { char_id: charId, char_store_name: charStore.name })
   }
 
-  // ======== 监听 characterStore 视觉状态变化（会话恢复触发） ========
-  watch(
-    () => [charStore.currentEmotion, charStore.currentStance, charStore.currentCostume, charStore.currentScreenPose] as const,
-    ([emotion, stance, costume, screenPose]) => {
-      // 跳过自身同步导致的变更
-      if (emotion === currentEmotion.value && stance === currentPoseTag.value &&
-          costume === currentCostume.value && screenPose === currentScreenPose.value) return
-
-      log.info("character_ctrl.use_character_controller.info", `检测到外部视觉状态变更, 同步控制器: 情绪=${emotion} 姿势=${stance} 服装=${costume} 位置=${screenPose}`, { emotion: emotion, stance: stance, costume: costume, screen_pose: screenPose })
-
-      // 更新本地状态
-      const changed = { emotion: false, stance: false, costume: false }
-      if (emotion && emotion !== currentEmotion.value) {
-        currentEmotion.value = emotion; changed.emotion = true
-      }
-      if (stance && stance !== currentPoseTag.value) {
-        currentPoseTag.value = stance; changed.stance = true
-      }
-      if (costume && costume !== currentCostume.value) {
-        currentCostume.value = costume; changed.costume = true
-      }
-      if (screenPose && screenPose !== currentScreenPose.value) {
-        currentScreenPose.value = screenPose
-      }
-
-      // 如果有标签变化，重新选图（带兜底，避免跨角色标签不匹配导致白屏）
-      if (changed.emotion || changed.stance || changed.costume) {
-        currentImage.value = selectImageWithFallback()
-      }
-    },
-    { deep: false },
-  )
-
-  // ======== 监听数据加载 ========
-  watch(() => charStore.data, (newData, oldData) => {
-    if (!newData) return
-    syncDefaultsFromData()
-    // 角色切换（data.id 变）时旧立绘不属于新角色，必须强制重选——
-    // 即使新旧角色标签同名（visual-watch 会因全等跳过），也要在此重选。
-    const charChanged = !!oldData && newData.id !== oldData.id
-    if (charChanged || !currentImage.value) {
-      currentImage.value = selectImageWithFallback()
-    }
-  })
-
-  // ======== 生命周期 ========
   function init() {
-    // 先尝试从 characterStore 恢复已有的视觉状态（会话恢复预制）
-    const stored = charStore.getVisualStateSnapshot()
-    const hasStoredState = stored.emotion || stored.stance || stored.costume
-    if (hasStoredState) {
-      currentPoseTag.value = stored.stance
-      currentEmotion.value = stored.emotion
-      currentCostume.value = stored.costume
-      currentScreenPose.value = stored.screenPose
-    } else {
-      syncDefaultsFromData()
-    }
-    currentImage.value = selectImageWithFallback()
+    if (detachRenderer) return
+    detachRenderer = charStore.attachRenderer('illustration', { apply: applyRuntimeSnapshot })
     ready.value = true
-    log.info("character_ctrl.init.info", `控制器初始化完成, 角色: ${charStore.name} (${hasStoredState ? '有' : '无'}预制状态)`, { char_store_name: charStore.name, has_stored_state: hasStoredState ? '有' : '无' })
+    log.info('character_ctrl.init.info', `立绘渲染器已连接: ${charStore.name}`)
   }
 
-  function dispose() {}
+  function dispose() {
+    detachRenderer?.()
+    detachRenderer = null
+    ready.value = false
+  }
 
   return {
     currentPoseTag, currentEmotion, currentCostume,

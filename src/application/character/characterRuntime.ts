@@ -11,6 +11,7 @@ export interface CharacterCapabilities {
   emotions: readonly string[]
   stances: readonly string[]
   costumes: readonly string[]
+  screenPoses: readonly string[]
 }
 
 export interface CharacterSelection {
@@ -45,6 +46,7 @@ function clone<T>(value: T): T {
 }
 
 function assertSupported(value: string, supported: readonly string[], field: string): void {
+  if (value === '' && supported.length === 0) return
   if (!supported.includes(value)) throw new Error(`Unsupported ${field}: ${value}`)
 }
 
@@ -142,6 +144,6 @@ export class CharacterRuntime {
     assertSupported(look.emotion, capabilities.emotions, 'emotion')
     assertSupported(look.stance, capabilities.stances, 'stance')
     assertSupported(look.costume, capabilities.costumes, 'costume')
-    if (!look.screenPose.trim()) throw new Error('Screen pose must not be empty')
+    assertSupported(look.screenPose, capabilities.screenPoses, 'screen pose')
   }
 }
