@@ -5,6 +5,12 @@ vi.mock('../../utils/secretStore', () => ({
   persistSecret: vi.fn(),
   resolveSecret: resolveSecretMock,
   keychainDelete: vi.fn(),
+  secretStoreGateway: {
+    persist: vi.fn(),
+    resolve: resolveSecretMock,
+    delete: vi.fn(),
+    seal: vi.fn(),
+  },
 }))
 
 import { chat, saveConfig } from '../client'

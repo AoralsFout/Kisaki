@@ -6,8 +6,9 @@
  */
 import { createLogger } from '../../utils/logger'
 import { STORAGE_SEARCH_CONFIG } from '../../constants'
-import { encrypt } from '../../utils/crypto'
-import { persistSecret, resolveSecret, keychainDelete } from '../../utils/secretStore'
+import { SecretBackedSettings } from '../../application/settings/secretBackedSettings'
+import { localSettingsStore } from '../../infrastructure/settings/localSettingsStore'
+import { secretStoreGateway } from '../../utils/secretStore'
 
 const log = createLogger('SearchConfig')
 const STORAGE_KEY = STORAGE_SEARCH_CONFIG
@@ -44,28 +45,28 @@ export const SEARCH_PROVIDERS: { value: SearchProvider; label: string; icon: str
   { value: 'searxng', label: 'SearXNG（自建）', icon: 'fa-server', needsKey: false, needsBaseURL: true },
 ]
 
-/** 解密后的 API Key 缓存（避免每次搜索都重新解密） */
-let _decryptedApiKeyCache: string | null = null
+const searchSettings = new SecretBackedSettings<SearchConfig>(localSettingsStore, secretStoreGateway, {
+  storageKey: STORAGE_KEY,
+  defaults: DEFAULT_SEARCH_CONFIG,
+  secretKind: 'search_api_key',
+  looksPlaintext: key => key.startsWith('tvly-') || key.length <= 20,
+  telemetry: {
+    secretMigrated: storage => log.debug('search_config.settings.debug', '搜索 API Key 已迁移到更安全的存储', { storage }),
+    secretUnavailable: reason => log.error(
+      'search_config.load_search_config_secure.error',
+      reason === 'transient'
+        ? '搜索 API Key 读取失败（瞬时），保留配置待重试'
+        : '搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置',
+      new Error(reason),
+      { reason },
+    ),
+  },
+})
 
-/** 设置解密缓存 */
-export function setDecryptedApiKeyCache(key: string) {
-  _decryptedApiKeyCache = key
-}
+export function loadSearchConfig(): SearchConfig { return searchSettings.load() }
 
-export function loadSearchConfig(): SearchConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = { ...DEFAULT_SEARCH_CONFIG, ...JSON.parse(raw) } as SearchConfig
-      if (_decryptedApiKeyCache) parsed.apiKey = _decryptedApiKeyCache
-      return parsed
-    }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_SEARCH_CONFIG }
-}
-
-export function saveSearchConfig(config: SearchConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+export function saveSearchConfig(config: SearchConfig): void {
+  searchSettings.save(config)
   log.debug("search_config.save_search_config.debug", `搜索配置已保存 (provider: ${config.provider}, enabled: ${config.enabled})`, { config_provider: config.provider, config_enabled: config.enabled })
 }
 
@@ -77,62 +78,11 @@ export function isSearchConfigValid(config: SearchConfig): boolean {
 }
 
 /** 保存配置并加密 API Key */
-export async function saveSearchConfigSecure(config: SearchConfig) {
-  if (config.apiKey) {
-    setDecryptedApiKeyCache(config.apiKey)
-    const { value, storage } = await persistSecret('search_api_key', config.apiKey)
-    saveSearchConfig({
-      ...config,
-      apiKey: value,
-      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
-    })
-  } else {
-    await keychainDelete('search_api_key')
-    const { keyStorage: _marker, ...rest } = config
-    saveSearchConfig({ ...rest, apiKey: '' })
-  }
+export function saveSearchConfigSecure(config: SearchConfig): Promise<void> {
+  return searchSettings.saveSecure(config)
 }
 
 /** 加载配置并解密 API Key，自动迁移旧明文 */
-export async function loadSearchConfigSecure(): Promise<SearchConfig> {
-  const config = loadSearchConfig()
-  if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
-
-  if (!config.apiKey && config.keyStorage !== 'keychain') return config
-
-  const resolved = await resolveSecret(
-    'search_api_key',
-    config.apiKey,
-    config.keyStorage,
-    (k) => k.startsWith('tvly-') || k.length <= 20,
-  )
-  if (resolved.key === null) {
-    if (resolved.readError) {
-      log.error("search_config.load_search_config_secure.error", "搜索 API Key 读取失败（瞬时），保留配置待重试", new Error("搜索 API Key 读取失败（瞬时），保留配置待重试"))
-      return { ...config, apiKey: '' }
-    }
-    log.error("search_config.load_search_config_secure.error", "搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("搜索 API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
-    const { keyStorage: _marker, ...rest } = config
-    saveSearchConfig({ ...rest, apiKey: '' })
-    return { ...rest, apiKey: '' }
-  }
-  setDecryptedApiKeyCache(resolved.key)
-  if (resolved.needsResave) {
-    if (resolved.storage === 'keychain') {
-      saveSearchConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
-    } else {
-      const encryptedKey = await encrypt(resolved.key)
-      saveSearchConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
-    }
-  }
-  return { ...config, apiKey: resolved.key }
-}
-
-// 跨窗口配置同步：设置窗口保存后，其它窗口失效解密缓存并重新解密。
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key !== STORAGE_KEY) return
-    _decryptedApiKeyCache = null
-    loadSearchConfigSecure().catch(() => { /* 静默：下次加载会重试 */ })
-  })
+export function loadSearchConfigSecure(): Promise<SearchConfig> {
+  return searchSettings.loadSecure()
 }

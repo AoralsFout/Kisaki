@@ -27,6 +27,8 @@ import { createLogger } from '../utils/logger'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import BaseButton from './ui/BaseButton.vue'
 import { useModalFocus } from '../utils/modalFocus'
+import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
+import { STORAGE_AI_CONFIG } from '../constants'
 
 const log = createLogger('Onboarding')
 
@@ -65,8 +67,10 @@ async function refreshApi() {
   }
 }
 
-function onStorage() {
-  void refreshApi()
+/** 跨窗口：其它窗口改动 AI 配置后经统一变更流通知本窗口。 */
+let unsubscribeSettings: (() => void) | null = null
+function onSettingsChanged(changedKeys: readonly string[]) {
+  if (changedKeys.includes(STORAGE_AI_CONFIG)) void refreshApi()
 }
 
 async function downloadOfficialCharacters() {
@@ -79,11 +83,12 @@ watch(() => props.visible, (v) => {
 
 onMounted(() => {
   void refreshApi()
-  window.addEventListener('storage', onStorage)
+  unsubscribeSettings = subscribeSettingsChange(onSettingsChanged)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('storage', onStorage)
+  unsubscribeSettings?.()
+  unsubscribeSettings = null
 })
 </script>
 

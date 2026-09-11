@@ -204,4 +204,26 @@ describe('architecture boundaries', () => {
     expect(rustTts).not.toContain('tts-audio-chunk')
     expect(rustTts).toContain('Channel<TtsChunk>')
   })
+
+  it('keeps cross-window configuration listening in a single adapter', () => {
+    const violations: string[] = []
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      if (file.endsWith(join('infrastructure', 'settings', 'localSettingsStore.ts'))) continue
+      const source = readFileSync(file, 'utf8')
+      if (/addEventListener\(\s*'storage'/.test(source)) violations.push(relative(SOURCE_ROOT, file))
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('keeps secret-backed settings on the shared repository', () => {
+    for (const relativePath of ['ai/client.ts', 'tts/config.ts', 'agent/tools/searchConfig.ts']) {
+      const source = readFileSync(join(SOURCE_ROOT, ...relativePath.split('/')), 'utf8')
+      expect(source).toContain('SecretBackedSettings')
+      expect(source).not.toContain('localStorage.getItem')
+      expect(source).not.toContain('localStorage.setItem')
+      expect(source).not.toContain('persistSecret(')
+      expect(source).not.toContain('resolveSecret(')
+      expect(source).not.toContain('keychainDelete(')
+    }
+  })
 })

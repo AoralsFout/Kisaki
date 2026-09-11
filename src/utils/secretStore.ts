@@ -12,6 +12,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { createLogger } from './logger'
 import { encrypt, resolveStoredSecret } from './crypto'
+import type { SecretGateway } from '../application/settings/secretGateway'
 
 const log = createLogger('SecretStore')
 
@@ -72,6 +73,14 @@ export async function keychainDelete(kind: SecretKind): Promise<void> {
   try {
     await invoke('secure_store_delete', { key: kind })
   } catch { /* 忽略：条目可能本就不存在 */ }
+}
+
+/** 供应用层配置仓库使用的密钥网关实现。 */
+export const secretStoreGateway: SecretGateway = {
+  persist: persistSecret,
+  resolve: resolveSecret,
+  delete: keychainDelete,
+  seal: encrypt,
 }
 
 /**

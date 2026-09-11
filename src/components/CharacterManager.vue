@@ -32,20 +32,29 @@ import Live2DPreview from './Live2DPreview.vue'
 import { loadLive2DManifest } from '../character/live2d/manifest'
 import type { Live2DManifest } from '../character/live2d/manifest'
 import type { Live2DConfig } from '../character/loader'
-import { DEFAULT_VOICE_LANGUAGE, DEFAULT_TEXT_LANGUAGE, EVENT_CHARACTERS_CHANGED } from '../constants'
+import {
+  DEFAULT_VOICE_LANGUAGE,
+  DEFAULT_TEXT_LANGUAGE,
+  EVENT_CHARACTERS_CHANGED,
+  STORAGE_TTS_PROVIDER,
+} from '../constants'
 import { useModalFocus } from '../utils/modalFocus'
+import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
 
 const charStore = useCharacterStore()
 const ttsProvider = ref(getTtsProvider())
 
-// 监听 TTS 提供者变更（跨窗口）；组件卸载时移除，避免监听器泄漏
-const onTtsProviderStorage = (e: StorageEvent) => {
-  if (e.key === 'deskpet-tts-provider') {
-    ttsProvider.value = getTtsProvider()
-  }
-}
-onMounted(() => window.addEventListener('storage', onTtsProviderStorage))
-onUnmounted(() => window.removeEventListener('storage', onTtsProviderStorage))
+// 跨窗口的 TTS 提供者变更经统一配置变更流到达；组件卸载时退订，避免监听器泄漏
+let unsubscribeSettings: (() => void) | null = null
+onMounted(() => {
+  unsubscribeSettings = subscribeSettingsChange(changedKeys => {
+    if (changedKeys.includes(STORAGE_TTS_PROVIDER)) ttsProvider.value = getTtsProvider()
+  })
+})
+onUnmounted(() => {
+  unsubscribeSettings?.()
+  unsubscribeSettings = null
+})
 
 const { t } = useI18n()
 

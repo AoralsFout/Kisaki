@@ -29,103 +29,43 @@ interface ToolDef {
 }
 
 import { STORAGE_AI_CONFIG } from '../constants'
-import { encrypt } from '../utils/crypto'
-import { persistSecret, resolveSecret, keychainDelete } from '../utils/secretStore'
+import { SecretBackedSettings } from '../application/settings/secretBackedSettings'
+import { localSettingsStore } from '../infrastructure/settings/localSettingsStore'
+import { secretStoreGateway } from '../utils/secretStore'
 
 /** 保存的配置键名 */
 const STORAGE_KEY = STORAGE_AI_CONFIG
 
-/** 解密后的 API Key 缓存 */
-let _decryptedApiKeyCache: string | null = null
+const settings = new SecretBackedSettings<AIConfig>(localSettingsStore, secretStoreGateway, {
+  storageKey: STORAGE_KEY,
+  defaults: DEFAULT_CONFIG,
+  secretKind: 'ai_api_key',
+  looksPlaintext: key => key.startsWith('sk-') || key.length <= 20,
+  telemetry: {
+    secretMigrated: storage => log.debug('api.settings.debug', '配置中的 API Key 已迁移到更安全的存储', { storage }),
+    secretUnavailable: reason => log.error(
+      'api.load_config_secure.error',
+      reason === 'transient'
+        ? 'API Key 读取失败（瞬时），保留配置待重试'
+        : 'API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置',
+      new Error(reason),
+      { reason },
+    ),
+  },
+})
 
-export function setDecryptedApiKeyCache(key: string) {
-  _decryptedApiKeyCache = key
+export function loadConfig(): AIConfig { return settings.load() }
+
+export function saveConfig(config: AIConfig): void { settings.save(config) }
+
+/** 保存配置并加密 API Key */
+export function saveConfigSecure(config: AIConfig): Promise<void> {
+  return settings.saveSecure(config)
 }
 
-export function loadConfig(): AIConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = { ...DEFAULT_CONFIG, ...JSON.parse(raw) } as AIConfig
-      if (_decryptedApiKeyCache) parsed.apiKey = _decryptedApiKeyCache
-      return parsed
-    }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_CONFIG }
-}
-
-export function saveConfig(config: AIConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-}
-
-/**
- * 保存配置并加密 API Key
- */
-export async function saveConfigSecure(config: AIConfig) {
-  if (config.apiKey) {
-    setDecryptedApiKeyCache(config.apiKey)
-    const { value, storage } = await persistSecret('ai_api_key', config.apiKey)
-    saveConfig({
-      ...config,
-      apiKey: value,
-      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
-    })
-  } else {
-    // 清除 Key：删除密钥链条目，并去掉 keyStorage 标记
-    await keychainDelete('ai_api_key')
-    const { keyStorage: _marker, ...rest } = config
-    saveConfig({ ...rest, apiKey: '' })
-  }
-}
-
-/**
- * 加载配置并解密 API Key，自动迁移旧明文
- */
-export async function loadConfigSecure(): Promise<AIConfig> {
-  const config = loadConfig()
-  if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
-
-  if (!config.apiKey && config.keyStorage !== 'keychain') return config
-
-  const resolved = await resolveSecret(
-    'ai_api_key',
-    config.apiKey,
-    config.keyStorage,
-    (k) => k.startsWith('sk-') || k.length <= 20,
-  )
-  if (resolved.key === null) {
-    if (resolved.readError) {
-      // 瞬时读取失败：保留 keyStorage 标记，不清除配置，下次重试
-      log.error("api.load_config_secure.error", "API Key 读取失败（瞬时），保留配置待重试", new Error("API Key 读取失败（瞬时），保留配置待重试"))
-      return { ...config, apiKey: '' }
-    }
-    // 密钥链条目丢失 / 本地密文损坏：清掉 Key，避免把乱码发给 API 造成 401
-    log.error("api.load_config_secure.error", "API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
-    const { keyStorage: _marker, ...rest } = config
-    saveConfig({ ...rest, apiKey: '' })
-    return { ...rest, apiKey: '' }
-  }
-  setDecryptedApiKeyCache(resolved.key)
-  if (resolved.needsResave) {
-    if (resolved.storage === 'keychain') {
-      saveConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
-    } else {
-      // 明文 / 旧格式密文 → 迁移为本地加密新格式（不写明文）
-      const encryptedKey = await encrypt(resolved.key)
-      saveConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
-    }
-  }
-  return { ...config, apiKey: resolved.key }
-}
-
-// 跨窗口配置同步：设置窗口保存配置后，其它窗口（主窗口）会收到 storage 事件。
-// 此时失效本窗口的解密缓存并立即重新解密，避免继续使用旧的 API Key。
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key !== STORAGE_KEY) return
-    _decryptedApiKeyCache = null
-    loadConfigSecure().catch(() => { /* 静默：下次 loadConfigSecure 会重试 */ })
-  })
+/** 加载配置并解密 API Key，自动迁移旧明文 */
+export function loadConfigSecure(): Promise<AIConfig> {
+  return settings.loadSecure()
 }
 
 export function isConfigValid(config: AIConfig): boolean {

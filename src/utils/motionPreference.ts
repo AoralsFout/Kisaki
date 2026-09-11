@@ -2,15 +2,13 @@ import {
   CHANNEL_DESKPET_REDUCED_MOTION,
   STORAGE_REDUCED_MOTION,
 } from '../constants'
+import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
+import { localSettingsStore } from '../infrastructure/settings/localSettingsStore'
 
 const REDUCED_MOTION_ATTRIBUTE = 'data-reduced-motion'
 
 function readStoredPreference(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_REDUCED_MOTION) === '1'
-  } catch {
-    return false
-  }
+  return localSettingsStore.read(STORAGE_REDUCED_MOTION) === '1'
 }
 
 function applyPreference(enabled: boolean): void {
@@ -44,19 +42,14 @@ try {
   // 不支持 BroadcastChannel 时仍在当前窗口立即生效，并由 storage 事件跨窗口兜底。
 }
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', event => {
-    if (event.key === STORAGE_REDUCED_MOTION) applyPreference(event.newValue === '1')
-  })
-}
+// 跨窗口同步：只订阅统一配置变更流，不再自行注册 window 监听。
+subscribeSettingsChange(changedKeys => {
+  if (changedKeys.includes(STORAGE_REDUCED_MOTION)) applyPreference(readStoredPreference())
+})
 
 /** 持久化偏好、立即更新当前窗口，并广播到其它已打开窗口。 */
 export function setReducedMotionEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(STORAGE_REDUCED_MOTION, enabled ? '1' : '0')
-  } catch {
-    // 存储不可用时仍允许本次运行生效。
-  }
+  localSettingsStore.write(STORAGE_REDUCED_MOTION, enabled ? '1' : '0')
   applyPreference(enabled)
   motionChannel?.postMessage({ enabled })
 }

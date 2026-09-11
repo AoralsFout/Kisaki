@@ -4,8 +4,9 @@
 import type { CosyVoiceConfig, CosyVoiceModel, CosyVoiceRegion, GptSoVitsConfig, TtsProvider } from './types'
 import { createLogger } from '../utils/logger'
 import { STORAGE_COSYVOICE_CONFIG, STORAGE_GPTSOVITS_CONFIG, STORAGE_TTS_PROVIDER } from '../constants'
-import { encrypt } from '../utils/crypto'
-import { persistSecret, resolveSecret, keychainDelete } from '../utils/secretStore'
+import { SecretBackedSettings } from '../application/settings/secretBackedSettings'
+import { localSettingsStore } from '../infrastructure/settings/localSettingsStore'
+import { secretStoreGateway } from '../utils/secretStore'
 
 const log = createLogger('TTSConfig')
 const STORAGE_KEY = STORAGE_COSYVOICE_CONFIG
@@ -42,31 +43,28 @@ export const MODELS: { label: string; value: CosyVoiceModel }[] = [
   { label: 'CosyVoice v1', value: 'cosyvoice-v1' },
 ]
 
-/** 解密后的 API Key 缓存（避免每个 TTS 请求都重新解密） */
-let _decryptedApiKeyCache: string | null = null
+const cosyVoiceSettings = new SecretBackedSettings<CosyVoiceConfig>(localSettingsStore, secretStoreGateway, {
+  storageKey: STORAGE_KEY,
+  defaults: DEFAULT_COSYVOICE_CONFIG,
+  secretKind: 'cosyvoice_api_key',
+  looksPlaintext: key => key.startsWith('sk-') || key.length <= 20,
+  telemetry: {
+    secretMigrated: storage => log.debug('ttsconfig.cosyvoice_settings.debug', 'CosyVoice API Key 已迁移到更安全的存储', { storage }),
+    secretUnavailable: reason => log.error(
+      'ttsconfig.load_cosy_voice_config_secure.error',
+      reason === 'transient'
+        ? 'CosyVoice API Key 读取失败（瞬时），保留配置待重试'
+        : 'CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置',
+      new Error(reason),
+      { reason },
+    ),
+  },
+})
 
-/** 设置解密缓存（由 loadCosyVoiceConfigSecure 调用） */
-export function setDecryptedApiKeyCache(key: string) {
-  _decryptedApiKeyCache = key
-}
+export function loadCosyVoiceConfig(): CosyVoiceConfig { return cosyVoiceSettings.load() }
 
-export function loadCosyVoiceConfig(): CosyVoiceConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = { ...DEFAULT_COSYVOICE_CONFIG, ...JSON.parse(raw) } as CosyVoiceConfig
-      // 如果有解密缓存则替换加密的 apiKey
-      if (_decryptedApiKeyCache) {
-        parsed.apiKey = _decryptedApiKeyCache
-      }
-      return parsed
-    }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_COSYVOICE_CONFIG }
-}
-
-export function saveCosyVoiceConfig(config: CosyVoiceConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+export function saveCosyVoiceConfig(config: CosyVoiceConfig): void {
+  cosyVoiceSettings.save(config)
   log.debug("ttsconfig.save_cosy_voice_config.debug", `CosyVoice 配置已保存 (模型: ${config.model}, 地域: ${config.region})`, { config_model: config.model, config_region: config.region })
 }
 
@@ -75,66 +73,13 @@ export function isCosyVoiceConfigValid(config: CosyVoiceConfig): boolean {
 }
 
 /** 保存配置并加密 API Key */
-export async function saveCosyVoiceConfigSecure(config: CosyVoiceConfig) {
-  if (config.apiKey) {
-    // 与 AI 配置保持一致：保存时同步刷新本窗口的解密缓存
-    setDecryptedApiKeyCache(config.apiKey)
-    const { value, storage } = await persistSecret('cosyvoice_api_key', config.apiKey)
-    saveCosyVoiceConfig({
-      ...config,
-      apiKey: value,
-      keyStorage: storage === 'keychain' ? 'keychain' : undefined,
-    })
-  } else {
-    await keychainDelete('cosyvoice_api_key')
-    const { keyStorage: _marker, ...rest } = config
-    saveCosyVoiceConfig({ ...rest, apiKey: '' })
-  }
+export function saveCosyVoiceConfigSecure(config: CosyVoiceConfig): Promise<void> {
+  return cosyVoiceSettings.saveSecure(config)
 }
 
 /** 加载配置并解密 API Key，自动迁移旧明文 */
-export async function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
-  const config = loadCosyVoiceConfig()
-  // 已有解密缓存
-  if (_decryptedApiKeyCache) return { ...config, apiKey: _decryptedApiKeyCache }
-
-  if (!config.apiKey && config.keyStorage !== 'keychain') return config
-
-  const resolved = await resolveSecret(
-    'cosyvoice_api_key',
-    config.apiKey,
-    config.keyStorage,
-    (k) => k.startsWith('sk-') || k.length <= 20,
-  )
-  if (resolved.key === null) {
-    if (resolved.readError) {
-      log.error("ttsconfig.load_cosy_voice_config_secure.error", "CosyVoice API Key 读取失败（瞬时），保留配置待重试", new Error("CosyVoice API Key 读取失败（瞬时），保留配置待重试"))
-      return { ...config, apiKey: '' }
-    }
-    log.error("ttsconfig.load_cosy_voice_config_secure.error", "CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置", new Error("CosyVoice API Key 无法读取（密钥链条目丢失或本地密文损坏），请重新配置"))
-    const { keyStorage: _marker, ...rest } = config
-    saveCosyVoiceConfig({ ...rest, apiKey: '' })
-    return { ...rest, apiKey: '' }
-  }
-  setDecryptedApiKeyCache(resolved.key)
-  if (resolved.needsResave) {
-    if (resolved.storage === 'keychain') {
-      saveCosyVoiceConfig({ ...config, apiKey: '', keyStorage: 'keychain' })
-    } else {
-      const encryptedKey = await encrypt(resolved.key)
-      saveCosyVoiceConfig({ ...config, apiKey: encryptedKey, keyStorage: undefined })
-    }
-  }
-  return { ...config, apiKey: resolved.key }
-}
-
-// 跨窗口配置同步：设置窗口保存后，其它窗口失效解密缓存并重新解密。
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key !== STORAGE_KEY) return
-    _decryptedApiKeyCache = null
-    loadCosyVoiceConfigSecure().catch(() => { /* 静默：下次加载会重试 */ })
-  })
+export function loadCosyVoiceConfigSecure(): Promise<CosyVoiceConfig> {
+  return cosyVoiceSettings.loadSecure()
 }
 
 /** 获取当前配置的 WebSocket URL */
@@ -171,17 +116,17 @@ export const DEFAULT_GPTSOVITS_CONFIG: GptSoVitsConfig = {
 }
 
 export function loadGptSoVitsConfig(): GptSoVitsConfig {
-  try {
-    const raw = localStorage.getItem(GPTSOVITS_KEY)
-    if (raw) {
+  const raw = localSettingsStore.read(GPTSOVITS_KEY)
+  if (raw) {
+    try {
       return { ...DEFAULT_GPTSOVITS_CONFIG, ...JSON.parse(raw) } as GptSoVitsConfig
-    }
-  } catch { /* ignore */ }
+    } catch { /* 损坏的配置按默认值处理 */ }
+  }
   return { ...DEFAULT_GPTSOVITS_CONFIG }
 }
 
 export function saveGptSoVitsConfig(config: GptSoVitsConfig) {
-  localStorage.setItem(GPTSOVITS_KEY, JSON.stringify(config))
+  localSettingsStore.write(GPTSOVITS_KEY, JSON.stringify(config))
   log.debug("ttsconfig.save_gpt_so_vits_config.debug", 'GPT-SoVITS 配置已保存', { has_api_url: Boolean(config.apiUrl) })
   log.sensitiveDebug("ttsconfig.endpoint_sensitive.debug", 'GPT-SoVITS 服务地址', { api_url: config.apiUrl })
 }
@@ -192,15 +137,13 @@ export function isGptSoVitsConfigValid(config: GptSoVitsConfig): boolean {
 
 /** 获取当前 TTS 提供者 */
 export function getTtsProvider(): TtsProvider {
-  try {
-    const raw = localStorage.getItem(PROVIDER_KEY)
-    if (raw === 'none' || raw === 'cosyvoice' || raw === 'gptsovits') return raw
-  } catch { /* ignore */ }
+  const raw = localSettingsStore.read(PROVIDER_KEY)
+  if (raw === 'none' || raw === 'cosyvoice' || raw === 'gptsovits') return raw
   return 'none'  // 默认不使用 TTS
 }
 
 /** 设置当前 TTS 提供者 */
 export function setTtsProvider(provider: TtsProvider) {
-  localStorage.setItem(PROVIDER_KEY, provider)
+  localSettingsStore.write(PROVIDER_KEY, provider)
   log.debug("ttsconfig.set_tts_provider.debug", `TTS 提供者已切换: ${provider}`, { provider: provider })
 }
