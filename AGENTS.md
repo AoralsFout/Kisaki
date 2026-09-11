@@ -41,7 +41,8 @@
 | 服务端 | upstream | 上游 API，区别于本地进程 |
 | provider | provider | 保留英文，指 TTS / AI 服务的具体实现方 |
 | 回合编排器 | round orchestrator | 拥有一次对话回合全部编排的无框架依赖模块 |
-| `ConversationSession` | conversation session | 回合编排器：`src/application/conversation/conversationSession.ts`，对外只有 `send` / `cancel` / `projection` / `subscribe` |
+| `ConversationSession` | conversation session | 回合编排器：`src/application/conversation/conversationSession.ts`，对外只有 `send` / `cancel` / `projection` / `subscribe` / `subscribeMessages` |
+| 消息事实出口 | message facts outlet | `ConversationSession.subscribeMessages`：已提交 / 已修订消息的只读订阅，供展示层维护界面消息列表。界面消息列表不在投影里（它属于展示层自有状态），但 id 必须与会话事实一致，因此需要这条只讲事实的出口 |
 | `ConversationSessionSnapshot` | conversation session snapshot | 会话实体：一次会话的权威快照（时间线、检查点、外观），定义在 `src/domain/conversation/events.ts` |
 | 投影形状 | projection shape | `ConversationProjection`：回合派生的界面状态快照，纯界面开关不在其中 |
 | 端口集合 | port set | `ConversationSessionPorts`：构造回合编排器时注入的全部依赖，缺一即构造失败 |
