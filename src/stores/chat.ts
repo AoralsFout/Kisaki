@@ -22,8 +22,9 @@ import { ref } from 'vue'
 import { isConfigValid, loadConfig } from '../ai'
 import type { ChatContextInspection, ChatContextSnapshot, ChatInputPayload, ContextStats, ImageAttachment } from '../ai'
 import type { ToolDefinition } from '../agent'
-import { SAY_TOOL_DEF, SAY_TOOL_NAME } from '../agent/tools/say'
+import { SAY_TOOL_NAME } from '../agent/tools/say'
 import { conversationAssembly, type ConversationAssembly } from '../compositionRoot'
+import { assembleRoundToolList } from '../application/conversation/roundToolList'
 import type { ApprovalDecision, ApprovalRequest } from '../application/tools/approvalGateway'
 import {
   isConversationRunActive,
@@ -341,8 +342,9 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * 角色切换后按新角色重建模型上下文。
    *
-   * 与迁移前的差异（有意，已获批）：角色切换现在经会话的取消入口**干净地终止进行中的回合**，
-   * 而不是只取消后台语音与播放、任由旧回合继续往气泡里写。
+   * 与迁移前的差异：角色切换现在经会话的取消入口**干净地终止进行中的回合**，
+   * 而不是只取消后台语音与播放、任由旧回合继续往气泡里写。这是本次 PR 仅有的
+   * 两处用户可见行为变更中的第一处（第二处是 `refreshModelContext`），均已获批准。
    */
   function resetContext() {
     const _fn = 'resetContext'
@@ -419,7 +421,7 @@ export const useChatStore = defineStore('chat', () => {
       currentThinking.value = lastAssistant.thinking || ''
       showBubbleText(lastAssistant.text, false)
     }
-    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已加载会话消息: ${msgs.length} 条 (user=${userCount} asst=${asstCount})`, { fn: _fn, msgs_length: msgs.length, user_count: userCount, asst_count: asstCount })
+    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已加载会话消息：${msgs.length} 条 (user=${userCount} asst=${asstCount})`, { fn: _fn, msgs_length: msgs.length, user_count: userCount, asst_count: asstCount })
   }
 
   /** 更新角色 system prompt（含语言配置）。 */
@@ -435,9 +437,14 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * API 模型变更后按新预算重建上下文，保留当前脱敏协议上下文与角色人格。
    *
-   * 与迁移前的差异（有意，已获批）：这里过去既不终止回合、也不作废后台语音 ——
-   * 是「后台语音不得越过自己的回合」的第 6 条隐式路径。现在它与其它触发一样，
-   * 走会话的取消入口一并收口。
+   * 与迁移前的差异：迁移前这里**既不终止进行中的回合，也不隐藏气泡**，也不作废
+   * 后台语音 —— 上下文换新之后，旧回合仍会继续往气泡里写，用户看到的是新预算下的
+   * 界面配着旧回合的输出。这是「后台语音不得越过自己的回合」的第 6 条隐式路径。
+   * 现在它与其它触发一样走会话的取消入口：`session.cancel('model-context-refreshed')`
+   * 终止回合，`hideBubble()` 收起气泡。
+   *
+   * 这是本次 PR **仅有的两处用户可见行为变更中的第二处**（第一处是角色切换，见
+   * `resetContext`），两处均已获用户批准。
    */
   function refreshModelContext() {
     const { session, context } = conversation()
@@ -474,15 +481,12 @@ export const useChatStore = defineStore('chat', () => {
   function inspectContext(): CurrentContextInspection {
     const { context, ports } = conversation()
     const character = ports.character.state()
-    // 与回合同一套装配逻辑：设置页看到的工具清单就是回合实际要发送的清单。
-    const tools: ToolDefinition[] = [
-      ...ports.tools.definitions({
-        data: character.data,
-        capabilities: character.capabilities,
-        hasWorkspace: Boolean(ports.session.workspaceGrantId()),
-      }),
-      SAY_TOOL_DEF,
-    ]
+    // 与回合同一套装配逻辑（同一个函数，不是抄一份）：设置页看到的清单就是回合实际发送的清单。
+    const tools: ToolDefinition[] = assembleRoundToolList(
+      ports.tools,
+      character,
+      Boolean(ports.session.workspaceGrantId()),
+    )
     const config = loadConfig()
     return {
       ...context.inspect(tools),

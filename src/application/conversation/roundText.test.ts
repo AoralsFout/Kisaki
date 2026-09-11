@@ -124,17 +124,17 @@ describe('resolveSayContent', () => {
 
 describe('resolveContentFallback', () => {
   it('语言不同：正文当 display，翻译出 voice', async () => {
-    const r = await resolveContentFallback('你好呀', 'ja-JP', 'zh-CN', fakeTranslate)
+    const r = await resolveContentFallback('你好呀', 'ja-JP', fakeTranslate)
     expect(r).toEqual({ voice: '[ja-JP]你好呀', display: '你好呀' })
   })
 
   it('语言相同：仍通过 TTS 安全改写生成 voice', async () => {
-    const r = await resolveContentFallback('你好', 'zh-CN', 'zh-CN', fakeTranslate)
+    const r = await resolveContentFallback('你好', 'zh-CN', fakeTranslate)
     expect(r).toEqual({ voice: '[zh-CN]你好', display: '你好' })
   })
 
   it('空正文返回空', async () => {
-    const r = await resolveContentFallback('   ', 'ja-JP', 'zh-CN', fakeTranslate)
+    const r = await resolveContentFallback('   ', 'ja-JP', fakeTranslate)
     expect(r).toEqual({ voice: '', display: '' })
   })
 })
