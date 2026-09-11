@@ -2,173 +2,24 @@
  * Chat Store 核心逻辑单元测试
  *
  * 覆盖：
- * - parseSayArgs / resolveSayContent / resolveContentFallback —— say 机制
  * - addMessage / clearMessages / resetContext 消息管理
  * - showBubbleText / hideBubble 气泡控制
  * - toggleInput / openInput / closeInput 输入框控制
+ *
+ * say 机制的纯函数（`parseSayArgs` / `resolveSayContent` / `resolveContentFallback` 等）
+ * 随回合编排搬到了 `src/application/conversation/`，断言随之搬到那边各自的测试文件；
+ * 本文件不再经 store 的再导出读它们。
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { composeApplication } from '../../compositionRoot'
 
-// 所有使用 useChatStore 的测试前都需要激活 Pinia
-beforeEach(() => {
+// 所有使用 useChatStore 的测试前都需要激活 Pinia。
+// store 已退化为投影 + 命令转发，命令要经组合根装配出的对话对象图；
+// 装配是幂等的，只有第一次真正构建对象图。
+beforeEach(async () => {
   setActivePinia(createPinia())
-})
-
-// ─── say 工具调用解析 / 兜底 ──────────────────────────
-
-/** 翻译桩：把目标语言代码作为前缀返回，便于断言"是否/向哪种语言调用了翻译" */
-const fakeTranslate = async (text: string, target: string) => `[${target}]${text}`
-
-describe('parseSayArgs', () => {
-  it('解析 voice 与 display', async () => {
-    const { parseSayArgs } = await import('../chat')
-    expect(parseSayArgs('{"voice":"こんにちは","display":"你好"}')).toEqual({ voice: 'こんにちは', display: '你好' })
-  })
-
-  it('缺失字段返回 undefined', async () => {
-    const { parseSayArgs } = await import('../chat')
-    expect(parseSayArgs('{"voice":"あ"}')).toEqual({ voice: 'あ', display: undefined })
-  })
-
-  it('非法 JSON 返回空对象', async () => {
-    const { parseSayArgs } = await import('../chat')
-    expect(parseSayArgs('not json')).toEqual({})
-  })
-
-  it('两端空白被裁剪', async () => {
-    const { parseSayArgs } = await import('../chat')
-    expect(parseSayArgs('{"voice":"  あ  "}')).toEqual({ voice: 'あ', display: undefined })
-  })
-})
-
-describe('extractPartialSayArgs', () => {
-  it('从未闭合的 JSON 参数中提取已到达的字段', async () => {
-    const { extractPartialSayArgs } = await import('../chat')
-    expect(extractPartialSayArgs('{"voice":"こんにちは","display":"你')).toEqual({
-      voice: 'こんにちは',
-      display: '你',
-    })
-  })
-
-  it('解码常见的 JSON 转义', async () => {
-    const { extractPartialSayArgs } = await import('../chat')
-    expect(extractPartialSayArgs('{"display":"第一行\\n第二行\\"引号\\""}')).toEqual({
-      voice: undefined,
-      display: '第一行\n第二行"引号"',
-    })
-  })
-})
-
-describe('resolveSayContent', () => {
-  it('两者齐全：不调翻译', async () => {
-    const { resolveSayContent } = await import('../chat')
-    const r = await resolveSayContent({ voice: 'やあ', display: '嗨' }, 'ja-JP', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: 'やあ', display: '嗨' })
-  })
-
-  it('缺 display：翻译 voice 补出', async () => {
-    const { resolveSayContent } = await import('../chat')
-    const r = await resolveSayContent({ voice: 'やあ' }, 'ja-JP', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: 'やあ', display: '[zh-CN]やあ' })
-  })
-
-  it('缺 voice：翻译 display 补出', async () => {
-    const { resolveSayContent } = await import('../chat')
-    const r = await resolveSayContent({ display: '嗨' }, 'ja-JP', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '[ja-JP]嗨', display: '嗨' })
-  })
-
-  it('voice 含数字和数字常用符号时本地保留，不调用翻译', async () => {
-    const { resolveSayContent } = await import('../chat')
-    let translateCalls = 0
-    const translate = async () => {
-      translateCalls++
-      return '不应调用'
-    }
-    const r = await resolveSayContent(
-      { voice: '版本2.6，完成率50%', display: '版本2.6，完成率50%' },
-      'zh-CN',
-      'zh-CN',
-      translate,
-    )
-    expect(translateCalls).toBe(0)
-    expect(r).toEqual({ voice: '版本2.6,完成率50%', display: '版本2.6，完成率50%' })
-  })
-
-  it('网址和文件路径不能伪装成数字表达式绕过 TTS 安全改写', async () => {
-    const { normalizeTtsSafeVoice } = await import('../chat')
-    expect(normalizeTtsSafeVoice('https://example.com', 'zh-CN')).toBeNull()
-    expect(normalizeTtsSafeVoice('C:/Users/alice/file.txt', 'zh-CN')).toBeNull()
-    expect(normalizeTtsSafeVoice('版本2.6,完成率50%,时间12:30,日期2026/09/09', 'zh-CN'))
-      .toBe('版本2.6,完成率50%,时间12:30,日期2026/09/09')
-  })
-
-  it('voice 含括号等其他符号时触发 TTS 安全改写', async () => {
-    const { resolveSayContent } = await import('../chat')
-    let ttsSafe: boolean | undefined
-    const rewrite = async (_text: string, _target: string, opts?: { ttsSafe?: boolean }) => {
-      ttsSafe = opts?.ttsSafe
-      return '版本二点六,已经完成'
-    }
-    const r = await resolveSayContent(
-      { voice: '版本2.6（测试），已经完成！', display: '版本 2.6（测试），已经完成！' },
-      'zh-CN',
-      'zh-CN',
-      rewrite,
-    )
-    expect(ttsSafe).toBe(true)
-    expect(r).toEqual({ voice: '版本二点六,已经完成', display: '版本 2.6（测试），已经完成！' })
-  })
-
-  it('已调用 say 且仅有日语句读问题时本地修复，不走翻译兜底', async () => {
-    const { resolveSayContent } = await import('../chat')
-    let translateCalls = 0
-    const translate = async () => {
-      translateCalls++
-      return '不应调用'
-    }
-    const r = await resolveSayContent(
-      {
-        voice: 'こんにちは、私はあなたのデスクトップペットです、こ,れからよろしくお願いします。',
-        display: '你好！我是你的桌面宠物，请多多关照哦。',
-      },
-      'ja-JP',
-      'zh-CN',
-      translate,
-    )
-    expect(translateCalls).toBe(0)
-    expect(r).toEqual({
-      voice: 'こんにちは,私はあなたのデスクトップペットです,これからよろしくお願いします',
-      display: '你好！我是你的桌面宠物，请多多关照哦。',
-    })
-  })
-
-  it('语言相同：互为兜底，不调翻译', async () => {
-    const { resolveSayContent } = await import('../chat')
-    const r = await resolveSayContent({ voice: '你好' }, 'zh-CN', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '你好', display: '你好' })
-  })
-})
-
-describe('resolveContentFallback', () => {
-  it('语言不同：正文当 display，翻译出 voice', async () => {
-    const { resolveContentFallback } = await import('../chat')
-    const r = await resolveContentFallback('你好呀', 'ja-JP', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '[ja-JP]你好呀', display: '你好呀' })
-  })
-
-  it('语言相同：仍通过 TTS 安全改写生成 voice', async () => {
-    const { resolveContentFallback } = await import('../chat')
-    const r = await resolveContentFallback('你好', 'zh-CN', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '[zh-CN]你好', display: '你好' })
-  })
-
-  it('空正文返回空', async () => {
-    const { resolveContentFallback } = await import('../chat')
-    const r = await resolveContentFallback('   ', 'ja-JP', 'zh-CN', fakeTranslate)
-    expect(r).toEqual({ voice: '', display: '' })
-  })
+  await composeApplication()
 })
 
 // ─── Pinia Store 基础操作 ─────────────────────────────

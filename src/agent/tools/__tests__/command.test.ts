@@ -23,6 +23,7 @@ const localStorageMock = (() => {
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
 import { prepareCommandExecution, runProcessTool } from '../command'
+import { composeApplication } from '../../../compositionRoot'
 import { useSessionStore } from '../../../stores/session'
 
 describe('结构化任务执行工具', () => {
@@ -32,6 +33,8 @@ describe('结构化任务执行工具', () => {
     invokeMock.mockReset()
     listenMock.mockClear()
     invokeMock.mockRejectedValue(new Error('not in tauri'))
+    // 会话服务的装配（含真机不可用时的内存兜底）由组合根完成。
+    await composeApplication()
     const session = useSessionStore()
     await session.init()
     await session.setWorkspace({ id: 'ws_test', path: 'C:\\work\\project' })

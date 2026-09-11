@@ -211,7 +211,7 @@ describe('ConversationCoordinator', () => {
     coordinator.start('new')
     resolvePersistence(true)
 
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(pending).rejects.toMatchObject({ name: 'ConversationRunOwnershipError', runId: 'old' })
     expect(contextCalls).not.toHaveBeenCalled()
   })
 
@@ -228,7 +228,7 @@ describe('ConversationCoordinator', () => {
     coordinator.start('request-2')
 
     expect(() => coordinator.appendToolImages('request-1', 'stale', [])).toThrowError(
-      expect.objectContaining({ name: 'AbortError' }),
+      expect.objectContaining({ name: 'ConversationRunOwnershipError', runId: 'request-1' }),
     )
     expect(events).toEqual([
       'context-calls:say-fallback',

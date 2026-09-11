@@ -26,8 +26,12 @@ function sourceFiles(root: string): string[] {
 }
 
 function importsOf(source: string): string[] {
-  return [...source.matchAll(/(?:import|export)\s+(?:type\s+)?(?:[^'\"]+?\s+from\s+)?['\"]([^'\"]+)['\"]/g)]
+  const specifiers = [...source.matchAll(/(?:import|export)\s+(?:type\s+)?(?:[^'\"]+?\s+from\s+)?['\"]([^'\"]+)['\"]/g)]
     .map(match => match[1])
+  // 动态 import() 没有 from 子句，上面那条正则要求 import 后跟空白，扫不到它；
+  // 少了这一遍，`await import('pinia')` 就能绕过全部规则。
+  for (const match of source.matchAll(/\bimport\s*\(\s*['\"]([^'\"]+)['\"]/g)) specifiers.push(match[1])
+  return specifiers
 }
 
 describe('architecture boundaries', () => {
@@ -66,6 +70,19 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([])
   })
 
+  it('keeps the ConversationSession round orchestrator free of framework dependencies', () => {
+    // 这条缝是本次重构唯一新增的对外缝，值得一条具名的、可追溯的断言；
+    // 其余越界（stores / components / infrastructure）由上面那条泛化规则覆盖。
+    const source = readFileSync(
+      join(SOURCE_ROOT, 'application', 'conversation', 'conversationSession.ts'),
+      'utf8',
+    )
+    // importsOf 现在也返回动态 import() 的说明符，`await import('pinia')` 同样在此拦下。
+    for (const forbidden of ['vue', 'pinia', '@tauri-apps/']) {
+      expect(importsOf(source).filter(specifier => specifier.includes(forbidden))).toEqual([])
+    }
+  })
+
   it('does not allow ChatStore to import SessionStore', () => {
     const chatStore = join(SOURCE_ROOT, 'stores', 'chat.ts')
     expect(importsOf(readFileSync(chatStore, 'utf8'))).not.toContain('./session')
@@ -73,8 +90,11 @@ describe('architecture boundaries', () => {
 
   it('keeps SessionStore on the single v2 aggregate persistence path', () => {
     const source = readFileSync(join(SOURCE_ROOT, 'stores', 'session.ts'), 'utf8')
-    expect(source).toContain('new SessionApplicationService(')
-    expect(source).toContain('new TauriSessionRepository()')
+    // 仓储与服务的构造已上移到组合根；store 只剩下「消费装配结果」这一条路径，
+    // 既选不了实现，也回不到旧版会话格式。正面的构造断言见下一条。
+    expect(source).not.toContain('new SessionApplicationService(')
+    expect(source).not.toContain('new TauriSessionRepository()')
+    expect(source).not.toContain('new MemorySessionRepository()')
     expect(source).not.toContain("invoke('sessions_load'")
     expect(source).not.toContain("invoke('sessions_save'")
     expect(source).not.toContain('localStorage')
@@ -82,6 +102,15 @@ describe('architecture boundaries', () => {
     expect(source).not.toContain('saveCurrentSession')
     expect(source).not.toMatch(/session\.messages\s*=/)
     expect(source).not.toMatch(/session\.context\s*=/)
+  })
+
+  it('assembles the v2 session persistence path only in the composition root', () => {
+    // 「真机持久化还是内存兜底」这个选择只允许出现在组合根；它同时是服务与两个仓储适配器
+    // 的唯一构造点，SessionStore 通过注入的装配工厂消费结果。
+    const root = readFileSync(join(SOURCE_ROOT, 'compositionRoot.ts'), 'utf8')
+    expect(root).toContain('new SessionApplicationService(')
+    expect(root).toContain('new TauriSessionRepository()')
+    expect(root).toContain('new MemorySessionRepository()')
   })
 
   it('does not restore the legacy character controller registries', () => {
@@ -102,9 +131,17 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([])
   })
 
-  it('keeps approval lifecycle and tool policy execution outside ChatStore', () => {
-    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
-    expect(source).toContain('new ToolExecutionCoordinator(')
+  it('keeps approval lifecycle and tool policy execution in the tool execution adapter', () => {
+    // 批准生命周期与工具策略执行原先长在 ChatStore 里，随工具执行端口的适配器搬到了
+    // 基础设施层；store 只剩「订阅待决状态 + 转发用户决策」。
+    const store = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    const factory = readFileSync(
+      join(SOURCE_ROOT, 'infrastructure', 'conversation', 'toolExecutionCoordinatorFactory.ts'),
+      'utf8',
+    )
+    expect(factory).toContain('new ToolExecutionCoordinator(')
+    expect(store).not.toContain('new ToolExecutionCoordinator(')
+    expect(store).not.toContain('new ApprovalGateway(')
     for (const legacy of [
       'confirmResolver',
       'commandConfirmResolver',
@@ -112,34 +149,63 @@ describe('architecture boundaries', () => {
       'waitUserConfirm(',
       'waitCommandConfirm(',
       'waitScreenCaptureConfirm(',
-    ]) expect(source).not.toContain(legacy)
+    ]) expect(store).not.toContain(legacy)
   })
 
-  it('keeps conversation lifecycle and stream protocol parsing outside ChatStore', () => {
-    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
-    expect(source).toContain('new ConversationCoordinator(')
-    expect(source).toContain('conversationCoordinator.runTurns(')
-    expect(source).toContain('new ModelStreamDecoder()')
-    expect(source).toContain('interpretModelTurn(')
-    expect(source).toContain('new AssistantMessageCoordinator(')
-    expect(source).not.toContain('new AbortController()')
-    expect(source).not.toContain('abortController ===')
-    expect(source).not.toMatch(/for\s*\(let turn = 0;/)
-    expect(source).not.toContain("result.type === 'done'")
-    expect(source).not.toContain("result.type === 'tools'")
-    expect(source).not.toContain('JSON.parse(tc.function.arguments')
-    expect(source).toContain('conversationCoordinator.commitToolCalls(')
-    expect(source).toContain('conversationCoordinator.commitToolResult(')
-    // The sole direct references are dependency adapters passed into the coordinator.
-    expect(source.match(/chatSessionPort\.recordToolCalls\(/g)).toHaveLength(1)
-    expect(source.match(/chatSessionPort\.recordToolResult\(/g)).toHaveLength(1)
-    expect(source).toContain('ttsPlaybackOrchestrator.play(')
-    expect(source).not.toContain('function triggerTts(')
-    expect(source).not.toContain('lastTtsText')
-    expect(source).not.toContain('speakTextStreaming(')
-    expect(source).not.toContain('cancelSpeak(')
-    expect(source.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
-    expect(source.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+  it('keeps conversation lifecycle and stream protocol parsing in ConversationSession', () => {
+    // 回合编排整体搬到了 ConversationSession：ChatStore 不再认识状态机、流解码、
+    // 工具批次与语音播放，只剩投影订阅与命令转发。
+    const store = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    const session = readFileSync(
+      join(SOURCE_ROOT, 'application', 'conversation', 'conversationSession.ts'),
+      'utf8',
+    )
+    for (const moved of [
+      'new ConversationCoordinator(',
+      'conversationCoordinator.runTurns(',
+      'new ModelStreamDecoder()',
+      'interpretModelTurn(',
+      'new AssistantMessageCoordinator(',
+      'conversationCoordinator.commitToolCalls(',
+      'conversationCoordinator.commitToolResult(',
+      'chatSessionPort.',
+      'ttsPlaybackOrchestrator.',
+    ]) expect(store).not.toContain(moved)
+    expect(store).not.toContain('new AbortController()')
+    expect(store).not.toContain('abortController ===')
+    expect(store).not.toMatch(/for\s*\(let turn = 0;/)
+    expect(store).not.toContain("result.type === 'done'")
+    expect(store).not.toContain("result.type === 'tools'")
+    expect(store).not.toContain('JSON.parse(tc.function.arguments')
+    expect(store).not.toContain('function triggerTts(')
+    expect(store).not.toContain('lastTtsText')
+    expect(store).not.toContain('speakTextStreaming(')
+    expect(store).not.toContain('cancelSpeak(')
+    // 派生量各只有一个写入点：applyProjection 里的这两个赋值。
+    expect(store.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
+    expect(store.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+
+    // 搬到新家之后，这些规则仍要被断言，只是换了文件。
+    for (const owned of [
+      'new ConversationCoordinator(',
+      'this.coordinator.runTurns(',
+      'new ModelStreamDecoder()',
+      'interpretModelTurn(',
+      'new AssistantMessageCoordinator(',
+      'this.coordinator.commitToolCalls(',
+      'this.coordinator.commitToolResult(',
+      'this.ports.session.recordToolCalls(',
+      'this.ports.session.recordToolResult(',
+    ]) expect(session).toContain(owned)
+    expect(session).not.toContain("result.type === 'done'")
+    expect(session).not.toContain('JSON.parse(tc.function.arguments')
+    // 语音不在这里直接播放：回合只把已提交的消息交给语音端口。
+    expect(session).not.toContain('ttsPlaybackOrchestrator')
+    expect(session).toContain('this.ports.voice.play(')
+    // 原先对 ChatStore 的计数断言（工具调用/结果各写一次）随会话事实端口搬到新家：
+    // 会话事实只有这一条写入路径，多一处就会打破「先落库再进模型上下文」的顺序。
+    expect(session.match(/this\.ports\.session\.recordToolCalls\(/g)).toHaveLength(1)
+    expect(session.match(/this\.ports\.session\.recordToolResult\(/g)).toHaveLength(1)
   })
 
   it('routes presentation playback through the TTS playback owner', () => {

@@ -2,8 +2,11 @@ import type { ConversationImage, RecordedToolCall } from '../../domain/conversat
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 
 /**
- * 过渡期边界：对话执行逻辑正逐步移出 ChatStore。
- * 它让聊天流程不再依赖 Pinia 的 SessionStore 模块。
+ * 会话事实端口：对话回合 ↔ 会话聚合之间的边界。
+ *
+ * 回合只经它提交用户消息、工具调用与助手消息，因此不依赖 Pinia 的 SessionStore 模块。
+ * 唯一实现是 `SessionStoreChatSessionPort`，由组合根在装配对话对象图时构造并注入；
+ * 缺装配即由 `ConversationSession` 构造失败，没有静默空转的回落实现。
  */
 export interface ChatSessionPort {
   currentSessionId(): string

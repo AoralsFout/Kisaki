@@ -7,21 +7,24 @@ const { request, invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
 }))
 
-vi.mock('../../ai', async original => ({
-  ...await original<typeof import('../../ai')>(),
+// 模型调用现在经基础层的模型客户端适配器（`infrastructure/conversation/aiModelClient.ts`）
+// 抵达 `ai/client.ts`，因此 mock 打在它真正调用的那一层，而不是桶文件 `ai/index.ts`。
+vi.mock('../../ai/client', async original => ({
+  ...await original<typeof import('../../ai/client')>(),
   loadConfig: () => ({ baseURL: 'http://localhost/v1', apiKey: 'test-only', model: 'test-model' }),
   chat: request,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
+import { composeApplication } from '../../compositionRoot'
 import { useChatStore } from '../chat'
 import { useSessionStore } from '../session'
 
 describe('ChatStore and SessionStore v2 integration', () => {
   let saved: SessionDocument | null
 
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     localStorage.clear()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
@@ -35,6 +38,8 @@ describe('ChatStore and SessionStore v2 integration', () => {
       return Promise.resolve()
     })
     request.mockReset()
+    // 旧回合路径仍由 ChatStore 驱动，但它消费的 ChatSessionPort 现在由组合根注入。
+    await composeApplication()
   })
 
   it('commits user, tool protocol, result, and assistant reply to one timeline', async () => {
