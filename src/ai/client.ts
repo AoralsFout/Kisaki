@@ -7,6 +7,12 @@
 import type { AIConfig, ChatMessage, StreamCallbacks, ToolCallData, ResponseFormat, RequestTelemetry } from './types'
 import { getModelProfile } from './modelCapabilities'
 import { createLogger } from '../utils/logger'
+import { RequestError, toRequestError } from '../application/net/requestError'
+import {
+  RequestExecutor,
+  type RequestTelemetrySink,
+} from '../application/net/requestExecutor'
+import { fetchTransport } from '../infrastructure/net/fetchTransport'
 
 const log = createLogger('API')
 
@@ -84,24 +90,28 @@ export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean;
   } catch {
     return { ok: false, error: 'API 地址格式无效' }
   }
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 15000)
+
   try {
-    const response = await fetch(base, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-      signal: controller.signal,
+    return await requestExecutor.run<{ ok: boolean; error?: string }>({
+      request: {
+        url: base,
+        method: 'GET',
+        headers: { Authorization: `Bearer ${config.apiKey}` },
+      },
+      transport: fetchTransport,
+      policy: { label: 'ai.test_connection', timeoutMs: 15000 },
+      consume: async response => {
+        if (response.ok) return { ok: true }
+        if (response.status === 401 || response.status === 403) {
+          return { ok: false, error: 'API Key 无效或无权访问' }
+        }
+        return { ok: false, error: `服务返回 HTTP ${response.status}` }
+      },
     })
-    if (response.ok) return { ok: true }
-    if (response.status === 401 || response.status === 403) {
-      return { ok: false, error: 'API Key 无效或无权访问' }
-    }
-    return { ok: false, error: `服务返回 HTTP ${response.status}` }
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') return { ok: false, error: '连接超时' }
-    return { ok: false, error: (e as Error).message || '网络连接失败' }
-  } finally {
-    clearTimeout(timer)
+  } catch (error) {
+    const failure = toRequestError(error)
+    if (failure.kind === 'timeout') return { ok: false, error: '连接超时' }
+    return { ok: false, error: failure.message || '网络连接失败' }
   }
 }
 
@@ -120,14 +130,26 @@ const MAX_STREAM_ATTEMPTS = 3
 /** 重试退避基数（毫秒），第 n 次重试等待 base * n */
 const RETRY_DELAY_BASE_MS = 600
 
-/** 429 / 5xx 属于可重试的瞬时状态 */
-function isRetryableStatus(status: number): boolean {
-  return status === 429 || status >= 500
+/** 模型接口错误 → 面向用户的简短提示 */
+function modelErrorMessage(status: number): string {
+  if (status === 401) return 'API Key 无效或已过期'
+  if (status === 429) return '请求过于频繁，请稍后重试'
+  if (status >= 500) return '服务端暂时不可用，请稍后重试'
+  return `API ${status}: 请求失败`
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+const telemetry: RequestTelemetrySink = {
+  attemptFailed: event => log.warn(
+    'api.request_retry',
+    `请求失败，准备第 ${event.attempt} 次重试`,
+    event.error,
+    { kind: event.error.kind, status: event.error.status, attempt: event.attempt },
+  ),
+  completed: () => {},
 }
+
+/** 出站请求的统一执行器：超时、重试、取消与失败分类都在这里。 */
+const requestExecutor = new RequestExecutor(telemetry)
 
 /**
  * 发送对话请求（流式），支持 Function Calling + 结构化输出 + 超时保护
@@ -171,196 +193,182 @@ export async function chat(
     log.info("api.chat.info", `📐 response_format=${detail} (model=${config.model})`, { ...telemetry, detail: detail, config_model: config.model })
   }
 
-  for (let attempt = 1; ; attempt++) {
-    // 组合超时信号 + 外部取消信号（每个 attempt 独立超时；
-    // 超时覆盖「等待响应 + 整个流式读取」全过程）
-    const timeoutController = new AbortController()
-    const timeoutId = setTimeout(() => timeoutController.abort(), 120000) // 2 分钟
-    const combinedSignal = signal
-      ? combineAbortSignals(signal, timeoutController.signal)
-      : timeoutController.signal
-    /** 是否已收到任何内容（收到后不再重试，避免重复/错乱输出） */
-    let receivedAny = false
-
-    try {
-      const response = await fetch(url, {
+  try {
+    await requestExecutor.run<void>({
+      request: {
+        url,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: combinedSignal,
-      })
-
-      if (!response.ok) {
-        const errBody = await response.text().catch(() => '')
-        const status = response.status
-        log.sensitiveDebug('api.error_response_sensitive.debug', '模型接口错误响应片段', {
-          ...telemetry,
-          status,
-          body: errBody.slice(0, 200),
-        })
-        let msg: string
-        if (status === 401) msg = 'API Key 无效或已过期'
-        else if (status === 429) msg = '请求过于频繁，请稍后重试'
-        else if (status >= 500) msg = '服务端暂时不可用，请稍后重试'
-        else msg = `API ${status}: 请求失败`
-        // 瞬时错误（429 / 5xx）重试
-        if (isRetryableStatus(status) && attempt < MAX_STREAM_ATTEMPTS) {
-          clearTimeout(timeoutId)
-          if (signal?.aborted) {
-            const cancelErr = new Error('请求已取消')
-            cancelErr.name = 'AbortError'
-            callbacks.onError(cancelErr)
-            return
-          }
-          await sleep(RETRY_DELAY_BASE_MS * attempt)
-          continue
-        }
-        throw new Error(msg)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('响应体不可读')
-
-      const decoder = new TextDecoder()
-      let fullText = ''
-      let buffer = ''
-      let hasToolCalls = false
-      // 累积 tool_calls (index → partial data)
-      const toolCallMap = new Map<number, { id: string; name: string; args: string }>()
-
-      function snapshotToolCalls(): ToolCallData[] {
-        const calls: ToolCallData[] = []
-        for (const [, tc] of toolCallMap) {
-          calls.push({
-            id: tc.id,
-            type: 'function',
-            function: { name: tc.name, arguments: tc.args },
+        headers: { Authorization: `Bearer ${config.apiKey}` },
+        body,
+      },
+      transport: fetchTransport,
+      policy: {
+        label: 'ai.chat',
+        // 2 分钟，覆盖「等待响应 + 整个流式读取」全过程
+        timeoutMs: 120000,
+        maxAttempts: MAX_STREAM_ATTEMPTS,
+        backoffBaseMs: RETRY_DELAY_BASE_MS,
+      },
+      signal,
+      consume: async response => {
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '')
+          log.sensitiveDebug('api.error_response_sensitive.debug', '模型接口错误响应片段', {
+            ...telemetry,
+            status: response.status,
+            body: errBody.slice(0, 200),
+          })
+          throw new RequestError('http', modelErrorMessage(response.status), {
+            status: response.status,
+            retryable: false,
           })
         }
-        return calls
-      }
 
-      function flushToolCalls() {
-        if (toolCallMap.size === 0) return
-        callbacks.onTools?.(snapshotToolCalls(), fullText)
-        toolCallMap.clear()
-      }
+        const reader = response.body?.getReader()
+        if (!reader) throw new RequestError('response', '响应体不可读', { retryable: false })
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+        /** 是否已收到任何内容（收到后不再重试，避免重复/错乱输出） */
+        let receivedAny = false
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const data = trimmed.slice(6)
-          if (data === '[DONE]') continue
-
-          try {
-            const parsed = JSON.parse(data)
-            const choice = parsed.choices?.[0]
-            const delta = choice?.delta ?? {}
-
-            // ---- 思考内容 ----
-            let reasoningContent = ''
-            for (const key of ['reasoning_content', 'reasoning', 'think', 'thinking']) {
-              const val = delta[key]
-              if (typeof val === 'string' && val) { reasoningContent = val; break }
-            }
-            if (!reasoningContent && delta) {
-              for (const key of Object.keys(delta)) {
-                if (key === 'content' || key === 'role') continue
-                const val = delta[key]
-                if (typeof val === 'string' && val && !Array.isArray(delta[key]))
-                  { reasoningContent = val; break }
-              }
-            }
-            if (reasoningContent) callbacks.onThinking?.(reasoningContent)
-
-            // ---- 工具调用（流式 delta）----
-            if (delta?.tool_calls) {
-              hasToolCalls = true
-              receivedAny = true
-              for (const tcDelta of delta.tool_calls) {
-                const idx = tcDelta.index ?? 0
-                if (!toolCallMap.has(idx)) toolCallMap.set(idx, { id: '', name: '', args: '' })
-                const entry = toolCallMap.get(idx)!
-                if (tcDelta.id) entry.id = tcDelta.id
-                if (tcDelta.function?.name) entry.name += tcDelta.function.name
-                if (tcDelta.function?.arguments) entry.args += tcDelta.function.arguments
-              }
-              callbacks.onToolCallDelta?.(snapshotToolCalls())
-            }
-
-            // ---- 普通内容 ----
-            const contentDelta = delta?.content ?? ''
-            if (contentDelta) {
-              receivedAny = true
-              fullText += contentDelta
-              callbacks.onChunk(contentDelta)
-            }
-          } catch { /* skip parse errors */ }
-        }
-      }
-
-      // 处理 buffer 中剩余的数据
-      if (buffer.trim().startsWith('data: ')) {
         try {
-          const parsed = JSON.parse(buffer.trim().slice(6))
-          const delta = parsed.choices?.[0]?.delta ?? {}
-          if (delta?.content) {
-            fullText += delta.content
-            callbacks.onChunk(delta.content)
+          const decoder = new TextDecoder()
+          let fullText = ''
+          let buffer = ''
+          let hasToolCalls = false
+          // 累积 tool_calls (index → partial data)
+          const toolCallMap = new Map<number, { id: string; name: string; args: string }>()
+
+          function snapshotToolCalls(): ToolCallData[] {
+            const calls: ToolCallData[] = []
+            for (const [, tc] of toolCallMap) {
+              calls.push({
+                id: tc.id,
+                type: 'function',
+                function: { name: tc.name, arguments: tc.args },
+              })
+            }
+            return calls
           }
-        } catch { /* ignore */ }
-      }
 
-      clearTimeout(timeoutId)
+          function flushToolCalls() {
+            if (toolCallMap.size === 0) return
+            callbacks.onTools?.(snapshotToolCalls(), fullText)
+            toolCallMap.clear()
+          }
 
-      // 如果有工具调用，触发 onTools 并跳过 onDone
-      if (hasToolCalls && toolCallMap.size > 0) {
-        flushToolCalls()
-        return // 不触发 onDone，由外层处理完工具后继续
-      }
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
 
-      callbacks.onDone(fullText)
-      return
-    } catch (err) {
-      clearTimeout(timeoutId)
-      if ((err as Error).name === 'AbortError') {
-        // 区分用户主动取消与全局超时：
-        // - signal 是外部（用户）取消信号；若它已 abort → 用户取消，静默结束（仍以 AbortError 通知）
-        // - 否则为 2 分钟全局超时 → 作为普通错误提示
-        if (signal?.aborted) {
-          const cancelErr = new Error('请求已取消')
-          cancelErr.name = 'AbortError'
-          callbacks.onError(cancelErr)
-        } else {
-          callbacks.onError(new Error('请求超时（已等待 2 分钟）'))
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() ?? ''
+
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed || !trimmed.startsWith('data: ')) continue
+              const data = trimmed.slice(6)
+              if (data === '[DONE]') continue
+
+              try {
+                const parsed = JSON.parse(data)
+                const choice = parsed.choices?.[0]
+                const delta = choice?.delta ?? {}
+
+                // ---- 思考内容 ----
+                let reasoningContent = ''
+                for (const key of ['reasoning_content', 'reasoning', 'think', 'thinking']) {
+                  const val = delta[key]
+                  if (typeof val === 'string' && val) { reasoningContent = val; break }
+                }
+                if (!reasoningContent && delta) {
+                  for (const key of Object.keys(delta)) {
+                    if (key === 'content' || key === 'role') continue
+                    const val = delta[key]
+                    if (typeof val === 'string' && val && !Array.isArray(delta[key]))
+                      { reasoningContent = val; break }
+                  }
+                }
+                if (reasoningContent) callbacks.onThinking?.(reasoningContent)
+
+                // ---- 工具调用（流式 delta）----
+                if (delta?.tool_calls) {
+                  hasToolCalls = true
+                  receivedAny = true
+                  for (const tcDelta of delta.tool_calls) {
+                    const idx = tcDelta.index ?? 0
+                    if (!toolCallMap.has(idx)) toolCallMap.set(idx, { id: '', name: '', args: '' })
+                    const entry = toolCallMap.get(idx)!
+                    if (tcDelta.id) entry.id = tcDelta.id
+                    if (tcDelta.function?.name) entry.name += tcDelta.function.name
+                    if (tcDelta.function?.arguments) entry.args += tcDelta.function.arguments
+                  }
+                  callbacks.onToolCallDelta?.(snapshotToolCalls())
+                }
+
+                // ---- 普通内容 ----
+                const contentDelta = delta?.content ?? ''
+                if (contentDelta) {
+                  receivedAny = true
+                  fullText += contentDelta
+                  callbacks.onChunk(contentDelta)
+                }
+              } catch { /* skip parse errors */ }
+            }
+          }
+
+          // 处理 buffer 中剩余的数据
+          if (buffer.trim().startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(buffer.trim().slice(6))
+              const delta = parsed.choices?.[0]?.delta ?? {}
+              if (delta?.content) {
+                fullText += delta.content
+                callbacks.onChunk(delta.content)
+              }
+            } catch { /* ignore */ }
+          }
+
+          // 如果有工具调用，触发 onTools 并跳过 onDone
+          if (hasToolCalls && toolCallMap.size > 0) {
+            flushToolCalls()
+            return // 不触发 onDone，由外层处理完工具后继续
+          }
+
+          callbacks.onDone(fullText)
+        } catch (cause) {
+          if (cause instanceof RequestError) throw cause
+          // 网络错误 / 流在收到任何内容前中断 → 可重试；
+          // 已经产出过内容则不再重试，避免重复或错乱输出。
+          throw new RequestError('network', (cause as Error)?.message || String(cause), {
+            retryable: !receivedAny,
+            cause,
+          })
         }
-        return
-      }
-      // 网络错误 / 流在收到任何内容前中断 → 可重试
-      if (!receivedAny && attempt < MAX_STREAM_ATTEMPTS) {
-        if (signal?.aborted) {
-          const cancelErr = new Error('请求已取消')
-          cancelErr.name = 'AbortError'
-          callbacks.onError(cancelErr)
-          return
-        }
-        await sleep(RETRY_DELAY_BASE_MS * attempt)
-        continue
-      }
-      callbacks.onError(err as Error)
+      },
+    })
+  } catch (error) {
+    // 流在收到任何内容前中断才可重试；已收到内容则直接失败，避免重复输出。
+    const failure = error instanceof RequestError
+      ? error
+      : new RequestError('network', (error as Error)?.message || String(error), {
+        retryable: false,
+        cause: error,
+      })
+    // 区分用户主动取消与全局超时：
+    // - signal 是外部（用户）取消信号；若它已 abort → 用户取消，静默结束（仍以 AbortError 通知）
+    // - 否则为 2 分钟全局超时 → 作为普通错误提示
+    if (failure.kind === 'cancelled') {
+      const cancelErr = new Error('请求已取消')
+      cancelErr.name = 'AbortError'
+      callbacks.onError(cancelErr)
       return
     }
+    if (failure.kind === 'timeout') {
+      callbacks.onError(new Error('请求超时（已等待 2 分钟）'))
+      return
+    }
+    callbacks.onError(failure)
   }
 }
 
@@ -396,64 +404,51 @@ export async function quickChat(
     response_format: responseFormat?.type,
   })
 
-  const timeoutController = new AbortController()
-  const timeoutId = setTimeout(() => timeoutController.abort(), 60000)
-  const combinedSignal = signal
-    ? combineAbortSignals(signal, timeoutController.signal)
-    : timeoutController.signal
-
   try {
-    let response: Response
-    for (let attempt = 1; ; attempt++) {
-      response = await fetch(url, {
+    return await requestExecutor.run<string>({
+      request: {
+        url,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: combinedSignal,
-      })
-      if (response.ok || attempt >= 2 || !isRetryableStatus(response.status)) break
-      await sleep(RETRY_DELAY_BASE_MS * attempt)
-    }
-    clearTimeout(timeoutId)
+        headers: { Authorization: `Bearer ${config.apiKey}` },
+        body,
+      },
+      transport: fetchTransport,
+      policy: {
+        label: 'ai.quick_chat',
+        timeoutMs: 60000,
+        maxAttempts: 2,
+        backoffBaseMs: RETRY_DELAY_BASE_MS,
+      },
+      signal,
+      consume: async response => {
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '')
+          log.sensitiveDebug('api.quick_chat_error_sensitive.debug', '轻量模型错误响应片段', {
+            ...telemetry,
+            status: response.status,
+            body: errBody.slice(0, 200),
+          })
+          throw new RequestError('http', `API ${response.status}: 请求失败`, {
+            status: response.status,
+            retryable: false,
+          })
+        }
 
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '')
-      log.sensitiveDebug('api.quick_chat_error_sensitive.debug', '轻量模型错误响应片段', {
-        ...telemetry,
-        status: response.status,
-        body: errBody.slice(0, 200),
-      })
-      throw new Error(`API ${response.status}: 请求失败`)
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content ?? ''
-    log.debug('api.quick_chat_completed', '轻量模型请求完成', {
-      ...telemetry,
-      model: quickModel,
-      result_length: content.length,
+        const data = await response.json<{ choices?: { message?: { content?: string } }[] }>()
+        const content = data.choices?.[0]?.message?.content ?? ''
+        log.debug('api.quick_chat_completed', '轻量模型请求完成', {
+          ...telemetry,
+          model: quickModel,
+          result_length: content.length,
+        })
+        return content
+      },
     })
-    return content
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') return ''
-    log.warn('api.quick_chat_failed', '轻量模型请求失败', err, { ...telemetry })
-    throw err
+  } catch (error) {
+    const failure = toRequestError(error, { callerAborted: signal?.aborted === true })
+    // 取消与超时都按「无结果」返回，由调用方决定后续处理
+    if (failure.kind === 'cancelled' || failure.kind === 'timeout') return ''
+    log.warn('api.quick_chat_failed', '轻量模型请求失败', failure, { ...telemetry })
+    throw failure
   }
-}
-
-/**
- * 合并两个 AbortSignal，任一触发则合并信号触发。
- * 用于组合超时信号和用户取消信号。
- */
-function combineAbortSignals(s1: AbortSignal, s2: AbortSignal): AbortSignal {
-  const controller = new AbortController()
-  const onAbort = () => controller.abort()
-  s1.addEventListener('abort', onAbort, { once: true })
-  s2.addEventListener('abort', onAbort, { once: true })
-  // 如果任一已触发，立即同步
-  if (s1.aborted || s2.aborted) controller.abort()
-  return controller.signal
 }

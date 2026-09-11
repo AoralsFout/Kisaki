@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -225,5 +225,21 @@ describe('architecture boundaries', () => {
       expect(source).not.toContain('resolveSecret(')
       expect(source).not.toContain('keychainDelete(')
     }
+  })
+
+  it('keeps outbound request policy in the shared executor', () => {
+    const executor = readFileSync(join(SOURCE_ROOT, 'application', 'net', 'requestExecutor.ts'), 'utf8')
+    expect(executor).toContain('combineAbortSignals')
+    expect(executor).toContain('maxAttempts')
+
+    // 业务层不得再自行实现超时/重试/传输选择
+    for (const relativePath of ['ai/client.ts', 'agent/tools/searchHttp.ts']) {
+      const source = readFileSync(join(SOURCE_ROOT, ...relativePath.split('/')), 'utf8')
+      expect(source).toMatch(/\b(?:requestExecutor|executor)\.run/)
+      expect(source).not.toContain('AbortSignal.timeout')
+      expect(source).not.toMatch(/for \(let attempt/)
+    }
+
+    expect(existsSync(join(SOURCE_ROOT, 'ai', 'apiClient.ts'))).toBe(false)
   })
 })
