@@ -34,7 +34,7 @@ export interface TtsPlaybackRequest {
   text: string
   voiceId: string
   voiceLanguage: string
-  /** Chat replies deduplicate by default; explicit previews may opt out. */
+  /** 聊天回复默认去重；显式试听可选择不去重。 */
   deduplicate?: boolean
 }
 
@@ -50,8 +50,8 @@ type PlaybackListener = (snapshot: TtsPlaybackSnapshot | null) => void
 const TERMINAL_STATES = new Set<TtsPlaybackState>(['played', 'skipped', 'failed', 'cancelled'])
 
 /**
- * Application-level owner of one TTS playback session.
- * Providers produce playback results; callers only request, observe, or cancel a session.
+ * 应用层持有者：管理一次 TTS 播放会话。
+ * provider 负责产出播放结果；调用方只负责请求、观察或取消会话。
  */
 export class TtsPlaybackOrchestrator {
   private active: TtsPlaybackSnapshot | null = null
@@ -81,8 +81,8 @@ export class TtsPlaybackOrchestrator {
   async play(request: TtsPlaybackRequest): Promise<TtsPlaybackResult> {
     const text = request.text.trim()
     const provider = this.engine.provider()
-    // Every accepted playback request owns the single output channel, even if
-    // preflight later decides that the new request must be skipped.
+    // 每个被接受的播放请求都独占这条输出通道，
+    // 即便预检随后判定该请求应当跳过。
     this.cancelActive('superseded')
     if (!text) return this.skip(request, provider, 'empty_text')
     if (request.deduplicate !== false && text === this.lastPlayedText) {
@@ -130,11 +130,11 @@ export class TtsPlaybackOrchestrator {
     }
   }
 
-  /** Cancel active playback. resetDedupe allows an explicitly cancelled line to be retried. */
+  /** 取消当前播放。resetDedupe 让被显式取消的语句可以重播。 */
   cancel(reason = 'cancelled', resetDedupe = false): boolean {
     if (resetDedupe) this.lastPlayedText = ''
     const cancelled = this.cancelActive(reason)
-    // The adapter may still be serving a legacy preview caller during migration.
+    // 迁移期间，适配器可能仍在为旧的试听调用方服务。
     if (!cancelled) this.engine.cancel()
     return cancelled
   }

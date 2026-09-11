@@ -263,7 +263,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-4.5
+  // OpenAI GPT-4.5 系列
   // 128K 上下文
   // ════════════════════════════════════════════════════════
   {
@@ -275,7 +275,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-4o / 4o-mini
+  // OpenAI GPT-4o / 4o-mini 系列
   // 均为 128K 上下文
   // ════════════════════════════════════════════════════════
   {
@@ -294,8 +294,8 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-4-Turbo / GPT-4 (legacy)
-  // GPT-4-Turbo: 128K, GPT-4: 8K
+  // OpenAI GPT-4-Turbo / GPT-4（旧版）
+  // GPT-4-Turbo：128K，GPT-4：8K
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-4-turbo-/i,
@@ -313,7 +313,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
   },
 
   // ════════════════════════════════════════════════════════
-  // OpenAI GPT-3.5 (legacy)
+  // OpenAI GPT-3.5（旧版）
   // ════════════════════════════════════════════════════════
   {
     pattern: /^gpt-3\.5-/i,
@@ -620,7 +620,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
     },
   },
 
-  // Claude catch-all
+  // Claude 兜底匹配
   {
     pattern: /^claude-/i,
     profile: {
@@ -719,7 +719,7 @@ const MODEL_REGISTRY: ModelEntry[] = [
     },
   },
 
-  // Gemini catch-all
+  // Gemini 兜底匹配
   {
     pattern: /^gemini-/i,
     profile: {
@@ -972,10 +972,10 @@ function normalizeModelId(model: string): string {
 // ─── 层级 → 上下文预算上限 ──────────────────────────────
 // 防止单个对话无限吞噬上下文，按模型层级设合理的上限。
 const TIER_CONTEXT_CAP: Record<ModelTier, number> = {
-  'very-high': 120_000,   // o1, GPT-5.4, Claude Opus 4.6, Qwen-Max
-  high: 64_000,            // GPT-4o, GPT-4.1, DeepSeek V4, Claude Sonnet 4.6
-  medium: 32_000,          // GPT-4o-mini, GPT-4-Turbo
-  low: 16_000,             // GPT-3.5, Mistral Small
+  'very-high': 120_000,  // 如 o1、GPT-5.4、Claude Opus 4.6、Qwen-Max
+  high: 64_000,          // 如 GPT-4o、GPT-4.1、DeepSeek V4、Claude Sonnet 4.6
+  medium: 32_000,        // 如 GPT-4o-mini、GPT-4-Turbo
+  low: 16_000,           // 如 GPT-3.5、Mistral Small
 }
 
 /** 每轮对话（一问一答）的粗略 token 消耗 */

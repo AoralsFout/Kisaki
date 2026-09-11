@@ -66,9 +66,9 @@ function assertSupported(value: string, supported: readonly string[], field: str
 }
 
 /**
- * Framework-independent owner of the active character and visual state.
- * Commands update state even when no renderer is attached; a newly attached
- * renderer immediately receives the latest complete snapshot.
+ * 与框架无关的持有者：管理当前角色与视觉状态。
+ * 即使没有渲染器挂载，命令依然会更新状态；新挂载的渲染器
+ * 会立即收到最新的完整快照。
  */
 export class CharacterRuntime {
   private state: CharacterRuntimeSnapshot = {
@@ -117,10 +117,9 @@ export class CharacterRuntime {
   }
 
   /**
-   * Best-effort restore of a persisted look. Unlike setLook (which validates
-   * commands and throws), a value the current renderer cannot render falls back
-   * to the current one, or to the first supported value. Never throws: restoring
-   * a session must not fail because the character has no image for a label.
+   * 尽最大努力恢复已持久化的外观。与 setLook 不同（后者会校验命令并抛错），
+   * 当前渲染器无法呈现的取值会回退到当前值，或回退到第一个受支持的值。
+   * 本方法从不抛错：不能因为角色缺少某个标签对应的图片，就让恢复会话失败。
    */
   restoreLook(change: Partial<CharacterLook>): void {
     if (!this.state.look || !this.state.capabilities) return

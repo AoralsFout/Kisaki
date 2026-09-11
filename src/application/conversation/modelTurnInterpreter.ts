@@ -25,8 +25,8 @@ export interface ModelTurnInterpreterOptions {
 }
 
 /**
- * Converts provider-specific completion shapes into conversation-level outcomes.
- * Native function calls and textual fallback calls leave this boundary identically.
+ * 把各家服务端特有的补全结构转换为对话层面的结果。
+ * 原生 function call 与文本兜底调用经过这道边界后形态完全一致。
  */
 export function interpretModelTurn(
   result: RawModelTurn,

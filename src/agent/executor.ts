@@ -20,7 +20,7 @@ export function toolErrorMessage(error: unknown): string {
     try {
       const json = JSON.stringify(error)
       if (json && json !== '{}') return json
-    } catch { /* ignore */ }
+    } catch { /* 忽略 */ }
     const text = String(error)
     if (text && text !== '[object Object]') return text
   }

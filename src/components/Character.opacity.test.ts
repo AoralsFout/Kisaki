@@ -47,7 +47,7 @@ describe('Character opacity control', () => {
     const renderer = wrapper.get<HTMLElement>('.character-renderer')
     await renderer.trigger('wheel', { deltaY: -1 })
     expect(wrapper.emitted('update:opacity')).toBeUndefined()
-    // The explicit toolbar path uses the shared helper directly, so the setting does not gate it.
+    // 工具栏的显式路径直接调用共享辅助函数，不受该设置开关限制。
     expect(adjustCharacterOpacity(0.8, -1)).toBe(0.9)
     wrapper.unmount()
   })

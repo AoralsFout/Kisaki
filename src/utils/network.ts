@@ -25,7 +25,7 @@ export function useNetworkStatus() {
   }
   mounted++
 
-  onMounted(() => { /* ensure lifecycle */ })
+  onMounted(() => { /* 确保走完生命周期 */ })
 
   onUnmounted(() => {
     mounted--

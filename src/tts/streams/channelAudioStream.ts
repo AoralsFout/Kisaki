@@ -17,8 +17,8 @@ export interface ChannelAudioStreamOptions {
   signal: AbortSignal
   onSynthesisStart?: () => void
   /**
-   * Opens the request-scoped transport and forwards every received frame to `send`.
-   * Resolves when the backend has finished emitting.
+   * 打开请求作用域的传输通道，把收到的每一帧转发给 `send`。
+   * 后端发送完毕后 resolve。
    */
   open(send: (chunk: TtsChunkPayload) => void): Promise<void>
 }
@@ -31,8 +31,8 @@ function decodeChunk(data: string): Uint8Array {
 }
 
 /**
- * Streamed source backed by a request-scoped transport.
- * Frames carry no stream id because each playback owns its own transport.
+ * 由请求作用域传输通道支撑的流式音源。
+ * 因为每次播放独占自己的传输通道，帧里不需要流 id。
  */
 export class ChannelAudioStream implements StreamedAudioSource {
   readonly kind = 'streamed'

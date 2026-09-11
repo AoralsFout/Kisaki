@@ -6,7 +6,7 @@
 export interface CosyVoiceConfig {
   /** 新加坡工作空间，随配置保存 */
   workspaceId?: string
-  /** DashScope API Key */
+  /** DashScope API 密钥 */
   apiKey: string
   /** 语音合成模型 */
   model: CosyVoiceModel

@@ -10,8 +10,8 @@ function clone(snapshot: ModelStreamSnapshot): ModelStreamSnapshot {
 }
 
 /**
- * Incrementally decodes provider content into reasoning and user-visible text.
- * It owns chunk-boundary handling so presentation code never interprets protocol tags.
+ * 把服务端内容增量解码为思考过程与用户可见文本。
+ * 分片边界由它负责处理，展示层因此永远不必解析协议标签。
  */
 export class ModelStreamDecoder {
   private content = ''
@@ -63,7 +63,7 @@ export class ModelStreamDecoder {
   }
 }
 
-/** Parse a completed say tool payload. Malformed input is treated as empty. */
+/** 解析完整的 say 工具载荷；输入格式非法时按空对象处理。 */
 export function parseSayArgs(argStr: string): { voice?: string; display?: string } {
   try {
     const value = JSON.parse(argStr || '{}')
@@ -73,11 +73,11 @@ export function parseSayArgs(argStr: string): { voice?: string; display?: string
         display: typeof value.display === 'string' ? value.display.trim() : undefined,
       }
     }
-  } catch { /* malformed provider output */ }
+  } catch { /* 服务端输出格式非法 */ }
   return {}
 }
 
-/** Decode the fields already present in a possibly incomplete streamed say payload. */
+/** 解码流式 say 载荷中已经到达的字段：载荷可能尚未接收完整。 */
 export function extractPartialSayArgs(argStr: string): { voice?: string; display?: string } {
   return {
     voice: extractPartialStringField(argStr, 'voice'),

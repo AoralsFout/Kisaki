@@ -78,12 +78,12 @@ let unlistenNavigate: (() => void) | undefined
 const closeError = ref(false)
 async function installCloseGuard() {
   unlistenClose = await selfWindow.value?.onCloseRequested(async event => {
-    // Always prevent the helper's implicit destroy(), which needs a broader permission.
+    // 一律拦截辅助逻辑的隐式 destroy()，它需要更宽的权限。
     event.preventDefault()
     if (!await leaveDialog.value?.ask(editor.value)) return
     closeError.value = false
     try {
-      // Removing the listener lets the existing close permission take the normal native path.
+      // 先摘掉监听器，让已有的关闭权限走正常原生路径。
       await unlistenClose?.()
       unlistenClose = undefined
       window.removeEventListener('beforeunload', beforeUnload)

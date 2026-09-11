@@ -100,7 +100,7 @@ export class MediaSourceStreamSink implements AudioSink {
 
     // 取消时立即暂停播放（后端任务会因读超时或服务端结束而自行收尾）
     const onAbort = () => {
-      try { audio.pause() } catch { /* ignore */ }
+      try { audio.pause() } catch { /* 忽略 */ }
     }
     signal.addEventListener('abort', onAbort, { once: true })
 
@@ -183,7 +183,7 @@ export class MediaSourceStreamSink implements AudioSink {
         ])
         if (streamError) throw new Error(streamError)
         if (mediaSource.readyState === 'open') {
-          try { mediaSource.endOfStream() } catch { /* ignore */ }
+          try { mediaSource.endOfStream() } catch { /* 忽略 */ }
         }
         await waitForPlaybackEnd(audio, signal)
       }

@@ -25,7 +25,7 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('SessionStore')
 
-/** UI-only projection. Only ConversationSessionSnapshot is persisted. */
+/** 仅用于 UI 的投影。真正持久化的只有 ConversationSessionSnapshot。 */
 export interface Session {
   id: string
   name: string
@@ -151,8 +151,8 @@ export const useSessionStore = defineStore('session', () => {
     try {
       await service.initialize('新对话')
     } catch (error) {
-      // Browser previews have no Tauri command channel. Keep a volatile v2 document;
-      // never read or rewrite the legacy session formats.
+      // 浏览器预览没有 Tauri 命令通道。此处保留易失的 v2 文档；
+      // 绝不读取或改写旧版会话格式。
       log.warn('session.persistence_unavailable', '会话文件接口不可用，使用内存会话', error)
       persistError.value = true
       service = new SessionApplicationService({
@@ -529,7 +529,7 @@ export const useSessionStore = defineStore('session', () => {
     try {
       await runCommand(() => requireService().clearConversation(sessionId))
       await invoke('agent_checkpoint_clear_session', { sessionId }).catch(() => {})
-    } catch { /* projection already exposes the persistence error */ }
+    } catch { /* 投影层已暴露持久化错误 */ }
   }
 
   async function rollbackTo(messageId: string): Promise<boolean> {

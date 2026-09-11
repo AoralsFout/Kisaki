@@ -290,7 +290,7 @@ const server = http.createServer(async (req, res) => {
           if (fs.existsSync(metaPath)) {
             try {
               meta = { ...meta, ...JSON.parse(fs.readFileSync(metaPath, 'utf-8')) }
-            } catch { /* ignore */ }
+            } catch { /* 忽略 */ }
           }
           if (!meta.size) {
             try { meta.size = fs.statSync(path.join(UPLOAD_DIR, f)).size } catch { meta.size = 0 }

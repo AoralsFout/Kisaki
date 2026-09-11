@@ -27,7 +27,7 @@ import { useCharacterController } from '../../character/controller'
 import { useChatStore } from '../chat'
 import { useSessionStore } from '../session'
 
-/** Mirrors characters/kisaki/character.json: one image per (pose, costume), several emotions each. */
+/** 对应 characters/kisaki/character.json：每个（姿势, 服装）一张图，每张图含多个情绪。 */
 const kisaki = {
   id: 'kisaki',
   name: 'Kisaki',
@@ -44,7 +44,7 @@ const kisaki = {
   ],
 }
 
-/** Mirrors characters/miku/character.json: live2d, no illustration labels at all. */
+/** 对应 characters/miku/character.json：live2d 角色，完全没有立绘标签。 */
 const miku = {
   id: 'miku',
   name: '初音未来',

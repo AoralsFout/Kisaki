@@ -5,7 +5,7 @@ import { createLogger } from '../utils/logger'
 
 const log = createLogger('TtsOrchestrator')
 
-/** Infrastructure composition for the application-level playback owner. */
+/** 为应用层播放调度方组装基础设施实现。 */
 export const ttsPlaybackOrchestrator = new TtsPlaybackOrchestrator({
   isEnabled: () => ttsEngine.isEnabled(),
   provider: () => getTtsProvider(),

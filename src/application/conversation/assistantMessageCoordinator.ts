@@ -7,7 +7,7 @@ export interface CommitAssistantMessage {
   thinking?: string
   voice?: string
   source: AssistantMessageSource
-  /** Present only when the voice has completed TTS-safe preparation. */
+  /** 仅当语音已完成 TTS 安全预处理时才存在。 */
   playbackText?: string
 }
 
@@ -32,8 +32,8 @@ export interface AssistantMessageCommitPort {
 type AssistantMessageListener = (event: AssistantMessageEvent) => void
 
 /**
- * Defines the transaction boundary between conversation execution and session state.
- * Side effects subscribe only after the commit port accepts the canonical write.
+ * 划定对话执行与会话状态之间的事务边界。
+ * 只有提交端口接受这次权威写入之后，副作用才会被订阅。
  */
 export class AssistantMessageCoordinator {
   private readonly listeners = new Set<AssistantMessageListener>()

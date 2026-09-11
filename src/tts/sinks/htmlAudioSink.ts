@@ -29,7 +29,7 @@ export function playBlobWithHtmlAudio(
       try {
         audio?.pause()
         if (audio) audio.src = ''
-      } catch { /* ignore */ }
+      } catch { /* 忽略 */ }
       finish()
     }
 
@@ -55,7 +55,7 @@ export function playBlobWithHtmlAudio(
   })
 }
 
-/** Default sink: buffered audio through the platform HTMLAudioElement. */
+/** 默认播放器：用平台原生 HTMLAudioElement 播放缓冲音频。 */
 export class HtmlAudioSink implements AudioSink {
   readonly id = 'html-audio'
 

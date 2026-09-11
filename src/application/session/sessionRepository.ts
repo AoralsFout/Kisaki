@@ -1,6 +1,6 @@
 import type { SessionDocument } from '../../domain/conversation/events'
 
-/** Persistence port. Implementations may use Tauri, memory, or test fixtures. */
+/** 持久化端口。实现方可以是 Tauri、内存或测试夹具。 */
 export interface SessionRepository {
   load(): Promise<SessionDocument | null>
   save(document: SessionDocument): Promise<void>

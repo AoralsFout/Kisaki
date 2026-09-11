@@ -30,7 +30,7 @@ export function getUiLanguage(): string {
   try {
     const v = localStorage.getItem(STORAGE_UI_LANGUAGE)
     if (v && SUPPORTED.includes(v)) return v
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
   return DEFAULT_UI_LANGUAGE
 }
 
@@ -64,7 +64,7 @@ try {
 /** 设置界面语言：持久化 + 立即生效 + 广播到其它窗口 */
 export function setUiLanguage(lang: string) {
   if (!SUPPORTED.includes(lang)) return
-  try { localStorage.setItem(STORAGE_UI_LANGUAGE, lang) } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_UI_LANGUAGE, lang) } catch { /* 忽略 */ }
   i18n.global.locale.value = lang as any
   langChannel?.postMessage({ lang })
 }

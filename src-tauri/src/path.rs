@@ -82,7 +82,7 @@ pub(crate) fn sessions_v2_file() -> PathBuf {
         .join("sessions-v2.json")
 }
 
-/// Removed v1 storage location. Used only by explicit privacy deletion.
+/// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
 pub(crate) fn legacy_sessions_file() -> PathBuf {
     SESSIONS_DIR
         .get()

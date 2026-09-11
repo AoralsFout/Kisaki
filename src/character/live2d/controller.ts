@@ -91,7 +91,7 @@ export function useLive2DController() {
   async function speakVoice(url: string, signal: AbortSignal): Promise<void> {
     const s = sprite
     if (!s) return
-    const onAbort = () => { try { s.stopVoice() } catch { /* ignore */ } }
+    const onAbort = () => { try { s.stopVoice() } catch { /* 忽略 */ } }
     signal.addEventListener('abort', onAbort, { once: true })
     try {
       await s.playVoice({ voicePath: url })

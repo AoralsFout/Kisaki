@@ -133,7 +133,7 @@ function parseTextToolCalls(
         name,
         arguments: JSON.parse(argsStr),
       })
-    } catch { /* skip */ }
+    } catch { /* 跳过 */ }
     // 跳过整个调用，避免把参数内部的内容误当新调用
     re.lastIndex = i + 1
   }

@@ -25,7 +25,7 @@ export function setAutoExecFiles(value: boolean): void {
   try {
     localStorage.setItem(STORAGE_AUTO_EXEC_FILES, value ? '1' : '0')
   } catch {
-    /* ignore */
+    /* 忽略 */
   }
 }
 
@@ -47,7 +47,7 @@ export function setCommandEnabled(value: boolean): void {
   try {
     localStorage.setItem(STORAGE_COMMAND_ENABLED, value ? '1' : '0')
   } catch {
-    /* ignore */
+    /* 忽略 */
   }
 }
 
@@ -67,6 +67,6 @@ export function setScreenCaptureEnabled(value: boolean): void {
   try {
     localStorage.setItem(STORAGE_SCREEN_CAPTURE_ENABLED, value ? '1' : '0')
   } catch {
-    /* ignore */
+    /* 忽略 */
   }
 }

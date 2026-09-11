@@ -25,7 +25,7 @@ export interface ToolCallBatch {
   assistantText?: string
   sayCall: ProtocolToolCall | null
   actions: NormalizedToolInvocation[]
-  /** Calls that must be committed on the assistant protocol message. */
+  /** 必须随 assistant 协议消息一并提交的调用。 */
   protocolCalls: ProtocolToolCall[]
 }
 
@@ -64,7 +64,7 @@ function invocation(protocolCall: ProtocolToolCall, identity: ToolCallIdentity):
   }
 }
 
-/** Normalize provider-native function calls, retaining only the first say call. */
+/** 归一化服务端原生 function call，仅保留第一个 say 调用。 */
 export function normalizeNativeToolCalls(
   calls: readonly ProtocolToolCall[],
   identity: ToolCallIdentity,
@@ -88,7 +88,7 @@ export function normalizeNativeToolCalls(
   }
 }
 
-/** Normalize already-parsed text fallback calls into the same protocol batch. */
+/** 把已解析的文本兜底调用归一化进同一个协议批次。 */
 export function normalizeTextToolCalls(
   calls: readonly ToolCall[],
   identity: ToolCallIdentity,
@@ -132,7 +132,7 @@ function invalidArgumentsResult(invocation: NormalizedToolInvocation): ToolResul
   }
 }
 
-/** Execute a normalized action batch sequentially through one tool pipeline. */
+/** 让归一化后的动作批次串行经过同一条工具流水线执行。 */
 export async function executeToolCallBatch(
   actions: readonly NormalizedToolInvocation[],
   execute: (call: ToolCall) => Promise<ToolResult>,

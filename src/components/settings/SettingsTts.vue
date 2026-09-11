@@ -29,7 +29,7 @@ const characterStore = useCharacterStore()
 
 const provider = ref<TtsProvider>(getTtsProvider())
 
-// CosyVoice state
+// CosyVoice 状态
 const cvConfig = ref<CosyVoiceConfig>({ ...DEFAULT_COSYVOICE_CONFIG })
 const cvForm = useEditableForm(() => cvConfig.value, saveCosyVoiceConfigSecure)
 const { saved: cvSaved, saving: cvSaving, error: cvSaveError } = cvForm
@@ -37,7 +37,7 @@ const voices = ref<VoiceInfo[]>([])
 const loadingVoices = ref(false)
 const voiceError = ref('')
 
-// GPT-SoVITS state
+// GPT-SoVITS 状态
 const gsConfig = ref<GptSoVitsConfig>({ ...DEFAULT_GPTSOVITS_CONFIG })
 const gsForm = useEditableForm(() => gsConfig.value, saveGptSoVitsConfig)
 const { saved: gsSaved, saving: gsSaving, error: gsSaveError } = gsForm
@@ -276,7 +276,7 @@ async function handleGsSave() { return gsForm.save() }
 </template>
 
 <style scoped>
-/* ── Provider none hint ── */
+/* ── 未选择 provider 提示 ── */
 .provider-none-hint {
   display: flex;
   align-items: center;
@@ -290,7 +290,7 @@ async function handleGsSave() { return gsForm.save() }
   margin-top: 8px;
 }
 
-/* ── Form row ── */
+/* ── 表单行 ── */
 .form-row {
   display: flex;
   gap: 12px;
@@ -307,7 +307,7 @@ async function handleGsSave() { return gsForm.save() }
   min-width: 0;
 }
 
-/* ── Text button ── */
+/* ── 文字按钮 ── */
 .btn-text {
   background: none;
   border: none;
@@ -324,7 +324,7 @@ async function handleGsSave() { return gsForm.save() }
   color: #9c7cff;
 }
 
-/* ── Reference audio hint ── */
+/* ── 参考音频提示 ── */
 .ref-audio-hint {
   display: flex;
   align-items: center;

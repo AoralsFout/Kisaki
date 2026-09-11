@@ -126,7 +126,7 @@ async function search(
   }
 }
 
-// ─── Tavily ────────────────────────────────────────────
+// ─── Tavily 搜索 ──────────────────────────────────────
 // 专为 LLM 优化，POST JSON，返回带正文摘要的结果。CORS 友好。
 async function searchTavily(
   config: SearchConfig,
@@ -156,7 +156,7 @@ async function searchTavily(
   }))
 }
 
-// ─── Brave Search ──────────────────────────────────────
+// ─── Brave 搜索 ───────────────────────────────────────
 // GET + X-Subscription-Token。浏览器 CORS 受限，需 Phase 3 Rust 转发后才稳定可用。
 async function searchBrave(
   config: SearchConfig,

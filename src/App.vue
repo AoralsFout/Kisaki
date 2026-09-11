@@ -78,7 +78,7 @@ function loadCharacterTopRatio(): number {
   try {
     const stored = Number(localStorage.getItem(STORAGE_CHARACTER_CANVAS_TOP))
     if (Number.isFinite(stored)) return clampCharacterTopRatio(stored)
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
   return 0
 }
 
@@ -88,7 +88,7 @@ const characterCanvasStyle = computed(() => ({
 }))
 
 watch(characterTopRatio, value => {
-  try { localStorage.setItem(STORAGE_CHARACTER_CANVAS_TOP, String(value)) } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_CHARACTER_CANVAS_TOP, String(value)) } catch { /* 忽略 */ }
 })
 
 async function startWindowDrag(event: MouseEvent) {
@@ -299,7 +299,7 @@ function finishOnboarding() {
   try {
     localStorage.setItem(STORAGE_ONBOARDING_DONE, '1')
     localStorage.removeItem(STORAGE_ONBOARDING_DISMISSED)
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
   onboardingDone.value = true
   onboardingDismissed.value = false
   showOnboarding.value = false
@@ -307,7 +307,7 @@ function finishOnboarding() {
 
 /** 「稍后再说」：仅搁置引导，不写完成标记；配置待办保留在主窗口 */
 function laterOnboarding() {
-  try { localStorage.setItem(STORAGE_ONBOARDING_DISMISSED, '1') } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_ONBOARDING_DISMISSED, '1') } catch { /* 忽略 */ }
   onboardingDismissed.value = true
   showOnboarding.value = false
 }

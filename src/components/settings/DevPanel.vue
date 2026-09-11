@@ -55,7 +55,7 @@ const currentEmotion = ref('')
 const currentCostume = ref('')
 const currentScreenPose = ref<PoseKey>('full-center')
 
-// Live2D manifest
+// Live2D 清单
 const l2dManifest = ref<Live2DManifest | null>(null)
 const currentExpression = ref('')
 

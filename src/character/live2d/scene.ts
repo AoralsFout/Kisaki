@@ -98,7 +98,7 @@ export function useLive2DScene(
     manifest = mf
 
     if (sprite) {
-      try { if (app) app.stage.removeChild(sprite); sprite.destroy() } catch { /* ignore */ }
+      try { if (app) app.stage.removeChild(sprite); sprite.destroy() } catch { /* 忽略 */ }
       sprite = null
     }
 
@@ -123,7 +123,7 @@ export function useLive2DScene(
         resolution: Math.max(window.devicePixelRatio || 1, 1),
       })
     }
-    if (disposed || token !== loadToken) { try { s.destroy() } catch { /* ignore */ } return }
+    if (disposed || token !== loadToken) { try { s.destroy() } catch { /* 忽略 */ } return }
 
     app.stage.addChild(s)
     applyTransform()
@@ -168,8 +168,8 @@ export function useLive2DScene(
     resizeObserver?.disconnect()
     resizeObserver = null
     options.onDispose?.()
-    try { sprite?.destroy() } catch { /* ignore */ }
-    try { app?.destroy() } catch { /* ignore */ }
+    try { sprite?.destroy() } catch { /* 忽略 */ }
+    try { app?.destroy() } catch { /* 忽略 */ }
     sprite = null
     app = null
   })

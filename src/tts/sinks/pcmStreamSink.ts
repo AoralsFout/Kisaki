@@ -49,7 +49,7 @@ export class PcmStreamPlayer {
     this.nextStartTime = this.ctx.currentTime
     this.donePromise = new Promise<void>((resolve) => { this.resolveDone = resolve })
     // 自动播放策略可能令 ctx 处于 suspended，主动恢复
-    this.ctx.resume().catch(() => { /* ignore */ })
+    this.ctx.resume().catch(() => { /* 忽略 */ })
   }
 
   /** 追加一段网络字节（base64 解码后的原始字节） */
@@ -73,7 +73,7 @@ export class PcmStreamPlayer {
 
     // ── 拼接残留字节，按帧边界切分 ──
     const buf = concatBytes(this.leftover, data)
-    const frameBytes = this.numChannels * 2 // 16-bit PCM
+    const frameBytes = this.numChannels * 2 // 16 位 PCM
     const usable = buf.length - (buf.length % frameBytes)
     if (usable <= 0) {
       this.leftover = buf
@@ -144,19 +144,19 @@ export class PcmStreamPlayer {
     if (this.disposed) return
     this.disposed = true
     for (const src of this.activeSources) {
-      try { src.stop() } catch { /* ignore */ }
-      try { src.disconnect() } catch { /* ignore */ }
+      try { src.stop() } catch { /* 忽略 */ }
+      try { src.disconnect() } catch { /* 忽略 */ }
     }
     this.activeSources.clear()
-    this.ctx.close().catch(() => { /* ignore */ })
+    this.ctx.close().catch(() => { /* 忽略 */ })
     this.resolveDone?.()
     this.resolveDone = null
   }
 }
 
 /**
- * Consumes WAV-header-then-PCM chunks and schedules them through Web Audio.
- * Used when the provider streams raw PCM instead of a container format.
+ * 消费「WAV 头 + 裸 PCM」形式的分片，并通过 Web Audio 排程播放。
+ * 用于服务端流式返回裸 PCM、而非容器格式的场景。
  */
 export class PcmStreamSink implements AudioSink {
   readonly id = 'pcm-stream'

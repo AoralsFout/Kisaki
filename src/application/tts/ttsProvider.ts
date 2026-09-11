@@ -6,7 +6,7 @@ export interface BufferedAudioSource {
   mimeType: string
 }
 
-/** Wire format of a streamed source; decides which sink can consume it. */
+/** 流式音源的传输格式，决定哪个播放器能消费它。 */
 export type StreamedAudioFormat = 'mp3-chunks' | 'wav-pcm-chunks'
 
 export interface AudioStreamObserver {
@@ -16,16 +16,15 @@ export interface AudioStreamObserver {
 }
 
 /**
- * Audio that arrives incrementally. `pipe` starts production and forwards every
- * chunk to the observer until the producer ends or fails; it resolves once the
- * producer has stopped and therefore never rejects for producer-side errors.
+ * 增量到达的音频。`pipe` 启动生产并把每个分片转发给 observer，直到生产方结束或失败；
+ * 它在生产方停止后 resolve，因此不会因生产方错误而 reject。
  */
 export interface StreamedAudioSource {
   kind: 'streamed'
   format: StreamedAudioFormat
   mimeType: string
   pipe(observer: AudioStreamObserver): Promise<void>
-  /** Stop producing and release transport resources. */
+  /** 停止生产并释放传输资源。 */
   cancel(): void
 }
 
@@ -50,10 +49,10 @@ export type TtsStreamResult =
   | { status: 'skipped'; reason: string }
   | { status: 'cancelled' }
 
-/** A provider owns configuration/protocol differences and only produces audio. */
+/** provider 只负责产出音频，并自行消化配置与协议差异。 */
 export interface TtsProvider {
   readonly id: 'cosyvoice' | 'gptsovits'
   synthesize(request: TtsSynthesisRequest, context: TtsSynthesisContext): Promise<TtsSynthesisResult>
-  /** Providers without an incremental protocol omit this and fall back to `synthesize`. */
+  /** 不支持增量协议的 provider 不实现该方法，回退到 `synthesize`。 */
   stream?(request: TtsSynthesisRequest, context: TtsSynthesisContext): Promise<TtsStreamResult>
 }

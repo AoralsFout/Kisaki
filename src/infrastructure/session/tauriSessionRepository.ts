@@ -3,7 +3,7 @@ import type { SessionRepository } from '../../application/session/sessionReposit
 import type { SessionDocument } from '../../domain/conversation/events'
 import { SessionCollection } from '../../domain/conversation/sessionCollection'
 
-/** Persists only the strict v2 session document. Legacy files are intentionally ignored. */
+/** 只持久化严格的 v2 会话文档；旧版文件有意忽略。 */
 export class TauriSessionRepository implements SessionRepository {
   async load(): Promise<SessionDocument | null> {
     const raw = await invoke<string | null>('sessions_v2_load')

@@ -301,7 +301,7 @@ export async function chat(
                 fullText += contentDelta
                 callbacks.onChunk(contentDelta)
               }
-            } catch { /* skip parse errors */ }
+            } catch { /* 跳过解析错误 */ }
           }
 
           // 如果有工具调用，触发 onTools 并跳过 onDone

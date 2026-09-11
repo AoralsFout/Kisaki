@@ -37,7 +37,7 @@ export interface ToolExecutionCoordinatorOptions {
   onSessionApproval?: () => void
 }
 
-/** Executes every tool through one ordered policy pipeline. */
+/** 让所有工具都经过同一条有序的策略流水线执行。 */
 export class ToolExecutionCoordinator {
   constructor(private readonly options: ToolExecutionCoordinatorOptions) {}
 

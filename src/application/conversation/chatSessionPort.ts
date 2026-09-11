@@ -2,8 +2,8 @@ import type { ConversationImage, RecordedToolCall } from '../../domain/conversat
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 
 /**
- * Transitional boundary used while conversation execution moves out of ChatStore.
- * It keeps the chat workflow independent from Pinia's SessionStore module.
+ * 过渡期边界：对话执行逻辑正逐步移出 ChatStore。
+ * 它让聊天流程不再依赖 Pinia 的 SessionStore 模块。
  */
 export interface ChatSessionPort {
   currentSessionId(): string

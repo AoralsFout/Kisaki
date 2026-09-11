@@ -33,7 +33,7 @@ export interface Tool<TOutput extends string | ToolOutput = string> {
    * 'both'（默认）两者皆可。registry.getDefinitions 按当前角色 render 过滤。
    */
   appliesTo?: 'illustration' | 'live2d' | 'both'
-  /** Execution requirements consumed by ToolExecutionCoordinator and registry. */
+  /** 执行要求，由 ToolExecutionCoordinator 与 registry 消费。 */
   policy?: ToolPolicyDescriptor
 }
 

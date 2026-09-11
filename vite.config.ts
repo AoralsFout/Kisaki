@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { readFileSync } from "fs";
 
-// @ts-expect-error process is a nodejs global
+// @ts-expect-error process 是 Node.js 全局变量
 const host = process.env.TAURI_DEV_HOST;
 
 // 从 package.json 读取版本号，注入为编译时常量
@@ -16,11 +16,11 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+  // 以下 Vite 选项专为 Tauri 开发定制，只在 `tauri dev` 或 `tauri build` 时生效
   //
-  // 1. prevent Vite from obscuring rust errors
+  // 1. 避免 Vite 清屏把 Rust 编译错误盖掉
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // 2. Tauri 要求端口固定，被占用时直接失败而不是自动换端口
   server: {
     port: 1420,
     strictPort: true,
@@ -33,7 +33,7 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
+      // 3. 让 Vite 忽略对 `src-tauri` 的监听
       ignored: ["**/src-tauri/**"],
     },
   },

@@ -212,7 +212,7 @@ function scrollToBottom() {
 }
 
 function formatTime(ts: string): string {
-  // ISO → HH:MM:SS.mmm
+  // ISO 时间 → HH:MM:SS.mmm
   const d = new Date(ts)
   const h = String(d.getHours()).padStart(2, '0')
   const m = String(d.getMinutes()).padStart(2, '0')

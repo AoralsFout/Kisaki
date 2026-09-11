@@ -5,7 +5,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Owns the session list and current-session selection for the new schema. */
+/** 持有新 schema 下的会话列表与当前会话选择。 */
 export class SessionCollection {
   private readonly sessions = new Map<string, SessionAggregate>()
   private currentId: string

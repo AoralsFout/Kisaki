@@ -1,6 +1,6 @@
 /**
- * Conversation domain events are the canonical persisted history.
- * UI messages and model protocol messages are projections of this timeline.
+ * 对话领域事件是权威的持久化历史。
+ * UI 消息与模型协议消息都只是这条时间线的投影。
  */
 
 export interface ConversationImage {
@@ -73,7 +73,7 @@ export type ConversationEvent =
   | AssistantMessageRevised
   | ContextCompacted
 
-/** Visual state of a character: what a checkpoint records and what a session remembers. */
+/** 角色的视觉状态：检查点记录的内容，也是会话记住的内容。 */
 export interface CharacterLookSnapshot {
   emotion: string
   stance: string
@@ -104,9 +104,9 @@ export interface ConversationSessionSnapshot {
   characterId: string | null
   characterLocked: boolean
   /**
-   * Look this session is left in. Restored on load so a session keeps its own
-   * emotion/position instead of falling back to the character defaults.
-   * null for a session that has not stored one yet.
+   * 该会话离开时所处的外观。载入时恢复，使会话保留自己的
+   * 情绪与位置，而不是回退到角色默认值。
+   * 尚未存储过外观的会话为 null。
    */
   character: CharacterLookSnapshot | null
   workspaceGrantId: string | null

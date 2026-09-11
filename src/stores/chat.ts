@@ -171,7 +171,7 @@ const detachedSessionPort: ChatSessionPort = {
 
 let chatSessionPort: ChatSessionPort = detachedSessionPort
 
-/** Installed by the composition owner; ChatStore never imports SessionStore directly. */
+/** 由组合根注入；ChatStore 从不直接 import SessionStore。 */
 export function setChatSessionPort(port: ChatSessionPort | null): void {
   chatSessionPort = port ?? detachedSessionPort
 }
@@ -857,7 +857,7 @@ export const useChatStore = defineStore('chat', () => {
       hasWorkspace: Boolean(chatSessionPort.workspaceGrantId()),
     })
 
-    /** Execute native and text-fallback calls through the same normalized batch path. */
+    /** 让原生调用与文本兜底调用走同一条归一化批次路径。 */
     const executeActionBatch = async (batch: ToolCallBatch) => {
       if (batch.actions.length > 0) conversationCoordinator.transition(requestId, 'executing-tools')
       const toolImages: ImageAttachment[] = []

@@ -6,7 +6,7 @@ export interface EditablePage {
   save: () => Promise<boolean>
 }
 
-/** Only advance the saved baseline for the exact snapshot that was persisted. */
+/** 只有确实完成持久化的那份快照，才推进已保存基线。 */
 export function useEditableForm<T>(read: () => T, persist: (value: T) => Promise<void> | void) {
   const baseline = ref(JSON.stringify(read()))
   const saving = ref(false)

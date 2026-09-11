@@ -51,7 +51,7 @@ function readState(key: string): PersistedWindowState | null {
     ) {
       return { x: s.x, y: s.y, width: s.width, height: s.height }
     }
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
   return null
 }
 
@@ -59,7 +59,7 @@ function readState(key: string): PersistedWindowState | null {
 function writeState(key: string, state: PersistedWindowState): void {
   try {
     localStorage.setItem(KEY_PREFIX + key, JSON.stringify(state))
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
 }
 
 /**
@@ -135,7 +135,7 @@ export async function initWindowState(
       const pos = await win.outerPosition()
       const size = await win.outerSize()
       writeState(key, { x: pos.x, y: pos.y, width: size.width, height: size.height })
-    } catch { /* ignore */ }
+    } catch { /* 忽略 */ }
   }
 
   let timer: ReturnType<typeof setTimeout> | null = null

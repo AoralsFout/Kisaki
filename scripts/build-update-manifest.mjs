@@ -83,7 +83,7 @@ function priority(name, os) {
 export function buildManifest(tag, repo, dirs, pubDate = new Date().toISOString()) {
   if (!tag || !repo) throw new Error('tag 与 repo 均为必填')
   const version = tag.replace(/^v/, '')
-  const chosen = {} // platformKey -> { signature, url, prio }
+  const chosen = {} // platformKey 映射到 { signature, url, prio }
 
   for (const dir of dirs) {
     const { os, arch: artifactArch } = platformFromDir(dir)

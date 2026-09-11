@@ -12,7 +12,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
-// ---- CosyVoice TTS ----
+// ---- CosyVoice 语音合成 ----
 
 /// TTS 返回结果（批处理模式）
 #[derive(Serialize)]

@@ -30,8 +30,8 @@ export interface CreateSessionCommand {
 }
 
 /**
- * Coordinates session-list commands and persistence.
- * Presentation code observes snapshots; it never mutates aggregates directly.
+ * 协调会话列表相关的命令与持久化。
+ * 展示层只观察快照，从不直接修改聚合。
  */
 export class SessionApplicationService {
   private collection: SessionCollection | null = null
@@ -109,7 +109,7 @@ export class SessionApplicationService {
     })
   }
 
-  /** Remembers the look the session is left in, so switching back restores it. */
+  /** 记住会话离开时的外观，切回该会话时即可恢复。 */
   async setCharacterState(sessionId: string, character: CharacterLookSnapshot | null): Promise<void> {
     await this.commit(() => {
       this.requireCollection().get(sessionId).setCharacterState(character, this.dependencies.now())

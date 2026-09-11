@@ -2,7 +2,7 @@
 export interface AIConfig {
   /** API 地址（兼容 OpenAI 格式） */
   baseURL: string
-  /** API Key */
+  /** API 密钥 */
   apiKey: string
   /** 模型名称 */
   model: string

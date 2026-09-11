@@ -48,7 +48,7 @@ function getMasterSecret(): Uint8Array {
   let raw = ''
   try {
     raw = localStorage.getItem(STORAGE_MASTER_KEY) || ''
-  } catch { /* ignore */ }
+  } catch { /* 忽略 */ }
   if (!raw) {
     const secret = crypto.getRandomValues(new Uint8Array(32))
     raw = bytesToBase64(secret)

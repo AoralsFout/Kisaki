@@ -5,7 +5,7 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-/** Volatile fallback for browser previews where the Tauri persistence API is unavailable. */
+/** 浏览器预览下 Tauri 持久化 API 不可用时的易失兜底实现。 */
 export class MemorySessionRepository implements SessionRepository {
   private document: SessionDocument | null = null
 

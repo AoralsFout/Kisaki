@@ -233,7 +233,7 @@ export default {
       providerGptSoVits: 'ローカル GPT-SoVITS',
       providerHint: 'CosyVoice はインターネットと Alibaba Cloud API が必要です。GPT-SoVITS はローカルサーバーが必要です',
       providerNoneHint: '音声合成は無効です。AI の返信はテキストのみで表示されます。',
-      // CosyVoice
+      // CosyVoice 文案
       apiKeyLabel: 'API Key（DashScope）',
       apiKeyHint: 'Alibaba Cloud Bailian プラットフォームの API Key。音声複製と音声合成に使用します',
       modelLabel: '音声合成モデル',
@@ -248,7 +248,7 @@ export default {
       fetching: '照会中...',
       noVoices: 'カスタム音色がありません。まず Alibaba Cloud Bailian プラットフォームで音色を作成してください',
       voiceMeta: '作成日 {date} · {status}',
-      // GPT-SoVITS
+      // GPT-SoVITS 文案
       gptsovitsApiUrl: 'API サーバー URL',
       gptsovitsApiUrlHint: 'GPT-SoVITS API サーバーの URL、既定 http://127.0.0.1:9880',
       gptsovitsAdvanced: '詳細パラメータ',

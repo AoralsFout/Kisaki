@@ -50,8 +50,8 @@ export function isConversationRunUsingTools(state: ConversationRunState): boolea
 }
 
 /**
- * Framework-independent owner of one conversation request lifecycle.
- * Its AbortSignal is an effect of the cancelled state, not a parallel source of truth.
+ * 与框架无关的持有者：管理一次对话请求的生命周期。
+ * 它的 AbortSignal 只是「已取消」状态的一个结果，而非另一份并行的真相来源。
  */
 export class ConversationRun {
   private readonly controller = new AbortController()
@@ -109,8 +109,8 @@ export class ConversationRun {
   }
 
   cancel(reason = 'cancelled'): ConversationRunSnapshot {
-    // Completion does not make background effects immortal. Aborting the signal is
-    // still useful when a newer request supersedes voice preparation after commit.
+    // 回合结束不代表后台副作用就该放任不管：提交之后若有更新的请求顶替本次语音准备，
+    // 中止信号依然必要。
     if (!this.controller.signal.aborted) this.controller.abort(reason)
     if (TERMINAL_STATES.has(this.value.state)) return this.snapshot()
     return this.transition('cancelled', reason)
@@ -171,8 +171,8 @@ export type ConversationLoopResult =
   | { status: 'turn-limit'; turnsUsed: number }
 
 /**
- * Owns which run may project into the shared UI. Starting a run supersedes the
- * previous one, and all state changes are addressed by run id to reject stale work.
+ * 决定哪个 run 可以向共享 UI 投影。启动新 run 会顶替上一个，
+ * 所有状态变更都以 run id 寻址，从而丢弃过期的工作。
  */
 export class ConversationCoordinator {
   private active: ConversationRun | null = null
@@ -225,7 +225,7 @@ export class ConversationCoordinator {
     return this.active?.id === id && isConversationRunActive(this.active.snapshot().state)
   }
 
-  /** Persist the canonical tool-call fact before exposing it to the live model context. */
+  /** 先把工具调用这一权威事实持久化，再暴露给实时模型上下文。 */
   async commitToolCalls(id: string, input: CommitConversationToolCalls): Promise<void> {
     const ports = this.requireToolTurnPorts()
     this.assertMayProject(id)
@@ -244,7 +244,7 @@ export class ConversationCoordinator {
     ports.modelContext.addToolCalls(input.calls, input.visibleText)
   }
 
-  /** Persist a tool result before making it available to the next model turn. */
+  /** 先持久化工具结果，再交给下一轮模型使用。 */
   async commitToolResult(id: string, input: CommitConversationToolResult): Promise<void> {
     const ports = this.requireToolTurnPorts()
     this.assertMayProject(id)
@@ -254,7 +254,7 @@ export class ConversationCoordinator {
     ports.modelContext.addToolResult(input.callId, input.content)
   }
 
-  /** Images are ephemeral model context; the tool result itself remains the persisted fact. */
+  /** 图片只是临时的模型上下文；持久化的事实仍是工具结果本身。 */
   appendToolImages(
     id: string,
     toolCallIds: string,
@@ -265,8 +265,8 @@ export class ConversationCoordinator {
   }
 
   /**
-   * A provider text fallback is shaped as a synthetic say exchange in model context.
-   * It is deliberately not persisted as a real provider tool call.
+   * 服务端的文本兜底在模型上下文里被塑造成一次合成的 say 交互。
+   * 它有意不被持久化为真正的服务端工具调用。
    */
   appendSyntheticToolExchange(
     id: string,
@@ -280,8 +280,8 @@ export class ConversationCoordinator {
   }
 
   /**
-   * Owns bounded model-turn iteration and cancellation/error classification.
-   * Turn handlers describe only whether the domain workflow needs another model turn.
+   * 负责有上限的模型轮次迭代，以及取消与错误的归类。
+   * 轮次处理器只需说明领域流程是否还需要下一轮模型调用。
    */
   async runTurns(
     id: string,
@@ -335,6 +335,6 @@ function recordedArguments(raw: string): Record<string, unknown> {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>
     }
-  } catch { /* preserve malformed provider output below */ }
+  } catch { /* 保留下方格式异常的服务端输出 */ }
   return { _raw: raw, _invalid: true }
 }

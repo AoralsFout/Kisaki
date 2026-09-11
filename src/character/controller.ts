@@ -1,6 +1,6 @@
 /**
- * Illustration renderer adapter.
- * CharacterRuntime owns all visual state; this controller owns only the selected bitmap.
+ * 立绘渲染适配器。
+ * 全部视觉状态由 CharacterRuntime 持有；本控制器只负责当前选中的位图。
  */
 import { computed, ref } from 'vue'
 import { pickRandomImage } from './config'

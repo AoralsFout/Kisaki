@@ -165,7 +165,7 @@ function assertSnapshotShape(value: unknown): asserts value is ConversationSessi
   ) {
     throw new Error('Session bindings are invalid')
   }
-  // Absent on documents written before sessions remembered a look; read as null.
+  // 在会话尚未记住外观之前写入的文档没有该字段；按 null 读取。
   if (value.character !== undefined && value.character !== null) {
     assertCharacterLookShape(value.character, 'Session character look')
   }
@@ -186,8 +186,8 @@ function assertSnapshotShape(value: unknown): asserts value is ConversationSessi
 }
 
 /**
- * The only mutable owner of one conversation session.
- * Consumers receive cloned snapshots or pure projections, never live arrays.
+ * 一个对话会话唯一可变状态的持有者。
+ * 消费方拿到的是克隆后的快照或纯投影，绝不会是活数组。
  */
 export class SessionAggregate {
   private state: ConversationSessionSnapshot
@@ -234,13 +234,13 @@ export class SessionAggregate {
     if (this.state.characterLocked && characterId !== this.state.characterId) {
       throw new Error('Cannot change character after the conversation has started')
     }
-    // A different character must not inherit the previous one's look labels.
+    // 换角色时不得沿用上一个角色的外观标签。
     if (characterId !== this.state.characterId) this.state.character = null
     this.state.characterId = characterId
     this.state.updatedAt = now
   }
 
-  /** Remembers the look this session is left in, so loading it restores that state. */
+  /** 记住会话离开时的外观，载入该会话时即可恢复。 */
   setCharacterState(character: CharacterLookSnapshot | null, now: number): void {
     if (character !== null) assertCharacterLookShape(character, 'Session character look')
     this.state.character = clone(character)

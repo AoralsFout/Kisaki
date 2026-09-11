@@ -1,5 +1,5 @@
 /**
- * English
+ * 英文
  */
 export default {
   safety: {
@@ -233,7 +233,7 @@ export default {
       providerGptSoVits: 'Local GPT-SoVITS',
       providerHint: 'CosyVoice requires internet and Alibaba Cloud API; GPT-SoVITS requires a local server running',
       providerNoneHint: 'Voice synthesis disabled; AI replies will be shown as text only.',
-      // CosyVoice
+      // CosyVoice 文案
       apiKeyLabel: 'API Key (DashScope)',
       apiKeyHint: 'API Key from Alibaba Cloud Bailian, used for voice cloning and synthesis',
       modelLabel: 'Synthesis model',
@@ -248,7 +248,7 @@ export default {
       fetching: 'Querying...',
       noVoices: 'No custom voices yet. Please create one on the Alibaba Cloud Bailian platform first',
       voiceMeta: 'Created {date} · {status}',
-      // GPT-SoVITS
+      // GPT-SoVITS 文案
       gptsovitsApiUrl: 'API Server URL',
       gptsovitsApiUrlHint: 'GPT-SoVITS API server URL, default http://127.0.0.1:9880',
       gptsovitsAdvanced: 'Advanced parameters',
@@ -262,7 +262,7 @@ export default {
       preflightMissingVoice: 'The current character has no voice ID configured.',
       preflightMissingApiUrl: 'GPT-SoVITS has no API server URL configured.',
       preflightMissingRefAudio: 'The current character has no GPT-SoVITS reference audio.',
-      // Common
+      // 通用
       displayLang: 'Display language',
       displayLangHint: 'AI reply text will be translated and shown in the language you choose. Character voice is always synthesized in its native language.',
     },

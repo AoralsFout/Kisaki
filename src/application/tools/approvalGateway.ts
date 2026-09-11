@@ -38,8 +38,8 @@ interface PendingApproval {
 }
 
 /**
- * Owns the complete lifecycle of one user approval request. It is deliberately
- * framework-independent: UI state is a projection exposed through subscribe().
+ * 负责一次用户审批请求的完整生命周期。它有意与框架解耦：
+ * UI 状态只是通过 subscribe() 暴露出来的投影。
  */
 export class ApprovalGateway {
   private pending: PendingApproval | null = null

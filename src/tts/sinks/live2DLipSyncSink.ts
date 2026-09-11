@@ -8,8 +8,8 @@ const log = createLogger('TtsLipSyncSink')
 export type VoicePlayer = (audioUrl: string, signal: AbortSignal) => Promise<void>
 
 /**
- * Plays buffered audio through the Live2D voice player so the model lip-syncs.
- * A missing or failing player falls back to another sink.
+ * 通过 Live2D 语音播放器播放缓冲音频，让模型同步口型。
+ * 播放器缺失或播放失败时，降级到其他播放器。
  */
 export class Live2DLipSyncSink implements AudioSink {
   readonly id = 'live2d-lip-sync'

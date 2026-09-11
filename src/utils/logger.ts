@@ -204,7 +204,7 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
     const entry = event.data as LogEntry
     if (entry?.schemaVersion === LOG_SCHEMA_VERSION && entry.timestamp && entry.level && entry.namespace && entry.event) {
       // 通知 UI 订阅者
-      try { cb(entry) } catch { /* ignore */ }
+      try { cb(entry) } catch { /* 忽略 */ }
 
       // 注意：不在此处写文件——源窗口已经在 log() 中写过了。
       // 若接收方也写，会导致 JSONL 中每条跨窗口日志重复。
@@ -369,9 +369,9 @@ function publishInternalDiagnostic(
   }
   const safeEntry = serializeEntry(entry)
   pushToBuffer(safeEntry)
-  subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* ignore */ } })
+  subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
   ensureBroadcastChannel()
-  try { bc?.postMessage(safeEntry) } catch { /* ignore */ }
+  try { bc?.postMessage(safeEntry) } catch { /* 忽略 */ }
 }
 
 /** Windows 盘符路径和 UNC 路径。空格允许出现在路径中；宁可多遮盖少量文案，也不泄漏路径尾部。 */
@@ -387,7 +387,7 @@ export function isSensitiveDiagnosticsEnabled(): boolean {
 }
 
 export function setSensitiveDiagnosticsEnabled(enabled: boolean): void {
-  try { localStorage.setItem(STORAGE_SENSITIVE_DIAGNOSTICS, enabled ? '1' : '0') } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_SENSITIVE_DIAGNOSTICS, enabled ? '1' : '0') } catch { /* 忽略 */ }
 }
 
 export function getLogRetentionDays(): number {
@@ -401,7 +401,7 @@ export function getLogRetentionDays(): number {
 
 export async function setLogRetentionDays(days: number): Promise<void> {
   const normalized = Math.min(365, Math.max(1, Math.round(days)))
-  try { localStorage.setItem(STORAGE_LOG_RETENTION_DAYS, String(normalized)) } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_LOG_RETENTION_DAYS, String(normalized)) } catch { /* 忽略 */ }
   if (!isTauri()) return
   try {
     const { invoke } = await import('@tauri-apps/api/core')
@@ -668,13 +668,13 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     pushToBuffer(safeEntry)
 
     // 通知 UI 订阅者
-    subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* ignore */ } })
+    subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
 
     // 跨窗口广播（让日志窗口实时看到其它窗口的日志）
     ensureBroadcastChannel()
     try {
       bc?.postMessage(safeEntry)
-    } catch { /* ignore */ }
+    } catch { /* 忽略 */ }
 
     // 文件持久化（全部级别写入文件，2 秒节流批量写入）
     enqueueFileWrite(safeEntry)

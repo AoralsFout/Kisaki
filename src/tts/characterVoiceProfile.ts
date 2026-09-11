@@ -7,7 +7,7 @@ export interface GptSoVitsCharacterParams {
   textLang: string
 }
 
-/** Transitional adapter: resolve character-scoped voice data outside providers and TtsEngine. */
+/** 过渡期适配器：在 provider 与 TtsEngine 之外解析角色级语音数据。 */
 export async function loadGptSoVitsCharacterParams(): Promise<GptSoVitsCharacterParams> {
   try {
     const { getActivePinia } = await import('pinia')
@@ -25,7 +25,7 @@ export async function loadGptSoVitsCharacterParams(): Promise<GptSoVitsCharacter
       }
     }
   } catch {
-    // Pinia is unavailable in isolated provider tests and browser previews.
+    // 在独立的 provider 测试与浏览器预览中，Pinia 不可用。
   }
   return { refAudioPath: '', promptText: '', promptLang: '', textLang: DEFAULT_VOICE_LANGUAGE }
 }

@@ -233,7 +233,7 @@ export default {
       providerGptSoVits: '本地 GPT-SoVITS',
       providerHint: 'CosyVoice 需要聯網和阿里雲 API；GPT-SoVITS 需在本機啟動服務端',
       providerNoneHint: '語音合成已停用，AI 回覆將僅以文字顯示。',
-      // CosyVoice
+      // CosyVoice 文案
       apiKeyLabel: 'API Key（DashScope）',
       apiKeyHint: '阿里雲百鍊平台的 API Key，用於聲音複刻與語音合成',
       modelLabel: '語音合成模型',
@@ -248,7 +248,7 @@ export default {
       fetching: '查詢中...',
       noVoices: '尚無自訂音色，請先在阿里雲百鍊平台建立音色',
       voiceMeta: '建立於 {date} · {status}',
-      // GPT-SoVITS
+      // GPT-SoVITS 文案
       gptsovitsApiUrl: 'API 服務地址',
       gptsovitsApiUrlHint: 'GPT-SoVITS API 服務地址，預設 http://127.0.0.1:9880',
       gptsovitsAdvanced: '進階參數',

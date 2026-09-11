@@ -46,8 +46,8 @@ describe('CharacterRuntime', () => {
     runtime.selectCharacter(character())
     runtime.setLook({ emotion: 'happy', stance: 'wave', screenPose: 'left' })
 
-    // A Live2D character renders no illustration labels at all ('' defaults), and a
-    // label from another character may not exist here.
+    // Live2D 角色完全不渲染立绘标签（默认即空串），
+    // 而来自其他角色的标签在这里可能根本不存在。
     runtime.restoreLook({ emotion: '', stance: 'unknown', costume: 'formal', screenPose: 'nowhere' })
 
     expect(runtime.snapshot().look).toEqual({
