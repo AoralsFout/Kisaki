@@ -21,6 +21,7 @@ import type { CharacterToolContext } from '../../agent/registry'
 import type { ConversationImage } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
+  ConversationApprovalListener,
   ConversationCharacterSource,
   ConversationCharacterState,
   ConversationClock,
@@ -341,7 +342,9 @@ export class FakeToolCatalog implements ConversationToolCatalog {
 }
 
 export class FakeToolExecutionPort implements ConversationToolExecutionPort {
-  readonly gateway = new ApprovalGateway()
+  /** 网关默认沿用 5 分钟超时；要观察超时路径的测试可以传一个更短的。 */
+  constructor(readonly gateway: ApprovalGateway = new ApprovalGateway()) {}
+
   readonly executed: ToolCall[] = []
   readonly checkpointed: string[] = []
   /** 每次策略调用收到的执行上下文；用于断言「本会话自动允许」是否生效。 */
@@ -353,6 +356,11 @@ export class FakeToolExecutionPort implements ConversationToolExecutionPort {
   /** 最近一次 create 绑定的回合钩子。 */
   hooks: ConversationToolRoundHooks | null = null
   sessionApprovals = 0
+
+  /** 与真适配器同形：把网关的待批准请求折叠成「待决与否」的布尔量。 */
+  subscribeApproval(listener: ConversationApprovalListener): () => void {
+    return this.gateway.subscribe(request => listener(request !== null))
+  }
 
   create(round: ConversationToolRoundHooks): ToolExecutionCoordinator {
     this.hooks = round

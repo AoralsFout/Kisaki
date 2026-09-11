@@ -254,12 +254,22 @@ export interface ConversationToolRoundHooks {
   onSessionApproval?(): void
 }
 
+/** 批准待决状态的变化：`true` 表示有请求正在等用户决定。 */
+export type ConversationApprovalListener = (pending: boolean) => void
+
 /**
  * 工具执行端口：复用既有的 ToolExecutionCoordinator 与它的策略。
  * 批准网关、执行策略与执行器由组合根持有；检查点回调按回合绑定，故每回合构造一次。
  */
 export interface ConversationToolExecutionPort {
   create(round: ConversationToolRoundHooks): ToolExecutionCoordinator
+  /**
+   * 订阅「是否有请求在等用户批准」，订阅时立刻回调一次当前状态。
+   *
+   * 只传布尔量：待批准请求的值归 ApprovalGateway.subscribe 那条专属投影来源，
+   * 在这里再收一份就是第二份真相。回合只借它把回合计驱动到 awaiting-approval。
+   */
+  subscribeApproval(listener: ConversationApprovalListener): () => void
 }
 
 /** 一次语音播放请求。requestId 只用于遥测关联，寻址由实现自己负责。 */
@@ -523,6 +533,9 @@ export class ConversationSession {
       })
     })
     this.coordinator.subscribe(() => this.publish())
+    // 等待批准要在投影里看得见：有待决请求进 awaiting-approval，待决清除再回到
+    // executing-tools。驱动条件与原先 store 的批准订阅逐条相同。
+    this.ports.toolExecution.subscribeApproval(pending => this.projectApproval(pending))
   }
 
   /** 送出一条输入并等它走到终态；结果由 SendResult 变体表达，不抛业务异常。 */
@@ -1302,6 +1315,22 @@ export class ConversationSession {
 
   // ── 投影 ──────────────────────────────────────────────
 
+  /**
+   * 批准网关的待决状态驱动回合计状态机。
+   *
+   * 以 coordinator 当前的回合计为目标，因此已经终结或被顶替的回合不会被迟到的
+   * 网关事件拉回非终态（transition 按 id + 非终态判定，失败即沉默）。
+   */
+  private projectApproval(pending: boolean): void {
+    const active = this.coordinator.current()
+    if (!active) return
+    if (pending) {
+      this.coordinator.transition(active.id, 'awaiting-approval')
+    } else if (active.state === 'awaiting-approval') {
+      this.coordinator.transition(active.id, 'executing-tools')
+    }
+  }
+
   /** 只在仍拥有投影时写气泡与输入态：被顶替的回合不得覆盖新回合的界面状态。 */
   private renderBubble(round: Round, text: string, typing: boolean): void {
     if (!this.ownsRound(round)) return
@@ -1384,7 +1413,7 @@ const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, read
     'clearConversation',
   ],
   tools: ['definitions', 'extractTextToolCalls', 'stripTextToolCalls'],
-  toolExecution: ['create'],
+  toolExecution: ['create', 'subscribeApproval'],
   voice: ['play', 'cancel'],
   clock: ['now', 'monotonic', 'nextId'],
   network: ['isOnline'],
