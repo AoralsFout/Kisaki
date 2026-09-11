@@ -124,6 +124,22 @@ export class ConversationRun {
 
 type ConversationCoordinatorListener = (snapshot: ConversationRunSnapshot | null) => void
 
+/**
+ * 回合已失去投影权。
+ *
+ * 它不是第二个取消信号：判据完全来自回合计状态机（已被顶替或已进终态），
+ * 调用方应当读状态而不是比对异常名字来决定「这是取消还是失败」。
+ */
+export class ConversationRunOwnershipError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly state: ConversationRunState,
+  ) {
+    super(`Conversation run cannot project tool context: ${runId} (state=${state})`)
+    this.name = 'ConversationRunOwnershipError'
+  }
+}
+
 export interface ConversationToolTurnPorts {
   session: {
     recordToolCalls(step: {
@@ -300,11 +316,8 @@ export class ConversationCoordinator {
         if (!this.mayProject(id) || this.active.signal.aborted) return { status: 'cancelled', turnsUsed }
         if (directive === 'complete') return { status: 'completed', turnsUsed }
       } catch (error) {
-        if (
-          !this.mayProject(id)
-          || this.active.signal.aborted
-          || (error instanceof Error && error.name === 'AbortError')
-        ) return { status: 'cancelled', turnsUsed }
+        // 取消只由状态机判定：不再比对异常名字，避免出现第二个取消真相来源。
+        if (!this.mayProject(id) || this.active.signal.aborted) return { status: 'cancelled', turnsUsed }
         return { status: 'failed', turnsUsed, error }
       }
     }
@@ -323,9 +336,7 @@ export class ConversationCoordinator {
 
   private assertMayProject(id: string): void {
     if (this.mayProject(id)) return
-    const error = new Error(`Conversation run cannot project tool context: ${id}`)
-    error.name = 'AbortError'
-    throw error
+    throw new ConversationRunOwnershipError(id, this.current()?.state ?? 'idle')
   }
 }
 

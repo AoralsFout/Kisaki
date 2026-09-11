@@ -8,17 +8,35 @@
  * 无框架依赖：不得 import Vue、Pinia 或 Tauri API，由架构边界测试约束。
  * 缺装配必须显式失败：构造时逐个校验端口，少一个就抛错，而不是静默空转。
  */
+import { MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES } from '../../ai/images'
+import { MAX_TOOL_TURNS } from '../../ai/modelCapabilities'
+import { SAY_TOOL_DEF, SAY_TOOL_NAME } from '../../agent/tools/say'
+import { createLogger } from '../../utils/logger'
+import { AssistantMessageCoordinator } from './assistantMessageCoordinator'
+import { ConversationCoordinator, isConversationRunActive, type ConversationRun } from './conversationRun'
+import { ModelStreamDecoder, extractPartialSayArgs, parseSayArgs } from './modelStreamDecoder'
+import { interpretModelTurn } from './modelTurnInterpreter'
+import { executeToolCallBatch, type ProtocolToolCall, type ToolCallBatch } from './toolCallBatch'
+import { resolveContentFallback, resolveSayContent, type TranslateFn } from './roundText'
+import { collectToolImages, isToolError, isToolSkipped, resultStatus, toolImageLimitNotice } from './toolOutcome'
+
 import type { ContextStats } from '../../ai/context'
-import type { ChatMessage as ConversationModelMessage, ToolCallData } from '../../ai/types'
-import type { ToolCall, ToolDefinition } from '../../agent/types'
+import type {
+  ChatMessage as ConversationModelMessage,
+  ImageAttachment,
+  ToolCallData,
+} from '../../ai/types'
+import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
 import type { CharacterData } from '../../character/loader'
 import type { ConversationImage } from '../../domain/conversation/events'
 import type { CharacterCapabilities } from '../character/characterRuntime'
 import type { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import type { ChatSessionPort } from './chatSessionPort'
-import type { ConversationRunState, ConversationToolTurnPorts } from './conversationRun'
+import type { ConversationRunState, ConversationToolTurnPorts, ConversationTurnDirective } from './conversationRun'
 import type { RawModelTurn } from './modelTurnInterpreter'
+
+const log = createLogger('ConversationSession')
 
 // ─── 对外缝 ────────────────────────────────────────────
 
@@ -87,6 +105,15 @@ export interface ConversationProjection {
   toolActivities: readonly ConversationToolActivity[]
   /** 上下文统计。 */
   context: ContextStats
+  /**
+   * 本会话内已允许自动执行后续文件操作（用户在批准卡上选「本会话允许」产生）。
+   *
+   * 它是回合内由用户决策产生的策略状态，不是纯界面开关，也不能只留在回合内部：
+   * 诊断面板读它（`CurrentContextInspection.runtime.autoExecSession`），而对外只有
+   * 投影这一条可观察通道。用户主动停止一次回复不重置；清空对话、切换会话、切换
+   * 角色、替换模型上下文都重置。
+   */
+  autoExecSession: boolean
 }
 
 export type ConversationProjectionListener = (projection: ConversationProjection) => void
@@ -322,6 +349,94 @@ export interface ConversationSessionPorts {
   texts: ConversationTexts
 }
 
+// ─── 回合内部状态 ──────────────────────────────────────
+
+/** 终态分类：写进遥测，也是状态机落到哪个终态的判据。 */
+type TerminalReason = 'completed' | 'cancelled' | 'error' | 'empty_response' | 'tool_turn_limit'
+
+/** 完成分级：取消 > 硬错误 > 有工具失败但仍有输出 > 全部成功。 */
+type CompletionStatus = 'success' | 'partial_success' | 'failed' | 'cancelled'
+
+/** 用户主动停止一次回复的取消原因；它不改变「本会话自动允许」的授予。 */
+const USER_CANCELLED_REASON = 'user-cancelled'
+
+/** 顶替上一轮后台语音准备时记录的原因。 */
+const VOICE_SUPERSEDED_REASON = 'voice-preparation-superseded'
+
+/** 会话保存失败的用户可见说明（`app.bubble.error` 的插值参数）。 */
+const SESSION_SAVE_FAILED = '会话保存失败'
+
+/**
+ * 未授权工作区时追加的 system 提示。
+ * 它只进本次请求的请求消息，不进模型上下文，也不面向用户显示，因此不走文案端口。
+ */
+const WORKSPACE_UNAVAILABLE_HINT =
+  '当前会话尚未授权工作区，文件与命令工具不可用。若任务需要访问文件，请明确提示用户点击界面下方的「工作区」按钮选择目录。'
+
+/** say 让位的三条说明：互斥，按「失败 > 图片 > 用户跳过」的优先级取第一条。 */
+const SAY_DEFERRED_TOOL_FAILED = '未说出：需要先读取并处理刚才的工具失败结果，再生成最终答复。'
+const SAY_DEFERRED_IMAGES = '未说出：需要先观察刚读取的图片，再生成最终答复。'
+const SAY_DEFERRED_SKIPPED = '未说出：需要先读取并处理用户跳过该操作的结果，再生成最终答复。'
+
+/** say 回执的固定内容；与恢复历史时重放的合成结果逐字相同。 */
+const SAY_ACKNOWLEDGED = '已说出'
+
+/**
+ * 一次回合的全部可变状态。
+ *
+ * 它取代原先由 5 个嵌套闭包共享改写的 11 个局部变量：这些绑定随回合对象一起被丢弃，
+ * 下一个回合不会读到上一个回合的残留。
+ */
+interface Round {
+  requestId: string
+  /** 回合开始时的会话 id；后台语音据此判断自己是否已经换了会话。 */
+  sessionId: string
+  run: ConversationRun
+  /** 后台语音准备的中止信号：与回合信号分开，取消语音不必中止整轮。 */
+  voice: AbortController
+  turnsUsed: number
+  modelCallCount: number
+  toolCallCount: number
+  toolFailureCount: number
+  fallbackUsed: boolean
+  ttsRequested: boolean
+  deliveredFinal: boolean
+}
+
+/** 一次回合内不变的环境：工具清单、检查点与已绑定检查点的工具执行器。 */
+interface RoundEnvironment {
+  round: Round
+  tools: ToolDefinition[]
+  sessionId: string
+  checkpointId: string
+  hasWorkspace: boolean
+  toolExecution: ToolExecutionCoordinator
+}
+
+/**
+ * 命名计时器：把回合内的耗时写进 trace 日志。
+ * 走时钟端口而不是 performance.now，测试不依赖真实时间。
+ */
+function roundTimer(clock: ConversationClock, label: string) {
+  const start = clock.monotonic()
+  let stopped = false
+  return {
+    stop: (suffix?: string): number => {
+      if (stopped) return 0
+      stopped = true
+      const elapsed = Math.round(clock.monotonic() - start)
+      const tag = suffix ? ` ${suffix}` : ''
+      log.trace('conversation_session.timer.trace', `[⏱Timer] ${label}${tag}: ${elapsed}ms`, { label, elapsed })
+      return elapsed
+    },
+    lap: (tag: string): number => {
+      const elapsed = Math.round(clock.monotonic() - start)
+      log.trace('conversation_session.timer.trace', `[⏱Lap] ${label} — ${tag}: ${elapsed}ms`, { label, tag, elapsed })
+      return elapsed
+    },
+  }
+}
+
 // ─── 编排器 ────────────────────────────────────────────
 
 /**
@@ -331,38 +446,891 @@ export interface ConversationSessionPorts {
  * 外部只能通过 send / cancel / projection / subscribe 观察它。
  */
 export class ConversationSession {
+  private readonly ports: ConversationSessionPorts
+  private readonly maxToolTurns: number
+  private readonly imageLimits: { maxCount: number; maxBytes: number }
+  private readonly coordinator: ConversationCoordinator
+  private readonly assistantMessages: AssistantMessageCoordinator
+  private readonly listeners = new Set<ConversationProjectionListener>()
+
+  /** 最近一次启动的回合；它决定谁有权写共享投影。 */
+  private latestRound: Round | null = null
+  /** 正在后台准备语音的那个回合；没有准备中的语音时为 null。 */
+  private voiceRound: Round | null = null
+
+  /** 会话内自动允许后续文件操作；由批准决策授予，会话被替换时撤销。 */
+  private autoExecSession = false
+
+  /** 回合派生的界面状态：回合结束后保留最后一帧，直到下一个回合或 cancel 清空。 */
+  private bubbleText = ''
+  private typing = false
+  private thinking = ''
+  private activities: ConversationToolActivity[] = []
+
   /**
    * 端口齐备性在构造时校验：缺一个就抛错，取代今天的静默空实现。
-   * 端口的持有与回合编排由 #16 落地。
    */
   constructor(ports: ConversationSessionPorts, options: ConversationSessionOptions = {}) {
     assertSessionPorts(ports)
     assertPositiveInteger(options.maxToolTurns, 'maxToolTurns')
     assertPositiveInteger(options.maxImageCount, 'maxImageCount')
     assertPositiveInteger(options.maxTotalImageBytes, 'maxTotalImageBytes')
+
+    this.ports = ports
+    this.maxToolTurns = options.maxToolTurns ?? MAX_TOOL_TURNS
+    this.imageLimits = {
+      maxCount: options.maxImageCount ?? MAX_IMAGE_COUNT,
+      maxBytes: options.maxTotalImageBytes ?? MAX_TOTAL_IMAGE_BYTES,
+    }
+    // 工具回合的提交端口与模型上下文的追加侧在形状上本就同源，
+    // 因此回合可以把工具调用/结果原样交给状态机，由它保证「先落库、再投影」。
+    this.coordinator = new ConversationCoordinator(() => this.ports.clock.now(), {
+      session: {
+        recordToolCalls: input => this.ports.session.recordToolCalls(input),
+        recordToolResult: input => this.ports.session.recordToolResult(input),
+      },
+      modelContext: {
+        addToolCalls: (calls, visibleText) => this.ports.context.addToolCalls(calls, visibleText),
+        addToolResult: (callId, content) => this.ports.context.addToolResult(callId, content),
+        addToolImages: (toolCallIds, images) => this.ports.context.addToolImages(toolCallIds, images),
+      },
+    })
+    this.assistantMessages = new AssistantMessageCoordinator({
+      // 会话已经换走时，这次写入不再属于当前对话：不提交、不 revise。
+      commit: async message => {
+        if (this.ports.session.currentSessionId() !== message.sessionId) return null
+        return this.ports.session.commitAssistantMessage(message)
+      },
+      revise: async revision => {
+        if (this.ports.session.currentSessionId() !== revision.sessionId) return false
+        return this.ports.session.reviseAssistantMessage(revision)
+      },
+    })
+    // 语音是回复提交之后的独立副作用：只订阅已提交事件，不参与回合完成条件。
+    this.assistantMessages.subscribe(event => {
+      if (!event.playbackText?.trim()) return
+      const character = this.ports.character.state()
+      log.sensitiveDebug('conversation_session.voice_text_sensitive.debug', '送入 TTS 的语音文本', {
+        requestId: event.requestId,
+        voice_lang: character.voiceLanguage || '?',
+        voice_text: event.playbackText,
+      })
+      this.ports.voice.play({
+        requestId: event.requestId,
+        text: event.playbackText,
+        voiceId: character.voice || '',
+        voiceLanguage: character.voiceLanguage,
+      })
+    })
+    this.coordinator.subscribe(() => this.publish())
   }
 
   /** 送出一条输入并等它走到终态；结果由 SendResult 变体表达，不抛业务异常。 */
-  async send(_input: ConversationInput): Promise<SendResult> {
-    throw new Error('ConversationSession 的回合编排尚未实现')
+  async send(input: ConversationInput): Promise<SendResult> {
+    const rawText = input.text ?? ''
+    const images = input.images ?? []
+
+    // ── 守卫条件检查 ────────────────────────────────────
+    // 前两条守卫在任何副作用之前返回；下面两条在线/配置守卫则在
+    // 回合已建、语音已取消、活动列表已重置之后才失败，顺序不可调换。
+    if (this.isRoundActive()) {
+      log.warn('conversation_session.reentrant.warn', `正在处理中，忽略重复请求 (text=${rawText.length} 字符)`)
+      return { status: 'failed', requestId: null, turnsUsed: 0, reason: 'reentrant' }
+    }
+    if ((!rawText || !rawText.trim()) && images.length === 0) {
+      log.warn('conversation_session.empty_input.warn', '收到空消息，忽略')
+      return { status: 'failed', requestId: null, turnsUsed: 0, reason: 'empty-input' }
+    }
+    // 新消息到来时先结束上一轮的后台语音准备，避免旧语音覆盖新回复。
+    this.stopVoicePreparation(VOICE_SUPERSEDED_REASON)
+
+    const requestId = this.ports.clock.nextId('request')
+    const run = this.coordinator.start(requestId)
+    const round: Round = {
+      requestId,
+      sessionId: this.ports.session.currentSessionId(),
+      run,
+      voice: new AbortController(),
+      turnsUsed: 0,
+      modelCallCount: 0,
+      toolCallCount: 0,
+      toolFailureCount: 0,
+      fallbackUsed: false,
+      ttsRequested: false,
+      deliveredFinal: false,
+    }
+    this.latestRound = round
+    // 本次请求独立展示工具活动，等首个工具调用再点亮。
+    this.activities = []
+    this.publish()
+
+    // 用户发送新消息时，取消正在播放的语音（不涉及回合）。
+    this.ports.voice.cancel('new-message')
+
+    const userText = rawText.trim() || this.ports.texts.imageOnlyPrompt()
+
+    if (!this.ports.network.isOnline()) {
+      log.warn('conversation_session.network_unavailable.warn', '网络不可用，无法发送消息')
+      this.setBubbleText(this.ports.texts.networkOff())
+      this.setTyping(false)
+      this.coordinator.transition(requestId, 'failed', 'network-unavailable')
+      return { status: 'failed', requestId, turnsUsed: 0, reason: 'network-unavailable' }
+    }
+
+    const configuration = this.ports.model.configuration()
+    if (!configuration.ready) {
+      log.warn('conversation_session.invalid_configuration.warn', 'API 未配置')
+      this.setBubbleText(this.ports.texts.apiNotConfigured())
+      this.setTyping(false)
+      this.coordinator.transition(requestId, 'failed', 'invalid-configuration')
+      return { status: 'failed', requestId, turnsUsed: 0, reason: 'invalid-configuration' }
+    }
+
+    const requestStartedAt = this.ports.clock.monotonic()
+    log.info('chat.request_started', '对话请求开始', {
+      requestId,
+      textLength: rawText.length,
+      imageCount: images.length,
+      model: configuration.model,
+    })
+
+    // ── 先提交会话事实，再更新当前 UI 投影 ───────────────
+    const userMsgId = this.ports.clock.nextId('user-message')
+    const accepted = await this.ports.session.acceptUserMessage({
+      sessionId: round.sessionId,
+      messageId: userMsgId,
+      text: userText,
+      images: [...images],
+    })
+    if (!accepted) {
+      // 此处 UI 与模型上下文都还没写，无需回滚。
+      this.coordinator.transition(requestId, 'failed', 'session-persistence-failed')
+      this.setBubbleText(this.ports.texts.error(SESSION_SAVE_FAILED))
+      this.setTyping(false)
+      return { status: 'failed', requestId, turnsUsed: 0, reason: 'session-persistence-failed' }
+    }
+    this.ports.context.addUserMessage(userText, images)
+    this.publish()
+
+    // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）。
+    // 它必须早于工具清单装配：检查点记录的是回合真正开始前的角色外观。
+    let checkpointId: string
+    try {
+      checkpointId = await this.ports.session.beginCheckpoint(round.sessionId, userMsgId)
+    } catch (error) {
+      log.error('chat.session_checkpoint_failed', '会话检查点保存失败', error, { requestId })
+      this.coordinator.transition(requestId, 'failed', 'session-persistence-failed')
+      this.setBubbleText(this.ports.texts.error(SESSION_SAVE_FAILED))
+      this.setTyping(false)
+      return { status: 'failed', requestId, turnsUsed: 0, reason: 'session-persistence-failed' }
+    }
+
+    // ── 准备气泡 ────────────────────────────────────────
+    this.bubbleText = ''
+    this.typing = false
+    this.thinking = ''
+    this.publish()
+
+    // ── 收集工具定义（含 say 说话工具）────────────────────
+    const character = this.ports.character.state()
+    const hasWorkspace = Boolean(this.ports.session.workspaceGrantId())
+    const tools = [
+      ...this.ports.tools.definitions({
+        data: character.data,
+        capabilities: character.capabilities,
+        hasWorkspace,
+      }),
+      SAY_TOOL_DEF,
+    ]
+
+    // 检查点按回合绑定：文件备份走同一份会话事实端口。
+    const toolExecution = this.ports.toolExecution.create({
+      checkpoint: async path => {
+        await this.ports.session.backupFile(round.sessionId, checkpointId, path)
+        await this.ports.session.markCheckpointFiles(round.sessionId, checkpointId)
+      },
+      onCheckpointError: (error, path) => {
+        log.warn('conversation_session.tool_checkpoint_failed', `文件备份失败（继续执行）: ${path}`, error)
+      },
+      onSessionApproval: () => {
+        this.autoExecSession = true
+        log.info('conversation_session.file_approval_session', '本会话自动允许后续文件操作')
+        this.publish()
+      },
+    })
+
+    const environment: RoundEnvironment = {
+      round,
+      tools,
+      sessionId: round.sessionId,
+      checkpointId,
+      hasWorkspace,
+      toolExecution,
+    }
+
+    log.trace('conversation_session.loop.trace', `工具循环开始 安全上限=${this.maxToolTurns} 轮`, {
+      requestId,
+      tool_turns: this.maxToolTurns,
+      tool_count: tools.length,
+    })
+    const loopResult = await this.coordinator.runTurns(
+      requestId,
+      this.maxToolTurns,
+      turn => this.performTurn(environment, turn),
+    )
+    round.turnsUsed = loopResult.turnsUsed
+
+    // ── 循环结束 ────────────────────────────────────────
+    let failed = false
+    let wasCancelled = false
+    let terminalReason: TerminalReason = 'completed'
+
+    if (loopResult.status === 'cancelled') {
+      wasCancelled = true
+      log.info('conversation_session.cancelled.info', '请求被取消', { requestId, turns_used: round.turnsUsed })
+    } else if (loopResult.status === 'failed') {
+      const errMsg = loopResult.error instanceof Error ? loopResult.error.message : String(loopResult.error)
+      log.error('chat.turn_failed', '对话执行失败', loopResult.error, {
+        operation: 'send',
+        turn: Math.max(0, round.turnsUsed - 1),
+        requestId,
+      })
+      failed = true
+      // 已被顶替的回合不得把错误气泡盖到新回合上。
+      if (this.ownsRound(round)) {
+        this.setBubbleText(this.ports.texts.error(errMsg))
+        this.setTyping(false)
+      }
+    }
+
+    // 被取消/取代时仍写统一完成事件，但不能覆盖后来请求的 UI 状态。
+    const ownsRequestState = this.coordinator.mayProject(requestId)
+    if (!ownsRequestState) {
+      wasCancelled = true
+      terminalReason = 'cancelled'
+      log.info('chat.request_cancelled', '对话请求被替代或取消', { requestId })
+    }
+
+    if (wasCancelled) {
+      // 用户主动取消：不展示兜底气泡。
+      log.info('conversation_session.cancelled.info', '已取消，跳过兜底提示', { requestId })
+    } else if (failed) {
+      terminalReason = 'error'
+    } else if (!round.deliveredFinal) {
+      // 模型始终未交付最终回复：触达安全上限多半是陷入工具死循环。
+      terminalReason = round.turnsUsed >= this.maxToolTurns ? 'tool_turn_limit' : 'empty_response'
+      log.warn('conversation_session.no_final_reply.warn', '请求结束但没有可交付的最终回复', undefined, {
+        requestId,
+        terminal_reason: terminalReason,
+        turns_used: round.turnsUsed,
+      })
+      if (ownsRequestState) {
+        this.setBubbleText(this.ports.texts.done())
+        this.setTyping(false)
+      }
+    }
+
+    const completionStatus: CompletionStatus =
+      wasCancelled ? 'cancelled'
+        : failed || !round.deliveredFinal ? 'failed'
+          : round.toolFailureCount > 0 ? 'partial_success'
+            : 'success'
+
+    if (ownsRequestState) {
+      if (completionStatus === 'failed') {
+        this.coordinator.transition(requestId, 'failed', terminalReason)
+      } else {
+        if (this.coordinator.current()?.state !== 'finalizing') {
+          this.coordinator.transition(requestId, 'finalizing')
+        }
+        this.coordinator.transition(requestId, 'completed', terminalReason)
+      }
+    }
+
+    const completedContext = {
+      requestId,
+      completionStatus,
+      failed: completionStatus === 'failed',
+      cancelled: wasCancelled,
+      durationMs: Math.round(this.ports.clock.monotonic() - requestStartedAt),
+      turnsUsed: round.turnsUsed,
+      toolTurnLimit: this.maxToolTurns,
+      toolDefinitionCount: tools.length,
+      toolDefinitionTokens: this.ports.context.stats().toolDefinitionTokens,
+      modelCallCount: round.modelCallCount,
+      toolCallCount: round.toolCallCount,
+      toolFailureCount: round.toolFailureCount,
+      fallbackUsed: round.fallbackUsed,
+      ttsStatus: round.ttsRequested ? 'pending' : 'not_requested',
+      terminalReason: completionStatus === 'cancelled' ? 'cancelled' : failed ? 'error' : terminalReason,
+    }
+    if (completionStatus === 'failed') {
+      log.error('chat.request_completed', '对话请求结束', new Error('对话请求失败'), completedContext)
+    } else {
+      log.info('chat.request_completed', '对话请求结束', completedContext)
+    }
+
+    if (wasCancelled) {
+      return {
+        status: 'cancelled',
+        requestId,
+        turnsUsed: round.turnsUsed,
+        reason: run.snapshot().reason ?? 'cancelled',
+      }
+    }
+    if (failed || !round.deliveredFinal) {
+      // 触达轮次上限仍未交付单独成一类，便于调用方区分「模型抖动」与「工具死循环」。
+      if (terminalReason === 'tool_turn_limit') {
+        return { status: 'turn-limit', requestId, turnsUsed: round.turnsUsed }
+      }
+      return {
+        status: 'failed',
+        requestId,
+        turnsUsed: round.turnsUsed,
+        reason: terminalReason === 'empty_response' ? 'empty-response' : 'model-failure',
+      }
+    }
+    return {
+      status: 'success',
+      requestId,
+      turnsUsed: round.turnsUsed,
+      partial: completionStatus === 'partial_success',
+      fallbackUsed: round.fallbackUsed,
+    }
   }
 
-  /** 取消当前回合；取消是回合计状态机的转移，不是另一份并行状态源。 */
-  cancel(_reason?: string): void {
-    throw new Error('ConversationSession 的回合编排尚未实现')
+  /**
+   * 取消当前回合；取消是回合计状态机的转移，不是另一份并行状态源。
+   *
+   * 这是唯一的收口入口：用户取消、会话切换、清空、角色切换、上下文替换都走它，
+   * 回合与后台语音准备一起停 —— 调用方不需要记得分别取消两者。
+   */
+  cancel(reason: string = USER_CANCELLED_REASON): void {
+    log.debug('conversation_session.cancel.debug', `取消对话请求 (reason=${reason})`, { reason })
+    this.coordinator.cancelActive(reason)
+    this.stopVoicePreparation(reason)
+    this.ports.voice.cancel(reason, true)
+    // 用户主动停止一次回复不改变「本会话允许自动操作」的授予；
+    // 会话被切换、清空或上下文被替换时，授予随之失效。
+    if (reason !== USER_CANCELLED_REASON) this.autoExecSession = false
+    this.bubbleText = ''
+    this.typing = false
+    this.thinking = ''
+    this.publish()
   }
 
   /** 当前投影。 */
   projection(): ConversationProjection {
-    throw new Error('ConversationSession 的回合编排尚未实现')
+    // 终态回合仍是「当前回合」：runId / revision 保留到下一个回合启动，
+    // 订阅者据此判断投影是否真的前进过。
+    const snapshot = this.coordinator.current()
+    return {
+      runId: snapshot?.id ?? null,
+      runState: snapshot?.state ?? 'idle',
+      revision: snapshot?.revision ?? 0,
+      bubbleText: this.bubbleText,
+      typing: this.typing,
+      thinking: this.thinking,
+      toolActivities: this.activities.map(activity => ({ ...activity })),
+      context: this.ports.context.stats(),
+      autoExecSession: this.autoExecSession,
+    }
   }
 
   /**
    * 订阅投影变更，返回退订函数。
    * 订阅时立刻回调一次当前投影，与 ConversationRun.subscribe 一致。
    */
-  subscribe(_listener: ConversationProjectionListener): () => void {
-    throw new Error('ConversationSession 的回合编排尚未实现')
+  subscribe(listener: ConversationProjectionListener): () => void {
+    this.listeners.add(listener)
+    listener(this.projection())
+    return () => { this.listeners.delete(listener) }
+  }
+
+  // ── 回合循环 ──────────────────────────────────────────
+
+  /** 是否已有进行中的回合（重入守卫的判据）。 */
+  private isRoundActive(): boolean {
+    const snapshot = this.coordinator.current()
+    return snapshot !== null && isConversationRunActive(snapshot.state)
+  }
+
+  /**
+   * 本回合是否仍拥有共享投影的写权限。
+   * 被新回合顶替、信号已中止或状态机已进终态时即失去写权限。
+   */
+  private ownsRound(round: Round): boolean {
+    return this.latestRound === round && this.coordinator.mayProject(round.requestId)
+  }
+
+  /**
+   * 结束后台语音准备。
+   *
+   * 语音准备自己的中止信号与回合信号分开：取消语音准备不必中止整轮，
+   * 而回合被取消时语音准备会通过回合信号一并失效。
+   */
+  private stopVoicePreparation(reason: string): void {
+    const round = this.voiceRound
+    if (!round) return
+    this.voiceRound = null
+    round.voice.abort(reason)
+  }
+
+  /** 后台语音准备是否已被中止（自身信号或所属回合的信号）。 */
+  private voiceStopped(round: Round): boolean {
+    return round.voice.signal.aborted || round.run.signal.aborted
+  }
+
+  /**
+   * 回合内唯一一处翻译闭包：人设、取消信号与遥测关联都绑定在本次回合上。
+   *
+   * 后台语音准备传入自己的中止信号（见 startVoicePreparation）：它的翻译属于
+   * 可以随时作废的那部分工作，作废时应当连同在途请求一起中止。
+   */
+  private translatorFor(round: Round, turn: number, signal: AbortSignal = round.run.signal): TranslateFn {
+    const { persona } = this.ports.character.state()
+    return (text, targetLang, opts) => this.ports.translate.translate(text, targetLang, {
+      persona,
+      signal,
+      requestId: round.requestId,
+      turn,
+      ttsSafe: opts?.ttsSafe,
+    })
+  }
+
+  /** 执行一次模型轮次，并说明领域流程是否还需要下一轮。 */
+  private async performTurn(environment: RoundEnvironment, turn: number): Promise<ConversationTurnDirective> {
+    const { round, tools } = environment
+    round.turnsUsed = turn + 1
+    const turnTimer = roundTimer(this.ports.clock, `turn#${turn}`)
+
+    const streamDecoder = new ModelStreamDecoder()
+    const chatTimer = roundTimer(this.ports.clock, `turn#${turn} model-call`)
+
+    /** 流式正文只在仍拥有投影时写回，且与当前值不同才写（减少响应式触发）。 */
+    const renderStreamText = (text: string) => {
+      if (!this.ownsRound(round)) return
+      if (this.bubbleText !== text) this.bubbleText = text
+      this.typing = Boolean(text)
+      this.publish()
+    }
+
+    // 流协议解析由 ModelStreamDecoder 负责；回合只投影解码结果。
+    round.modelCallCount++
+    const result = await this.ports.model.call({
+      requestId: round.requestId,
+      turn,
+      messages: this.requestMessages(tools, environment.hasWorkspace),
+      tools,
+      signal: round.run.signal,
+      onChunk: (delta: string) => {
+        const decoded = streamDecoder.pushContent(delta)
+        if (!this.ownsRound(round)) return
+        this.thinking = decoded.thinking
+        this.bubbleText = decoded.visibleText
+        this.typing = Boolean(decoded.visibleText)
+        this.publish()
+      },
+      onThinking: (chunk: string) => {
+        const decoded = streamDecoder.pushThinking(chunk)
+        if (!this.ownsRound(round)) return
+        this.thinking = decoded.thinking
+        this.publish()
+      },
+      onToolCallDelta: (calls: readonly ToolCallData[]) => {
+        const sayCall = calls.find(call => call.function?.name === SAY_TOOL_NAME)
+        if (!sayCall) return
+        const partial = extractPartialSayArgs(sayCall.function.arguments || '')
+        const { voiceLanguage, displayLanguage } = this.ports.character.state()
+        const visible = partial.display?.trim()
+          || (voiceLanguage === displayLanguage ? partial.voice?.trim() : '')
+        if (visible) renderStreamText(visible)
+      },
+    })
+    chatTimer.stop()
+
+    const interpreted = interpretModelTurn(result, streamDecoder.snapshot(), {
+      requestId: round.requestId,
+      turn,
+      sayToolName: SAY_TOOL_NAME,
+      extractTextToolCalls: text => this.ports.tools.extractTextToolCalls(text),
+      stripTextToolCalls: text => this.ports.tools.stripTextToolCalls(text),
+    })
+
+    if (interpreted.type === 'empty') {
+      log.warn('conversation_session.empty_turn.warn', `第${turn}轮 AI 返回空内容`, undefined, { requestId: round.requestId, turn })
+      turnTimer.stop('empty — break')
+      return 'complete'
+    }
+
+    if (interpreted.type === 'final-text') {
+      // 模型没调 say 就直接输出正文：正文当显示文本，并补一份母语台词。
+      round.fallbackUsed = true
+      const visibleText = interpreted.text
+      const translate = this.translatorFor(round, turn)
+      const { voiceLanguage, displayLanguage } = this.ports.character.state()
+      this.renderBubble(round, visibleText, true)
+      const { voice, display } = await resolveContentFallback(visibleText, voiceLanguage, displayLanguage, translate)
+      this.commitSyntheticSay(round, voice, display)
+      await this.deliver(round, 'text-fallback', voice, display)
+      turnTimer.stop('text — break')
+      return 'complete'
+    }
+
+    const { batch } = interpreted
+    const { sayCall } = batch
+    if (sayCall) {
+      const rawForLog = parseSayArgs(sayCall.function.arguments || '{}')
+      log.sensitiveDebug('conversation_session.say_sensitive.debug', `第${turn}轮 say 原始文本`, {
+        requestId: round.requestId,
+        turn,
+        voice: rawForLog.voice ?? '',
+        display: rawForLog.display ?? '',
+      })
+    }
+
+    // 清掉上一轮的正文，避免它抢在工具结果之前成为最终答复。
+    this.renderBubble(round, '', false)
+    // 工具调用必须先落库，再执行、再暴露给模型上下文。
+    await this.coordinator.commitToolCalls(round.requestId, {
+      sessionId: environment.sessionId,
+      stepId: `${round.requestId}:${turn}`,
+      calls: batch.protocolCalls,
+      visibleText: batch.assistantText,
+    })
+    const { toolImages, actionBatchFailed, actionBatchNeedsFollowup } = await this.executeActionBatch(environment, batch)
+
+    // say 不能抢在同批动作的图片、失败或拒绝结果之前成为最终答复。
+    if (sayCall && (toolImages.length || actionBatchNeedsFollowup)) {
+      this.renderTyping(round, false)
+      const reason = actionBatchFailed
+        ? SAY_DEFERRED_TOOL_FAILED
+        : toolImages.length ? SAY_DEFERRED_IMAGES : SAY_DEFERRED_SKIPPED
+      await this.coordinator.commitToolResult(round.requestId, {
+        sessionId: environment.sessionId,
+        callId: sayCall.id,
+        content: reason,
+        status: 'rejected',
+        code: 'SAY_DEFERRED',
+      })
+      this.coordinator.appendToolImages(round.requestId, this.actionCallIds(batch), toolImages)
+      turnTimer.stop(actionBatchFailed ? 'tool-failed — continue' : 'tool-followup — continue')
+      return 'continue'
+    }
+
+    if (sayCall) {
+      const translate = this.translatorFor(round, turn)
+      const raw = parseSayArgs(sayCall.function.arguments || '{}')
+      const { voiceLanguage, displayLanguage } = this.ports.character.state()
+      const displayPreview = raw.display?.trim() || (voiceLanguage === displayLanguage ? raw.voice?.trim() : '')
+      if (displayPreview) this.renderBubble(round, displayPreview, false)
+      // 会话时间线上 say 回执在前、assistant 消息在后。
+      await this.coordinator.commitToolResult(round.requestId, {
+        sessionId: environment.sessionId,
+        callId: sayCall.id,
+        content: SAY_ACKNOWLEDGED,
+        status: 'succeeded',
+      })
+      if (displayPreview) {
+        // voice 用原始未清洗的台词提交，清洗与译文在后台继续。
+        const messageId = await this.commitAssistant(round, displayPreview, raw.voice, 'say')
+        if (messageId) {
+          this.startVoicePreparation(round, messageId, raw, voiceLanguage, displayLanguage, turn, displayPreview)
+        }
+      } else {
+        const { voice, display } = await resolveSayContent(raw, voiceLanguage, displayLanguage, translate)
+        if (voice || display) await this.deliver(round, 'say', voice, display)
+        else log.warn('conversation_session.empty_say.warn', `第${turn}轮 say 内容为空`, undefined, { requestId: round.requestId, turn })
+      }
+      turnTimer.stop('say — break')
+      return 'complete'
+    }
+
+    if (toolImages.length) {
+      this.coordinator.appendToolImages(round.requestId, this.actionCallIds(batch), toolImages)
+    }
+    this.renderTyping(round, false)
+    if (batch.assistantText?.trim()) {
+      // 动作工具执行前的正文有意丢弃：它既不进气泡，也不进会话事实。
+      log.debug('conversation_session.pre_tool_text.debug', `第${turn}轮忽略工具执行前正文并继续`, {
+        requestId: round.requestId,
+        turn,
+        pre_tool_text_length: batch.assistantText.length,
+      })
+    }
+    turnTimer.stop('actions — continue')
+    return 'continue'
+  }
+
+  /** 本次请求要发给模型的消息；未授权工作区时追加一条 system 提示。 */
+  private requestMessages(tools: readonly ToolDefinition[], hasWorkspace: boolean): ConversationModelMessage[] {
+    const messages = [...this.ports.context.messages(tools)]
+    if (!hasWorkspace) messages.push({ role: 'system', content: WORKSPACE_UNAVAILABLE_HINT })
+    return messages
+  }
+
+  /** 让原生调用与文本兜底调用走同一条归一化批次路径。 */
+  private async executeActionBatch(environment: RoundEnvironment, batch: ToolCallBatch) {
+    const { round } = environment
+    if (batch.actions.length > 0) this.coordinator.transition(round.requestId, 'executing-tools')
+    const toolImages: ImageAttachment[] = []
+    const result = await executeToolCallBatch(
+      batch.actions,
+      call => this.executeWithPolicy(environment, call),
+      {
+        onStart: invocation => {
+          const { protocolCall, parseError } = invocation
+          round.toolCallCount++
+          this.beginActivity(round, protocolCall.id, protocolCall.function.name || '?')
+          log.info('chat.tool_started', `执行工具: ${protocolCall.function.name || '?'}`, {
+            requestId: round.requestId,
+            turn: round.turnsUsed - 1,
+            toolCallId: protocolCall.id,
+            toolName: protocolCall.function.name || '?',
+            source: batch.source,
+          })
+          if (parseError) {
+            log.error('conversation_session.tool_arguments_invalid', `工具参数 JSON 解析失败: ${parseError.message}`, new Error(parseError.message), {
+              requestId: round.requestId,
+              turn: round.turnsUsed - 1,
+              toolCallId: protocolCall.id,
+              toolName: protocolCall.function.name || '?',
+              source: batch.source,
+            })
+          }
+        },
+        onResult: async ({ invocation, result: toolResult }) => {
+          const { protocolCall } = invocation
+          if (collectToolImages(toolResult, toolImages, this.imageLimits)) {
+            toolResult.content += toolImageLimitNotice(this.imageLimits)
+          }
+          // UI 活动状态先于持久化。
+          this.endActivity(round, protocolCall.id, resultStatus(toolResult))
+          log.sensitiveDebug('conversation_session.tool_result_sensitive.debug', '工具执行结果', {
+            requestId: round.requestId,
+            turn: round.turnsUsed - 1,
+            tool_name: protocolCall.function.name || '?',
+            source: batch.source,
+            tool_result_content: (toolResult.content || '').slice(0, 200),
+          })
+          await this.coordinator.commitToolResult(round.requestId, {
+            sessionId: environment.sessionId,
+            callId: protocolCall.id,
+            content: toolResult.content,
+            status: isToolSkipped(toolResult) ? 'rejected' : isToolError(toolResult) ? 'failed' : 'succeeded',
+            code: toolResult.code,
+          })
+        },
+      },
+    )
+    round.toolFailureCount += result.failureCount
+    return {
+      toolImages,
+      actionBatchFailed: result.failureCount > 0,
+      actionBatchNeedsFollowup: result.needsFollowup,
+    }
+  }
+
+  /** 每次都现取工作区授权：一个回合内用户可能中途授权。 */
+  private executeWithPolicy(environment: RoundEnvironment, call: ToolCall): Promise<ToolResult> {
+    return environment.toolExecution.execute(call, {
+      signal: environment.round.run.signal,
+      sessionApproval: this.autoExecSession,
+      hasWorkspace: Boolean(this.ports.session.workspaceGrantId()),
+    })
+  }
+
+  /** 把最终可见文本落地：写气泡、提交会话事实。 */
+  private async commitAssistant(
+    round: Round,
+    display: string,
+    voice: string | undefined,
+    source: 'say' | 'text-fallback',
+    playbackText?: string,
+  ): Promise<string | null> {
+    // 已取消：翻译兜底期间被中止时不交付、不落盘、不播报。
+    if (round.run.signal.aborted) return null
+    this.coordinator.transition(round.requestId, 'finalizing')
+    this.renderBubble(round, display, false)
+    const event = await this.assistantMessages.commit({
+      requestId: round.requestId,
+      sessionId: round.sessionId,
+      display,
+      thinking: this.thinking || undefined,
+      voice,
+      source,
+      playbackText,
+    })
+    if (!event) return null
+    round.deliveredFinal = true
+    return event.messageId
+  }
+
+  /** 把最终台词落地：提交之后才交给语音，语音不属于回合完成条件。 */
+  private async deliver(
+    round: Round,
+    source: 'say' | 'text-fallback',
+    voice: string,
+    display: string,
+  ): Promise<void> {
+    const messageId = await this.commitAssistant(round, display, voice, source, voice)
+    if (!messageId) return
+    round.ttsRequested = true
+  }
+
+  /**
+   * 把一段台词作为合成的 say 工具调用写入模型上下文。
+   * 用于兜底路径（模型没调 say）：使实时上下文与会话恢复重建的范式保持一致 ——
+   * 助手回合始终表现为 say 调用，避免「纯文本回合」污染范式、诱导模型后续不再调工具。
+   */
+  private commitSyntheticSay(round: Round, voice: string, display: string): void {
+    if (!this.ownsRound(round)) return
+    const call: ProtocolToolCall = {
+      id: this.ports.clock.nextId('say-synthetic'),
+      type: 'function',
+      function: { name: SAY_TOOL_NAME, arguments: JSON.stringify({ voice, display }) },
+    }
+    this.coordinator.appendSyntheticToolExchange(round.requestId, call, SAY_ACKNOWLEDGED)
+  }
+
+  /**
+   * 可见文本已流式显示后，在后台继续完成语音清洗、历史回填和 TTS。
+   * 这样语音模型尚未返回时，输入框可以立即解锁。
+   *
+   * 它只持有一个属于本回合的中止信号：新回合顶替、用户取消、会话切换都从
+   * cancel / send 的同一个入口过来，越界由模块边界拦住，而不是靠调用方记得取消。
+   */
+  private startVoicePreparation(
+    round: Round,
+    messageId: string,
+    raw: { voice?: string; display?: string },
+    voiceLang: string,
+    displayLang: string,
+    turn: number,
+    displayPreview: string,
+  ): void {
+    const { requestId, sessionId } = round
+    const translate = this.translatorFor(round, turn, round.voice.signal)
+    const voiceStartedAt = this.ports.clock.monotonic()
+    let playbackStarted = false
+    const completeBeforePlayback = (status: 'cancelled' | 'failed', reason: string) => {
+      const context = {
+        requestId,
+        status,
+        reason,
+        durationMs: Math.round(this.ports.clock.monotonic() - voiceStartedAt),
+      }
+      if (status === 'failed') log.warn('tts.playback_completed', 'TTS 播放结束', undefined, context)
+      else log.info('tts.playback_completed', 'TTS 播放结束', context)
+    }
+
+    round.ttsRequested = true
+    this.voiceRound = round
+    void (async () => {
+      try {
+        const { voice, display } = await resolveSayContent(raw, voiceLang, displayLang, translate)
+        if (this.voiceStopped(round)) {
+          completeBeforePlayback('cancelled', 'voice_preparation_cancelled')
+          return
+        }
+        if (this.ports.session.currentSessionId() !== sessionId) {
+          completeBeforePlayback('cancelled', 'session_changed')
+          return
+        }
+        log.sensitiveDebug('conversation_session.say_resolved_sensitive.debug', 'say 后台最终文本', {
+          requestId,
+          voice,
+          display,
+        })
+        const revised = await this.assistantMessages.revise({
+          requestId,
+          sessionId,
+          messageId,
+          voice,
+          display: display && display !== displayPreview ? display : undefined,
+          playbackText: voice,
+        })
+        if (!revised) {
+          completeBeforePlayback('cancelled', 'message_removed')
+          return
+        }
+        if (this.latestRound === round && this.bubbleText === displayPreview && display && display !== displayPreview) {
+          this.bubbleText = display
+          this.publish()
+        }
+        playbackStarted = true
+        log.info('conversation_session.voice_prepared.info', 'say 后台语音准备完成', {
+          requestId,
+          display_length: display.length,
+          voice_length: voice.length,
+        })
+      } catch (error) {
+        const stopped = this.voiceStopped(round)
+        log.warn('conversation_session.voice_preparation_failed.warn', `后台语音准备失败: ${(error as Error).message}`, error)
+        if (!playbackStarted) {
+          completeBeforePlayback(
+            stopped ? 'cancelled' : 'failed',
+            stopped ? 'voice_preparation_cancelled' : (error as Error).message,
+          )
+        }
+      } finally {
+        if (this.voiceRound === round) this.voiceRound = null
+      }
+    })()
+  }
+
+  // ── 工具活动 ──────────────────────────────────────────
+
+  /** 新增一条「执行中」活动。被顶替的回合不得修改新回合的共享活动状态。 */
+  private beginActivity(round: Round, id: string, name: string): void {
+    if (!this.ownsRound(round)) return
+    this.activities.push({ id, name, status: 'running' })
+    this.publish()
+  }
+
+  /** 把指定活动标记为完成 / 失败 / 跳过。 */
+  private endActivity(round: Round, id: string, status: ConversationToolActivity['status']): void {
+    if (!this.ownsRound(round)) return
+    const activity = this.activities.find(item => item.id === id)
+    if (activity) activity.status = status
+    this.publish()
+  }
+
+  private actionCallIds(batch: ToolCallBatch): string {
+    return batch.actions.map(action => action.protocolCall.id).join(', ')
+  }
+
+  // ── 投影 ──────────────────────────────────────────────
+
+  /** 只在仍拥有投影时写气泡与输入态：被顶替的回合不得覆盖新回合的界面状态。 */
+  private renderBubble(round: Round, text: string, typing: boolean): void {
+    if (!this.ownsRound(round)) return
+    this.bubbleText = text
+    this.typing = typing
+    this.publish()
+  }
+
+  /** 只在仍拥有投影时写输入态，正文保持不变。 */
+  private renderTyping(round: Round, typing: boolean): void {
+    if (!this.ownsRound(round)) return
+    this.typing = typing
+    this.publish()
+  }
+
+  private setBubbleText(text: string): void {
+    this.bubbleText = text
+    this.publish()
+  }
+
+  private setTyping(typing: boolean): void {
+    this.typing = typing
+    this.publish()
+  }
+
+  private publish(): void {
+    if (this.listeners.size === 0) return
+    const projection = this.projection()
+    for (const listener of [...this.listeners]) listener(projection)
   }
 }
 
