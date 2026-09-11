@@ -20,8 +20,8 @@
 
 沿用代码库现状：
 
-- 中文正文用全角标点 `，。：；（）「」`。现状 1299 处全角、2 处半角。
-- 中英文之间留一个空格：`解析 LLM 返回的 tool_calls`。现状 1889 处留空格、8 处不留。
+- 中文正文用全角标点 `，。：；（）「」`。
+- 中英文之间留一个空格：`解析 LLM 返回的 tool_calls`。
 - 英文技术名词保留原样，不硬译：`provider`、`tool_calls`、`Live2D`、`TTS`。
 
 ### 术语表
@@ -40,3 +40,17 @@
 | 端口 | port | 依赖倒置的接口，实现由基础设施提供 |
 | 服务端 | upstream | 上游 API，区别于本地进程 |
 | provider | provider | 保留英文，指 TTS / AI 服务的具体实现方 |
+
+## Agent skills
+
+### Issue tracker
+
+issue 与 spec 都记在 GitHub Issues（`AoralsFout/Kisaki`），操作走 `gh` CLI。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用默认五个标签，标签名与角色名一致：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
