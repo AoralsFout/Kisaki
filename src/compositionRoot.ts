@@ -11,6 +11,7 @@
  *    该创建或载入会话文档），故以装配工厂的形式注入，见 assembleSessionService。
  */
 import { createLogger } from './utils/logger'
+import type { ApprovalGateway } from './application/tools/approvalGateway'
 import type {
   ConversationSession,
   ConversationSessionPorts,
@@ -32,6 +33,11 @@ export interface ConversationAssembly {
   session: ConversationSession
   /** 模型上下文端口实现；整体替换（清空对话、切换会话、配置变更）需要它端口之外的方法。 */
   context: ChatContextModelContext
+  /**
+   * 批准网关；组合根持有，回合只经工具执行端口拿到「有没有待批准请求」这个布尔量。
+   * 待批准请求本身与用户的决策仍走网关自己的订阅，展示层需要它来渲染批准卡。
+   */
+  approvalGateway: ApprovalGateway
 }
 
 /** 逐端口替换入口：缺省全部用真机适配器，测试用它把某条缝换成假实现。 */
@@ -109,7 +115,7 @@ export async function composeConversationAssembly(
     texts: overrides.texts ?? new I18nConversationTexts(),
   }
 
-  return { ports, session: new ConversationSession(ports), context }
+  return { ports, session: new ConversationSession(ports), context, approvalGateway }
 }
 
 /** 组合根装配出的对话对象图；composeApplication() 尚未跑过时显式失败。 */

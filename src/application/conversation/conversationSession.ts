@@ -20,6 +20,7 @@ import { executeToolCallBatch, type ProtocolToolCall, type ToolCallBatch } from 
 import { resolveContentFallback, resolveSayContent, type TranslateFn } from './roundText'
 import { collectToolImages, isToolError, isToolSkipped, resultStatus, toolImageLimitNotice } from './toolOutcome'
 
+import type { AssistantMessageEvent } from './assistantMessageCoordinator'
 import type { ContextStats } from '../../ai/context'
 import type {
   ChatMessage as ConversationModelMessage,
@@ -117,6 +118,25 @@ export interface ConversationProjection {
 }
 
 export type ConversationProjectionListener = (projection: ConversationProjection) => void
+
+/**
+ * 一条已计入会话事实的界面消息。
+ *
+ * 界面消息列表不在投影里：它是展示层自己持有的状态（#14 的边界决定）。但它的 id
+ * 必须与会话事实一致 —— 语音回填与回档都按 id 寻址 —— 所以「哪条消息以什么内容落库」
+ * 这条事实要有一条出口。这条出口只讲事实，由谁维护列表、怎么显示，回合不关心。
+ */
+export type ConversationMessageEvent =
+  | {
+    type: 'user-accepted'
+    sessionId: string
+    messageId: string
+    text: string
+    images: readonly ConversationImage[]
+  }
+  | AssistantMessageEvent
+
+export type ConversationMessageListener = (event: ConversationMessageEvent) => void
 
 /**
  * 回合编排的可调参数。
@@ -462,6 +482,7 @@ export class ConversationSession {
   private readonly coordinator: ConversationCoordinator
   private readonly assistantMessages: AssistantMessageCoordinator
   private readonly listeners = new Set<ConversationProjectionListener>()
+  private readonly messageListeners = new Set<ConversationMessageListener>()
 
   /** 最近一次启动的回合；它决定谁有权写共享投影。 */
   private latestRound: Round | null = null
@@ -517,7 +538,9 @@ export class ConversationSession {
       },
     })
     // 语音是回复提交之后的独立副作用：只订阅已提交事件，不参与回合完成条件。
+    // 同一条订阅也把消息事实转给展示层：界面列表先于语音更新，与迁移前 store 的顺序一致。
     this.assistantMessages.subscribe(event => {
+      this.publishMessages(event)
       if (!event.playbackText?.trim()) return
       const character = this.ports.character.state()
       log.sensitiveDebug('conversation_session.voice_text_sensitive.debug', '送入 TTS 的语音文本', {
@@ -624,6 +647,13 @@ export class ConversationSession {
     }
     this.ports.context.addUserMessage(userText, images)
     this.publish()
+    this.publishMessages({
+      type: 'user-accepted',
+      sessionId: round.sessionId,
+      messageId: userMsgId,
+      text: userText,
+      images,
+    })
 
     // 为本回合建立回档检查点（记录回合前的视觉状态；改文件工具执行时再按需备份文件）。
     // 它必须早于工具清单装配：检查点记录的是回合真正开始前的角色外观。
@@ -858,6 +888,17 @@ export class ConversationSession {
     this.listeners.add(listener)
     listener(this.projection())
     return () => { this.listeners.delete(listener) }
+  }
+
+  /**
+   * 订阅已提交的用户消息与已提交 / 已修订的助手消息，返回退订函数。
+   *
+   * 它订阅的是会话事实，不是回合状态：没有「订阅时立刻回调一次」的语义，
+   * 因为事实只在发生的那一刻存在。
+   */
+  subscribeMessages(listener: ConversationMessageListener): () => void {
+    this.messageListeners.add(listener)
+    return () => { this.messageListeners.delete(listener) }
   }
 
   // ── 回合循环 ──────────────────────────────────────────
@@ -1360,6 +1401,10 @@ export class ConversationSession {
     if (this.listeners.size === 0) return
     const projection = this.projection()
     for (const listener of [...this.listeners]) listener(projection)
+  }
+
+  private publishMessages(event: ConversationMessageEvent): void {
+    for (const listener of [...this.messageListeners]) listener(event)
   }
 }
 
