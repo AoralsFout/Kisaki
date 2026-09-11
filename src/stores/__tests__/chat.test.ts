@@ -9,10 +9,14 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { composeApplication } from '../../compositionRoot'
 
-// 所有使用 useChatStore 的测试前都需要激活 Pinia
-beforeEach(() => {
+// 所有使用 useChatStore 的测试前都需要激活 Pinia。
+// store 已退化为投影 + 命令转发，命令要经组合根装配出的对话对象图；
+// 装配是幂等的，只有第一次真正构建对象图。
+beforeEach(async () => {
   setActivePinia(createPinia())
+  await composeApplication()
 })
 
 // ─── say 工具调用解析 / 兜底 ──────────────────────────

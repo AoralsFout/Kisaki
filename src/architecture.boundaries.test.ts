@@ -131,9 +131,17 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([])
   })
 
-  it('keeps approval lifecycle and tool policy execution outside ChatStore', () => {
-    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
-    expect(source).toContain('new ToolExecutionCoordinator(')
+  it('keeps approval lifecycle and tool policy execution in the tool execution adapter', () => {
+    // 批准生命周期与工具策略执行原先长在 ChatStore 里，随工具执行端口的适配器搬到了
+    // 基础设施层；store 只剩「订阅待决状态 + 转发用户决策」。
+    const store = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    const factory = readFileSync(
+      join(SOURCE_ROOT, 'infrastructure', 'conversation', 'toolExecutionCoordinatorFactory.ts'),
+      'utf8',
+    )
+    expect(factory).toContain('new ToolExecutionCoordinator(')
+    expect(store).not.toContain('new ToolExecutionCoordinator(')
+    expect(store).not.toContain('new ApprovalGateway(')
     for (const legacy of [
       'confirmResolver',
       'commandConfirmResolver',
@@ -141,34 +149,59 @@ describe('architecture boundaries', () => {
       'waitUserConfirm(',
       'waitCommandConfirm(',
       'waitScreenCaptureConfirm(',
-    ]) expect(source).not.toContain(legacy)
+    ]) expect(store).not.toContain(legacy)
   })
 
-  it('keeps conversation lifecycle and stream protocol parsing outside ChatStore', () => {
-    const source = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
-    expect(source).toContain('new ConversationCoordinator(')
-    expect(source).toContain('conversationCoordinator.runTurns(')
-    expect(source).toContain('new ModelStreamDecoder()')
-    expect(source).toContain('interpretModelTurn(')
-    expect(source).toContain('new AssistantMessageCoordinator(')
-    expect(source).not.toContain('new AbortController()')
-    expect(source).not.toContain('abortController ===')
-    expect(source).not.toMatch(/for\s*\(let turn = 0;/)
-    expect(source).not.toContain("result.type === 'done'")
-    expect(source).not.toContain("result.type === 'tools'")
-    expect(source).not.toContain('JSON.parse(tc.function.arguments')
-    expect(source).toContain('conversationCoordinator.commitToolCalls(')
-    expect(source).toContain('conversationCoordinator.commitToolResult(')
-    // The sole direct references are dependency adapters passed into the coordinator.
-    expect(source.match(/chatSessionPort\.recordToolCalls\(/g)).toHaveLength(1)
-    expect(source.match(/chatSessionPort\.recordToolResult\(/g)).toHaveLength(1)
-    expect(source).toContain('ttsPlaybackOrchestrator.play(')
-    expect(source).not.toContain('function triggerTts(')
-    expect(source).not.toContain('lastTtsText')
-    expect(source).not.toContain('speakTextStreaming(')
-    expect(source).not.toContain('cancelSpeak(')
-    expect(source.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
-    expect(source.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+  it('keeps conversation lifecycle and stream protocol parsing in ConversationSession', () => {
+    // 回合编排整体搬到了 ConversationSession：ChatStore 不再认识状态机、流解码、
+    // 工具批次与语音播放，只剩投影订阅与命令转发。
+    const store = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    const session = readFileSync(
+      join(SOURCE_ROOT, 'application', 'conversation', 'conversationSession.ts'),
+      'utf8',
+    )
+    for (const moved of [
+      'new ConversationCoordinator(',
+      'conversationCoordinator.runTurns(',
+      'new ModelStreamDecoder()',
+      'interpretModelTurn(',
+      'new AssistantMessageCoordinator(',
+      'conversationCoordinator.commitToolCalls(',
+      'conversationCoordinator.commitToolResult(',
+      'chatSessionPort.',
+      'ttsPlaybackOrchestrator.',
+    ]) expect(store).not.toContain(moved)
+    expect(store).not.toContain('new AbortController()')
+    expect(store).not.toContain('abortController ===')
+    expect(store).not.toMatch(/for\s*\(let turn = 0;/)
+    expect(store).not.toContain("result.type === 'done'")
+    expect(store).not.toContain("result.type === 'tools'")
+    expect(store).not.toContain('JSON.parse(tc.function.arguments')
+    expect(store).not.toContain('function triggerTts(')
+    expect(store).not.toContain('lastTtsText')
+    expect(store).not.toContain('speakTextStreaming(')
+    expect(store).not.toContain('cancelSpeak(')
+    // 派生量各只有一个写入点：applyProjection 里的这两个赋值。
+    expect(store.match(/isProcessing\.value\s*=/g)).toHaveLength(1)
+    expect(store.match(/isUsingTools\.value\s*=/g)).toHaveLength(1)
+
+    // 搬到新家之后，这些规则仍要被断言，只是换了文件。
+    for (const owned of [
+      'new ConversationCoordinator(',
+      'this.coordinator.runTurns(',
+      'new ModelStreamDecoder()',
+      'interpretModelTurn(',
+      'new AssistantMessageCoordinator(',
+      'this.coordinator.commitToolCalls(',
+      'this.coordinator.commitToolResult(',
+      'this.ports.session.recordToolCalls(',
+      'this.ports.session.recordToolResult(',
+    ]) expect(session).toContain(owned)
+    expect(session).not.toContain("result.type === 'done'")
+    expect(session).not.toContain('JSON.parse(tc.function.arguments')
+    // 语音不在这里直接播放：回合只把已提交的消息交给语音端口。
+    expect(session).not.toContain('ttsPlaybackOrchestrator')
+    expect(session).toContain('this.ports.voice.play(')
   })
 
   it('routes presentation playback through the TTS playback owner', () => {
