@@ -15,7 +15,7 @@ import {
 import { ConversationSession } from './conversationSession'
 
 import type { ContextStats } from '../../ai/context'
-import type { ChatMessage as ConversationModelMessage } from '../../ai/types'
+import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
 import type { ConversationImage } from '../../domain/conversation/events'
@@ -59,7 +59,7 @@ export function actionCall(name: string, id = `action-${name}`): ProtocolToolCal
 }
 
 /** 一个原生的 say 调用；`extra` 是同批执行的动作工具。 */
-export function sayTurn(id: string, args: { voice?: string; display?: string }, extra: ProtocolToolCall[] = []): TurnScript {
+export function sayTurn(id: string, args: { voice?: string; display?: string }, extra: ProtocolToolCall[] = []): RawModelTurn {
   return {
     type: 'tools',
     calls: [
@@ -105,6 +105,36 @@ export function actionTurn(name: string, id = `action-${name}`): TurnScript {
     type: 'tools',
     calls: [{ id, type: 'function', function: { name, arguments: '{}' } }],
   }
+}
+
+/** 一张工具输出图片；体积可调，用来触发单轮图片上限。 */
+export function toolImage(id: string, size = 1024): ImageAttachment {
+  return { id, name: `${id}.png`, mimeType: 'image/png', size, dataUrl: `data:image/png;base64,${id}` }
+}
+
+/** 一个工具结果，默认成功。 */
+export function toolResult(name: string, overrides: Partial<ToolResult> = {}): ToolResult {
+  return { role: 'tool', tool_call_id: `action-${name}`, content: `${name} 完成`, ok: true, ...overrides }
+}
+
+/**
+ * 把翻译挂在半途，并记录后台语音准备拿到的那一个中止信号。
+ *
+ * 「后台语音准备是否越界」只能靠它观察：断言交给翻译的信号被中止、以及之后
+ * 没有回填与播放，而不是去读日志缓冲区。
+ */
+export function gatedVoiceTranslation(h: ConversationHarness): {
+  gate: { promise: Promise<void>; resolve: (value: void) => void }
+  signal: () => AbortSignal | undefined
+} {
+  const gate = deferred()
+  let signal: AbortSignal | undefined
+  h.translate.handler = async (text, targetLang, context) => {
+    signal = context.signal
+    await gate.promise
+    return `${targetLang}:${text}`
+  }
+  return { gate, signal: () => signal }
 }
 
 // ─── 单个端口 ──────────────────────────────────────────
@@ -228,6 +258,10 @@ export class FakeChatSessionPort {
   sessionId = 'session-1'
   workspace: string | null = 'workspace-1'
   acceptResult = true
+  /** 工具调用 / 工具结果 / 修订的写入结果；false 用来测「写入失败」分支。 */
+  toolCallsResult = true
+  toolResultResult = true
+  reviseResult = true
   /** 让 acceptUserMessage 挂在半途，用于观察「守卫失败时副作用已发生」。 */
   acceptGate: Promise<void> | null = null
   checkpointError: unknown = null
@@ -278,7 +312,7 @@ export class FakeChatSessionPort {
   }): Promise<boolean> {
     this.events.push(`toolCalls:${step.stepId}`)
     this.recordedCalls.push({ ...step, calls: [...step.calls] })
-    return true
+    return this.toolCallsResult
   }
 
   async recordToolResult(result: {
@@ -290,7 +324,7 @@ export class FakeChatSessionPort {
   }): Promise<boolean> {
     this.events.push(`toolResult:${result.callId}:${result.status}`)
     this.recordedResults.push({ ...result })
-    return true
+    return this.toolResultResult
   }
 
   async commitAssistantMessage(message: CommitAssistantMessage): Promise<string | null> {
@@ -302,7 +336,7 @@ export class FakeChatSessionPort {
   async reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean> {
     this.events.push(`revise:${message.messageId}`)
     this.revisions.push(message)
-    return true
+    return this.reviseResult
   }
 
   async backupFile(_sessionId: string, _checkpointId: string, path: string): Promise<void> {
@@ -326,6 +360,8 @@ export class FakeToolCatalog implements ConversationToolCatalog {
   ]
   /** 文本兜底路径的提取结果；默认不识别任何文本调用。 */
   textToolCalls: ToolCall[] = []
+  /** 剥离文本工具调用后的用户可见正文；null 表示原样返回。 */
+  strippedText: string | null = null
 
   definitions(context: CharacterToolContext): ToolDefinition[] {
     this.contexts.push(context)
@@ -337,7 +373,7 @@ export class FakeToolCatalog implements ConversationToolCatalog {
     return this.textToolCalls
   }
 
-  stripTextToolCalls(text: string): string { return text }
+  stripTextToolCalls(text: string): string { return this.strippedText ?? text }
 }
 
 export class FakeToolExecutionPort implements ConversationToolExecutionPort {
