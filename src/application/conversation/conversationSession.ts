@@ -105,6 +105,15 @@ export interface ConversationProjection {
   toolActivities: readonly ConversationToolActivity[]
   /** 上下文统计。 */
   context: ContextStats
+  /**
+   * 本会话内已允许自动执行后续文件操作（用户在批准卡上选「本会话允许」产生）。
+   *
+   * 它是回合内由用户决策产生的策略状态，不是纯界面开关，也不能只留在回合内部：
+   * 诊断面板读它（`CurrentContextInspection.runtime.autoExecSession`），而对外只有
+   * 投影这一条可观察通道。用户主动停止一次回复不重置；清空对话、切换会话、切换
+   * 角色、替换模型上下文都重置。
+   */
+  autoExecSession: boolean
 }
 
 export type ConversationProjectionListener = (projection: ConversationProjection) => void
@@ -646,6 +655,7 @@ export class ConversationSession {
       onSessionApproval: () => {
         this.autoExecSession = true
         log.info('conversation_session.file_approval_session', '本会话自动允许后续文件操作')
+        this.publish()
       },
     })
 
@@ -823,6 +833,7 @@ export class ConversationSession {
       thinking: this.thinking,
       toolActivities: this.activities.map(activity => ({ ...activity })),
       context: this.ports.context.stats(),
+      autoExecSession: this.autoExecSession,
     }
   }
 

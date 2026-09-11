@@ -15,11 +15,29 @@ import {
   createConversationHarness,
   deferred,
   sayTurn,
+  type ConversationHarness,
 } from './conversationSession.testkit'
 
 /** 让已经排队的微任务与定时器先跑完，再断言后台副作用的最终结果。 */
 function flushPending(): Promise<void> {
   return new Promise(resolve => { setTimeout(resolve, 0) })
+}
+
+/**
+ * 跑一个回合，并在批准卡上选「本会话允许」。
+ * 每个回合都要求一次批准，所以可以反复授予，用来观察授予何时失效。
+ */
+async function grantSessionApproval(h: ConversationHarness, sayId: string): Promise<void> {
+  h.toolExecution.prepare = approvalPolicyOnlyFirstTime(['allow-session']).prepare
+  h.model.enqueue(sayTurn(
+    sayId,
+    { voice: 'おわった', display: '好了' },
+    [actionCall('read_file', `${sayId}-action`)],
+  ))
+  const sending = h.session.send({ text: 'hi', images: [] })
+  await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+  h.toolExecution.gateway.resolve('allow-session')
+  await sending
 }
 
 describe('ConversationSession', () => {
@@ -410,6 +428,8 @@ describe('ConversationSession', () => {
   describe('批准与自动允许', () => {
     it('会话内允许后，同轮后续工具批次带上自动允许标记', async () => {
       const h = createConversationHarness()
+      const seen: boolean[] = []
+      h.session.subscribe(projection => { seen.push(projection.autoExecSession) })
       const policy = approvalPolicyOnlyFirstTime(['allow', 'allow-session', 'reject'])
       h.toolExecution.prepare = policy.prepare
       h.model.enqueue(sayTurn(
@@ -427,27 +447,32 @@ describe('ConversationSession', () => {
       expect(h.toolExecution.executed.map(call => call.id)).toEqual(['action-1', 'action-2'])
       expect(h.toolExecution.contexts[0].sessionApproval).toBe(false)
       expect(h.toolExecution.contexts[1].sessionApproval).toBe(true)
+      // 决策一落地就必须能被订阅者看见，诊断面板读的就是它。
+      expect(h.session.projection().autoExecSession).toBe(true)
+      expect(seen).toContain(true)
+      expect(seen[0]).toBe(false)
     })
 
-    it('用户主动停止不撤销授予，切换会话则撤销', async () => {
+    it('用户主动停止不撤销授予，清空对话与会话切换都撤销', async () => {
       const h = createConversationHarness()
-      h.toolExecution.prepare = approvalPolicyOnlyFirstTime(['allow-session']).prepare
-      h.model.enqueue(sayTurn('say-1', { voice: 'おわった', display: '好了' }, [actionCall('read_file', 'action-1')]))
+      const seen: boolean[] = []
+      h.session.subscribe(projection => { seen.push(projection.autoExecSession) })
+      expect(h.session.projection().autoExecSession).toBe(false)
 
-      const sending = h.session.send({ text: 'hi', images: [] })
-      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
-      h.toolExecution.gateway.resolve('allow-session')
-      await sending
+      await grantSessionApproval(h, 'say-1')
+      expect(h.session.projection().autoExecSession).toBe(true)
 
       h.session.cancel('user-cancelled')
-      h.model.enqueue(sayTurn('say-2', { voice: 'また', display: '又来了' }, [actionCall('read_file', 'action-2')]))
-      await h.session.send({ text: 'again', images: [] })
-      expect(h.toolExecution.contexts[h.toolExecution.contexts.length - 1]?.sessionApproval).toBe(true)
+      expect(h.session.projection().autoExecSession).toBe(true)
 
       h.session.cancel('session-changed')
-      h.model.enqueue(sayTurn('say-3', { voice: 'さいご', display: '最后一次' }, [actionCall('read_file', 'action-3')]))
-      await h.session.send({ text: 'once more', images: [] })
-      expect(h.toolExecution.contexts[h.toolExecution.contexts.length - 1]?.sessionApproval).toBe(false)
+      expect(h.session.projection().autoExecSession).toBe(false)
+
+      await grantSessionApproval(h, 'say-2')
+      expect(h.session.projection().autoExecSession).toBe(true)
+
+      h.session.cancel('messages-cleared')
+      expect(h.session.projection().autoExecSession).toBe(false)
     })
   })
 
