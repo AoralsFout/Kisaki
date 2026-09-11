@@ -6,8 +6,11 @@
  * 逐条对齐 A–U 行为清单的完整套件由 #19 承担，这里不重复。
  */
 import { describe, expect, it, vi } from 'vitest'
+import { ApprovalGateway } from '../tools/approvalGateway'
+import type { ToolExecutionPolicy } from '../tools/toolExecutionCoordinator'
 import { ConversationSession, type ConversationSessionPorts } from './conversationSession'
 import {
+  FakeToolExecutionPort,
   UNRESOLVED_VOICE,
   actionCall,
   actionTurn,
@@ -473,6 +476,161 @@ describe('ConversationSession', () => {
 
       h.session.cancel('messages-cleared')
       expect(h.session.projection().autoExecSession).toBe(false)
+    })
+  })
+
+  describe('等待批准', () => {
+    /** 每次都要求批准；一回合一张卡，用来观察等待态挂在哪个回合头上。 */
+    const alwaysAsk: ToolExecutionPolicy['prepare'] = async call => ({
+      call,
+      approval: {
+        id: `approval-${call.id}`,
+        toolName: call.name,
+        args: call.arguments,
+        kind: 'file',
+        path: 'notes.txt',
+        allowedDecisions: ['allow'],
+      },
+    })
+
+    it('等待期间投影是 awaiting-approval，批准后先回到 executing-tools', async () => {
+      const h = createConversationHarness()
+      const states: string[] = []
+      h.session.subscribe(projection => { states.push(projection.runState) })
+      h.toolExecution.prepare = approvalPolicyOnlyFirstTime(['allow']).prepare
+      h.model.enqueue(sayTurn(
+        'say-1',
+        { voice: 'かいた', display: '写好了' },
+        [actionCall('read_file', 'action-1')],
+      ))
+
+      const sending = h.session.send({ text: 'hi', images: [] })
+      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+
+      // 用户还在看批准卡：界面必须停在「等待批准」，而不是「正在执行工具」。
+      expect(h.session.projection().runState).toBe('awaiting-approval')
+
+      h.toolExecution.gateway.resolve('allow')
+      await sending
+
+      expect(states).toContain('awaiting-approval')
+      // 批准之后先回到执行态，再走向终态。
+      expect(states.lastIndexOf('executing-tools')).toBeGreaterThan(states.indexOf('awaiting-approval'))
+      expect(h.session.projection().runState).toBe('completed')
+    })
+
+    it('用户拒绝同样退出 awaiting-approval', async () => {
+      const h = createConversationHarness()
+      const states: string[] = []
+      h.session.subscribe(projection => { states.push(projection.runState) })
+      h.toolExecution.prepare = approvalPolicyOnlyFirstTime(['reject']).prepare
+      h.model.enqueue(sayTurn(
+        'say-1',
+        { voice: 'かいた', display: '写好了' },
+        [actionCall('read_file', 'action-1')],
+      ))
+      h.model.enqueue(sayTurn('say-2', { voice: 'やめた', display: '那算了' }))
+
+      const sending = h.session.send({ text: 'hi', images: [] })
+      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+      expect(h.session.projection().runState).toBe('awaiting-approval')
+
+      h.toolExecution.gateway.resolve('reject')
+      await sending
+
+      expect(states.lastIndexOf('executing-tools')).toBeGreaterThan(states.indexOf('awaiting-approval'))
+      expect(h.facts.events).toContain('toolResult:action-1:rejected')
+      expect(h.session.projection().runState).toBe('completed')
+    })
+
+    it('批准超时被自动拒绝后也退出 awaiting-approval', async () => {
+      // 缩短网关自己的 5 分钟超时；超时走的是与 rejectPending 同一条 finish('reject')。
+      const timedOutExecution = new FakeToolExecutionPort(new ApprovalGateway(10))
+      const h = createConversationHarness({}, { toolExecution: timedOutExecution })
+      const states: string[] = []
+      h.session.subscribe(projection => { states.push(projection.runState) })
+      timedOutExecution.prepare = alwaysAsk
+      h.model.enqueue(actionTurn('read_file', 'action-1'))
+      h.model.enqueue(sayTurn('say-2', { voice: 'やめた', display: '那算了' }))
+
+      const result = await h.session.send({ text: 'hi', images: [] })
+
+      expect(result).toMatchObject({ status: 'success' })
+      expect(h.facts.events).toContain('toolResult:action-1:rejected')
+      expect(states).toContain('awaiting-approval')
+      expect(states.lastIndexOf('executing-tools')).toBeGreaterThan(states.indexOf('awaiting-approval'))
+    })
+
+    it('取消让等待态直接落到 cancelled', async () => {
+      const h = createConversationHarness()
+      h.toolExecution.prepare = alwaysAsk
+      h.model.enqueue(actionTurn('read_file', 'action-1'))
+
+      const sending = h.session.send({ text: 'hi', images: [] })
+      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+      expect(h.session.projection().runState).toBe('awaiting-approval')
+
+      h.session.cancel('user-cancelled')
+      await expect(sending).resolves.toMatchObject({ status: 'cancelled' })
+
+      // 取消中止回合信号，网关随之清空待决；待批准请求不会留在界面上。
+      expect(h.toolExecution.gateway.current()).toBeNull()
+      expect(h.session.projection().runState).toBe('cancelled')
+    })
+
+    it('终结的回合不会被迟到的待决事件拉回非终态', async () => {
+      const h = createConversationHarness()
+      h.model.enqueue(sayTurn('say-1', { voice: 'はい', display: '好的' }))
+      await h.session.send({ text: 'hi', images: [] })
+      expect(h.session.projection().runState).toBe('completed')
+
+      const controller = new AbortController()
+      void h.toolExecution.gateway.request({
+        id: 'approval-late',
+        toolName: 'read_file',
+        args: {},
+        kind: 'file',
+        path: 'notes.txt',
+        allowedDecisions: ['allow'],
+      }, controller.signal)
+
+      expect(h.session.projection().runState).toBe('completed')
+      // 收尾：清掉这条请求带的超时定时器，同时验证迟到的「待决清除」也是空操作。
+      h.toolExecution.gateway.rejectPending()
+      expect(h.session.projection().runState).toBe('completed')
+    })
+
+    it('被顶替的回合不会被新回合的批准卡牵动', async () => {
+      const h = createConversationHarness()
+      const statesByRun = new Map<string | null, string[]>()
+      h.session.subscribe(projection => {
+        statesByRun.set(projection.runId, [...(statesByRun.get(projection.runId) ?? []), projection.runState])
+      })
+      h.toolExecution.prepare = alwaysAsk
+      h.model.enqueue(actionTurn('read_file', 'action-a'))
+
+      const stale = h.session.send({ text: '第一条', images: [] })
+      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+      expect(h.session.projection()).toMatchObject({ runId: 'request-1', runState: 'awaiting-approval' })
+
+      h.session.cancel('user-cancelled')
+      h.model.enqueue(actionTurn('read_file', 'action-b'))
+      h.model.enqueue(sayTurn('say-b', { voice: 'はい', display: '好的' }))
+      const fresh = h.session.send({ text: '第二条', images: [] })
+      await vi.waitFor(() => expect(h.toolExecution.gateway.current()).not.toBeNull())
+
+      // 新回合自己的批准卡：等待态必须挂在新回合头上，旧回合不再回来。
+      expect(h.session.projection()).toMatchObject({ runId: 'request-2', runState: 'awaiting-approval' })
+      await expect(stale).resolves.toMatchObject({ status: 'cancelled' })
+      const staleStates = statesByRun.get('request-1') ?? []
+      const cancelledAt = staleStates.indexOf('cancelled')
+      expect(cancelledAt).toBeGreaterThanOrEqual(0)
+      // 落到终态之后，旧回合一直停在终态 —— 新回合的批准卡没有把它牵回等待态。
+      expect(staleStates.slice(cancelledAt).every(state => state === 'cancelled')).toBe(true)
+
+      h.toolExecution.gateway.resolve('allow')
+      await expect(fresh).resolves.toMatchObject({ status: 'success' })
+      expect(h.session.projection()).toMatchObject({ runId: 'request-2', runState: 'completed' })
     })
   })
 
