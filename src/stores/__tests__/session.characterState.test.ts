@@ -21,6 +21,7 @@ vi.mock('../../character/loader', () => ({
   clearCache: vi.fn(),
 }))
 
+import { composeApplication } from '../../compositionRoot'
 import { listCharacterSummaries, loadCharacterJson } from '../../character/loader'
 import { useCharacterStore } from '../character'
 import { useCharacterController } from '../../character/controller'
@@ -106,7 +107,7 @@ async function start(preferredId: string) {
 }
 
 describe('session character look', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     invokeMock.mockReset()
     vi.clearAllMocks()
@@ -117,6 +118,8 @@ describe('session character look', () => {
     vi.mocked(loadCharacterJson).mockImplementation(async (id: string) => (
       id === 'miku' ? { ...miku } : { ...kisaki }
     ))
+    // 会话服务的装配由组合根注入；store 不再自己选仓储。
+    await composeApplication()
   })
 
   it('restores the look a session was left in when switching back to it', async () => {

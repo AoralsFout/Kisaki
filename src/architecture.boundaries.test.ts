@@ -90,8 +90,11 @@ describe('architecture boundaries', () => {
 
   it('keeps SessionStore on the single v2 aggregate persistence path', () => {
     const source = readFileSync(join(SOURCE_ROOT, 'stores', 'session.ts'), 'utf8')
-    expect(source).toContain('new SessionApplicationService(')
-    expect(source).toContain('new TauriSessionRepository()')
+    // 仓储与服务的构造已上移到组合根；store 只剩下「消费装配结果」这一条路径，
+    // 既选不了实现，也回不到旧版会话格式。正面的构造断言见下一条。
+    expect(source).not.toContain('new SessionApplicationService(')
+    expect(source).not.toContain('new TauriSessionRepository()')
+    expect(source).not.toContain('new MemorySessionRepository()')
     expect(source).not.toContain("invoke('sessions_load'")
     expect(source).not.toContain("invoke('sessions_save'")
     expect(source).not.toContain('localStorage')
@@ -99,6 +102,15 @@ describe('architecture boundaries', () => {
     expect(source).not.toContain('saveCurrentSession')
     expect(source).not.toMatch(/session\.messages\s*=/)
     expect(source).not.toMatch(/session\.context\s*=/)
+  })
+
+  it('assembles the v2 session persistence path only in the composition root', () => {
+    // 「真机持久化还是内存兜底」这个选择只允许出现在组合根；它同时是服务与两个仓储适配器
+    // 的唯一构造点，SessionStore 通过注入的装配工厂消费结果。
+    const root = readFileSync(join(SOURCE_ROOT, 'compositionRoot.ts'), 'utf8')
+    expect(root).toContain('new SessionApplicationService(')
+    expect(root).toContain('new TauriSessionRepository()')
+    expect(root).toContain('new MemorySessionRepository()')
   })
 
   it('does not restore the legacy character controller registries', () => {

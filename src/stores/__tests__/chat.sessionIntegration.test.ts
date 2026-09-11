@@ -15,13 +15,14 @@ vi.mock('../../ai', async original => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
+import { composeApplication } from '../../compositionRoot'
 import { useChatStore } from '../chat'
 import { useSessionStore } from '../session'
 
 describe('ChatStore and SessionStore v2 integration', () => {
   let saved: SessionDocument | null
 
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     localStorage.clear()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
@@ -35,6 +36,8 @@ describe('ChatStore and SessionStore v2 integration', () => {
       return Promise.resolve()
     })
     request.mockReset()
+    // 旧回合路径仍由 ChatStore 驱动，但它消费的 ChatSessionPort 现在由组合根注入。
+    await composeApplication()
   })
 
   it('commits user, tool protocol, result, and assistant reply to one timeline', async () => {

@@ -176,7 +176,7 @@ export function setChatSessionPort(port: ChatSessionPort | null): void {
   chatSessionPort = port ?? detachedSessionPort
 }
 
-/** 注入角色身份读取函数，assistant 消息落库时记录身份快照 */
+/** 由组合根注入角色身份读取函数；assistant 消息落库时记录身份快照。 */
 export function setChatCharacterIdentity(getter: () => { id: string; name: string } | null): void {
   characterIdentity = getter
 }
