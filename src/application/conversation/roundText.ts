@@ -121,11 +121,11 @@ export async function resolveSayContent(
 /**
  * 模型未调用 say、直接输出正文时的兜底：
  * 正文当显示文本；无论语言是否相同，都生成一份 TTS 安全的母语台词。
+ * 显示语言不参与判定 —— 正文本身就是显示文本，不需要再按语言选一遍。
  */
 export async function resolveContentFallback(
   content: string,
   voiceLang: string,
-  _displayLang: string,
   translate: TranslateFn,
 ): Promise<{ voice: string; display: string }> {
   const display = (content ?? '').trim()

@@ -10,13 +10,14 @@
  */
 import { MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES } from '../../ai/images'
 import { MAX_TOOL_TURNS } from '../../ai/modelCapabilities'
-import { SAY_TOOL_DEF, SAY_TOOL_NAME } from '../../agent/tools/say'
+import { SAY_TOOL_NAME } from '../../agent/tools/say'
 import { createLogger } from '../../utils/logger'
 import { AssistantMessageCoordinator } from './assistantMessageCoordinator'
 import { ConversationCoordinator, isConversationRunActive, type ConversationRun } from './conversationRun'
 import { ModelStreamDecoder, extractPartialSayArgs, parseSayArgs } from './modelStreamDecoder'
 import { interpretModelTurn } from './modelTurnInterpreter'
 import { executeToolCallBatch, type ProtocolToolCall, type ToolCallBatch } from './toolCallBatch'
+import { assembleRoundToolList } from './roundToolList'
 import { resolveContentFallback, resolveSayContent, type TranslateFn } from './roundText'
 import { collectToolImages, isToolError, isToolSkipped, resultStatus, toolImageLimitNotice } from './toolOutcome'
 
@@ -444,6 +445,26 @@ interface RoundEnvironment {
 }
 
 /**
+ * 一次后台语音准备的全部输入。
+ *
+ * 打包成具名类型而不是排成 7 个位置参数：`voiceLang` 与 `displayLang` 相邻且同为
+ * `string`，位置写法下写反了编译器不会拦，而且语音会照着另一种语言合成。
+ */
+interface VoicePreparationRequest {
+  round: Round
+  messageId: string
+  /** 模型原始 say 参数；voice 用未清洗的原话提交。 */
+  raw: { voice?: string; display?: string }
+  /** TTS 合成语言。 */
+  voiceLang: string
+  /** 文本显示语言。 */
+  displayLang: string
+  turn: number
+  /** 已流式显示的可见预览；后台解析出不同文本时据此决定是否回填。 */
+  displayPreview: string
+}
+
+/**
  * 命名计时器：把回合内的耗时写进 trace 日志。
  * 走时钟端口而不是 performance.now，测试不依赖真实时间。
  */
@@ -677,14 +698,8 @@ export class ConversationSession {
     // ── 收集工具定义（含 say 说话工具）────────────────────
     const character = this.ports.character.state()
     const hasWorkspace = Boolean(this.ports.session.workspaceGrantId())
-    const tools = [
-      ...this.ports.tools.definitions({
-        data: character.data,
-        capabilities: character.capabilities,
-        hasWorkspace,
-      }),
-      SAY_TOOL_DEF,
-    ]
+    // 清单装配与设置页的上下文检查共用同一处实现，两处不会漂移。
+    const tools = assembleRoundToolList(this.ports.tools, character, hasWorkspace)
 
     // 检查点按回合绑定：文件备份走同一份会话事实端口。
     const toolExecution = this.ports.toolExecution.create({
@@ -693,7 +708,7 @@ export class ConversationSession {
         await this.ports.session.markCheckpointFiles(round.sessionId, checkpointId)
       },
       onCheckpointError: (error, path) => {
-        log.warn('conversation_session.tool_checkpoint_failed', `文件备份失败（继续执行）: ${path}`, error)
+        log.warn('conversation_session.tool_checkpoint_failed', `文件备份失败（继续执行）：${path}`, error)
       },
       onSessionApproval: () => {
         this.autoExecSession = true
@@ -995,9 +1010,7 @@ export class ConversationSession {
         const sayCall = calls.find(call => call.function?.name === SAY_TOOL_NAME)
         if (!sayCall) return
         const partial = extractPartialSayArgs(sayCall.function.arguments || '')
-        const { voiceLanguage, displayLanguage } = this.ports.character.state()
-        const visible = partial.display?.trim()
-          || (voiceLanguage === displayLanguage ? partial.voice?.trim() : '')
+        const visible = this.sayDisplayPreview(partial)
         if (visible) renderStreamText(visible)
       },
     })
@@ -1022,9 +1035,9 @@ export class ConversationSession {
       round.fallbackUsed = true
       const visibleText = interpreted.text
       const translate = this.translatorFor(round, turn)
-      const { voiceLanguage, displayLanguage } = this.ports.character.state()
+      const { voiceLanguage } = this.ports.character.state()
       this.renderBubble(round, visibleText, true)
-      const { voice, display } = await resolveContentFallback(visibleText, voiceLanguage, displayLanguage, translate)
+      const { voice, display } = await resolveContentFallback(visibleText, voiceLanguage, translate)
       this.commitSyntheticSay(round, voice, display)
       await this.deliver(round, 'text-fallback', voice, display)
       turnTimer.stop('text — break')
@@ -1076,7 +1089,7 @@ export class ConversationSession {
       const translate = this.translatorFor(round, turn)
       const raw = parseSayArgs(sayCall.function.arguments || '{}')
       const { voiceLanguage, displayLanguage } = this.ports.character.state()
-      const displayPreview = raw.display?.trim() || (voiceLanguage === displayLanguage ? raw.voice?.trim() : '')
+      const displayPreview = this.sayDisplayPreview(raw)
       if (displayPreview) this.renderBubble(round, displayPreview, false)
       // 会话时间线上 say 回执在前、assistant 消息在后。
       await this.coordinator.commitToolResult(round.requestId, {
@@ -1089,7 +1102,15 @@ export class ConversationSession {
         // voice 用原始未清洗的台词提交，清洗与译文在后台继续。
         const messageId = await this.commitAssistant(round, displayPreview, raw.voice, 'say')
         if (messageId) {
-          this.startVoicePreparation(round, messageId, raw, voiceLanguage, displayLanguage, turn, displayPreview)
+          this.startVoicePreparation({
+            round,
+            messageId,
+            raw,
+            voiceLang: voiceLanguage,
+            displayLang: displayLanguage,
+            turn,
+            displayPreview,
+          })
         }
       } else {
         const { voice, display } = await resolveSayContent(raw, voiceLanguage, displayLanguage, translate)
@@ -1116,6 +1137,17 @@ export class ConversationSession {
     return 'continue'
   }
 
+  /**
+   * say 的可见预览：优先 display；display 缺失时，只有双语一致才退回 voice。
+   *
+   * 语言不一致时 voice 是另一种语言的台词，拿它当预览会在气泡里闪出观众看不懂的文本。
+   * 流式增量与整批解析走的是同一份判定，预览与最终气泡才不会在切换点跳一下。
+   */
+  private sayDisplayPreview(raw: { voice?: string; display?: string }): string {
+    const { voiceLanguage, displayLanguage } = this.ports.character.state()
+    return raw.display?.trim() || (voiceLanguage === displayLanguage ? raw.voice?.trim() : '') || ''
+  }
+
   /** 本次请求要发给模型的消息；未授权工作区时追加一条 system 提示。 */
   private requestMessages(tools: readonly ToolDefinition[], hasWorkspace: boolean): ConversationModelMessage[] {
     const messages = [...this.ports.context.messages(tools)]
@@ -1136,7 +1168,7 @@ export class ConversationSession {
           const { protocolCall, parseError } = invocation
           round.toolCallCount++
           this.beginActivity(round, protocolCall.id, protocolCall.function.name || '?')
-          log.info('chat.tool_started', `执行工具: ${protocolCall.function.name || '?'}`, {
+          log.info('chat.tool_started', `执行工具：${protocolCall.function.name || '?'}`, {
             requestId: round.requestId,
             turn: round.turnsUsed - 1,
             toolCallId: protocolCall.id,
@@ -1144,7 +1176,7 @@ export class ConversationSession {
             source: batch.source,
           })
           if (parseError) {
-            log.error('conversation_session.tool_arguments_invalid', `工具参数 JSON 解析失败: ${parseError.message}`, new Error(parseError.message), {
+            log.error('conversation_session.tool_arguments_invalid', `工具参数 JSON 解析失败：${parseError.message}`, new Error(parseError.message), {
               requestId: round.requestId,
               turn: round.turnsUsed - 1,
               toolCallId: protocolCall.id,
@@ -1254,15 +1286,8 @@ export class ConversationSession {
    * 它只持有一个属于本回合的中止信号：新回合顶替、用户取消、会话切换都从
    * cancel / send 的同一个入口过来，越界由模块边界拦住，而不是靠调用方记得取消。
    */
-  private startVoicePreparation(
-    round: Round,
-    messageId: string,
-    raw: { voice?: string; display?: string },
-    voiceLang: string,
-    displayLang: string,
-    turn: number,
-    displayPreview: string,
-  ): void {
+  private startVoicePreparation(request: VoicePreparationRequest): void {
+    const { round, messageId, raw, voiceLang, displayLang, turn, displayPreview } = request
     const { requestId, sessionId } = round
     const translate = this.translatorFor(round, turn, round.voice.signal)
     const voiceStartedAt = this.ports.clock.monotonic()
@@ -1320,7 +1345,7 @@ export class ConversationSession {
         })
       } catch (error) {
         const stopped = this.voiceStopped(round)
-        log.warn('conversation_session.voice_preparation_failed.warn', `后台语音准备失败: ${(error as Error).message}`, error)
+        log.warn('conversation_session.voice_preparation_failed.warn', `后台语音准备失败：${(error as Error).message}`, error)
         if (!playbackStarted) {
           completeBeforePlayback(
             stopped ? 'cancelled' : 'failed',

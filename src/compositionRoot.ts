@@ -98,7 +98,7 @@ export async function composeConversationAssembly(
   // 批准网关由组合根持有；回合只经工具执行端口的 subscribeApproval 拿到待决布尔量，
   // 待批准请求的值仍归网关自己的订阅。超时按既有语义自动拒绝。
   const approvalGateway = new ApprovalGateway(CONFIRM_TIMEOUT_MS, request => {
-    log.warn('composition.approval_timeout', `工具批准超时，自动拒绝: ${request.toolName}`, undefined, {
+    log.warn('composition.approval_timeout', `工具批准超时，自动拒绝：${request.toolName}`, undefined, {
       tool_name: request.toolName,
       approval_kind: request.kind,
       confirm_timeout_ms: CONFIRM_TIMEOUT_MS,
