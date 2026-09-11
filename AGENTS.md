@@ -45,6 +45,7 @@
 | `ConversationSessionSnapshot` | conversation session snapshot | 会话实体：一次会话的权威快照（时间线、检查点、外观），定义在 `src/domain/conversation/events.ts` |
 | 投影形状 | projection shape | `ConversationProjection`：回合派生的界面状态快照，纯界面开关不在其中 |
 | 端口集合 | port set | `ConversationSessionPorts`：构造回合编排器时注入的全部依赖，缺一即构造失败 |
+| 文案 | copy | 回合写进界面与用户消息的字符串；由文案端口 `ConversationTexts` 提供，不在回合内硬编码 |
 
 `ConversationSession` 与 `ConversationSessionSnapshot` 名字相近但不是同一个概念：前者只编排一个回合、不持有任何会话归属，由组合根构造；后者是会被持久化的会话聚合。spec #13 沿用 `ConversationSession` 作为编排器名，与既有域类型并存；两边都不要简写成 `Session`。
 

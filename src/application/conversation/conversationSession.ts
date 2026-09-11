@@ -93,11 +93,16 @@ export type ConversationProjectionListener = (projection: ConversationProjection
 
 /**
  * 回合编排的可调参数。
- * 它们不是对外部世界的依赖，因此不进端口集合；缺省值由实现取既有常量。
+ * 它们不是对外部世界的依赖，因此不进端口集合；缺省值由实现取既有常量
+ * （MAX_TOOL_TURNS、MAX_IMAGE_COUNT、MAX_TOTAL_IMAGE_BYTES 都在无框架依赖的模块里）。
  */
 export interface ConversationSessionOptions {
   /** 模型调用轮次的安全上限（今日为 MAX_TOOL_TURNS），防止模型陷入永不 say 的工具死循环。 */
   maxToolTurns?: number
+  /** 单轮工具输出图片的数量上限（今日为 MAX_IMAGE_COUNT）。 */
+  maxImageCount?: number
+  /** 单轮工具输出图片的总体积上限，单位字节（今日为 MAX_TOTAL_IMAGE_BYTES）。 */
+  maxTotalImageBytes?: number
 }
 
 // ─── 注入端口 ──────────────────────────────────────────
@@ -273,6 +278,28 @@ export interface ConversationNetworkProbe {
 }
 
 /**
+ * 文案端口：回合写进界面与用户消息的全部字符串。
+ *
+ * 回合不能自己 import i18n —— `src/i18n/index.ts` 依赖 vue-i18n，违反 application 层的
+ * 框架边界；也不能把文案甩给展示层 —— `imageOnlyPrompt` 会作为用户消息正文持久化，
+ * 气泡文案必须在 send() 返回之前就进投影。
+ *
+ * 方法名与既有 i18n key 一一对应，逐字不变；改名不改文案。
+ */
+export interface ConversationTexts {
+  /** `chat.input.imageOnlyPrompt` —— 只发了图片时的用户消息正文。 */
+  imageOnlyPrompt(): string
+  /** `app.bubble.networkOff` —— 网络不可用。 */
+  networkOff(): string
+  /** `app.bubble.apiNotConfigured` —— API 未配置。 */
+  apiNotConfigured(): string
+  /** `app.bubble.error` —— 回合失败；`msg` 就是模板里的插值参数。 */
+  error(msg: string): string
+  /** `app.bubble.done` —— 没有可交付回复时的兜底气泡。 */
+  done(): string
+}
+
+/**
  * 构造 ConversationSession 时注入的全部端口，缺一即构造失败。
  * 装配点是组合根：对象图只在那里构建一次。
  */
@@ -291,6 +318,8 @@ export interface ConversationSessionPorts {
   voice: ConversationVoicePort
   clock: ConversationClock
   network: ConversationNetworkProbe
+  /** 文案：回合写进界面与用户消息的字符串。 */
+  texts: ConversationTexts
 }
 
 // ─── 编排器 ────────────────────────────────────────────
@@ -308,10 +337,9 @@ export class ConversationSession {
    */
   constructor(ports: ConversationSessionPorts, options: ConversationSessionOptions = {}) {
     assertSessionPorts(ports)
-    const { maxToolTurns } = options
-    if (maxToolTurns !== undefined && (!Number.isInteger(maxToolTurns) || maxToolTurns < 1)) {
-      throw new Error(`ConversationSession 的 maxToolTurns 必须是正整数：${maxToolTurns}`)
-    }
+    assertPositiveInteger(options.maxToolTurns, 'maxToolTurns')
+    assertPositiveInteger(options.maxImageCount, 'maxImageCount')
+    assertPositiveInteger(options.maxTotalImageBytes, 'maxTotalImageBytes')
   }
 
   /** 送出一条输入并等它走到终态；结果由 SendResult 变体表达，不抛业务异常。 */
@@ -351,6 +379,7 @@ const SESSION_PORT_NAMES: readonly (keyof ConversationSessionPorts)[] = [
   'voice',
   'clock',
   'network',
+  'texts',
 ]
 
 const SESSION_PORT_LABELS: Readonly<Record<keyof ConversationSessionPorts, string>> = {
@@ -364,6 +393,7 @@ const SESSION_PORT_LABELS: Readonly<Record<keyof ConversationSessionPorts, strin
   voice: '语音播放入口',
   clock: '时钟与 id 生成',
   network: '在线状态探测',
+  texts: '界面文案',
 }
 
 /** 每个端口必须具备的方法。缺任一项即视为这一处没有装配。 */
@@ -390,6 +420,15 @@ const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, read
   voice: ['play', 'cancel'],
   clock: ['now', 'monotonic', 'nextId'],
   network: ['isOnline'],
+  texts: ['imageOnlyPrompt', 'networkOff', 'apiNotConfigured', 'error', 'done'],
+}
+
+/** 可调参数都是安全护栏，给错值不如当场失败。 */
+function assertPositiveInteger(value: number | undefined, name: string): void {
+  if (value === undefined) return
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`ConversationSession 的 ${name} 必须是正整数：${value}`)
+  }
 }
 
 /**
