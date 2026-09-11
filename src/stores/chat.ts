@@ -25,7 +25,6 @@ import type { ToolDefinition } from '../agent'
 import { SAY_TOOL_DEF, SAY_TOOL_NAME } from '../agent/tools/say'
 import { conversationAssembly, type ConversationAssembly } from '../compositionRoot'
 import type { ApprovalDecision, ApprovalRequest } from '../application/tools/approvalGateway'
-import type { ChatSessionPort } from '../application/conversation/chatSessionPort'
 import {
   isConversationRunActive,
   isConversationRunUsingTools,
@@ -37,20 +36,6 @@ import type {
   ConversationToolActivity,
 } from '../application/conversation/conversationSession'
 import { createLogger } from '../utils/logger'
-
-// 这些纯函数随回合编排搬到了 application 层，再导出只为存量调用方；
-// 收口工单会把它们连同这里的再导出一起删掉。
-export {
-  extractPartialSayArgs,
-  parseSayArgs,
-} from '../application/conversation/modelStreamDecoder'
-export {
-  isTtsSafeVoice,
-  normalizeTtsSafeVoice,
-  repairJapaneseWordCommas,
-  resolveContentFallback,
-  resolveSayContent,
-} from '../application/conversation/roundText'
 
 const log = createLogger('ChatStore')
 
@@ -97,43 +82,8 @@ export interface CurrentContextInspection extends ChatContextInspection {
   }
 }
 
-/** 角色身份来源：由 App 注入（避免 store 直接依赖 Pinia 角色状态） */
+/** 角色身份来源：由组合根注入（避免 store 直接依赖 Pinia 角色状态） */
 let characterIdentity: (() => { id: string; name: string } | null) | null = null
-
-const detachedSessionPort: ChatSessionPort = {
-  currentSessionId: () => '',
-  workspaceGrantId: () => null,
-  acceptUserMessage: async () => true,
-  recordToolCalls: async () => true,
-  recordToolResult: async () => true,
-  commitAssistantMessage: async () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  reviseAssistantMessage: async () => true,
-  beginCheckpoint: async (_sessionId, messageId) => messageId,
-  backupFile: async () => {},
-  markCheckpointFiles: async () => {},
-  clearConversation: async () => {},
-}
-
-/**
- * 静默成功的空实现端口，以及它的注入函数。
- *
- * 新路径已改由组合根装配的对象图提供会话事实（`conversationAssembly().ports.session`），
- * 这一对注入点因此不再被 store 读取；保留它们只是为了不在本工单里一并删除旧回合实现。
- */
-let chatSessionPort: ChatSessionPort = detachedSessionPort
-
-/**
- * 由组合根注入；ChatStore 从不直接 import SessionStore。
- *
- * 新路径的会话事实改由组合根装配的对象图提供，这个注入点不再被 store 读取，
- * 只保留下来记录「组合根曾经注入过谁」，供收口工单一并删除。
- */
-export function setChatSessionPort(port: ChatSessionPort | null): void {
-  chatSessionPort = port ?? detachedSessionPort
-  log.debug('chat_store.session_port.debug', '会话事实端口已注入（迁移期保留，新路径读取组合根的对象图）', {
-    attached: chatSessionPort !== detachedSessionPort,
-  })
-}
 
 /** 由组合根注入角色身份读取函数；assistant 消息落库时记录身份快照。 */
 export function setChatCharacterIdentity(getter: () => { id: string; name: string } | null): void {

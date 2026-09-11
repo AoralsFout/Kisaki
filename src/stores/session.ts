@@ -561,8 +561,9 @@ export const useSessionStore = defineStore('session', () => {
   /**
    * 把本 store 的会话命令暴露为 ChatSessionPort。
    *
-   * 这里只提供端口工厂，不自己注入：谁在什么时机把它接到 ChatStore 上由组合根决定
-   * （见 SessionStoreChatSessionPort）。端口读取的都是 ref 现值，解析时机不影响行为。
+   * 这里只提供端口工厂，不自己注入：组合根在装配对话对象图时把它包进
+   * SessionStoreChatSessionPort，作为回合的会话事实端口。端口读取的都是 ref 现值，
+   * 解析时机不影响行为。
    */
   function createChatSessionPort(): ChatSessionPort {
     return {

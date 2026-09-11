@@ -202,6 +202,10 @@ describe('architecture boundaries', () => {
     // 语音不在这里直接播放：回合只把已提交的消息交给语音端口。
     expect(session).not.toContain('ttsPlaybackOrchestrator')
     expect(session).toContain('this.ports.voice.play(')
+    // 原先对 ChatStore 的计数断言（工具调用/结果各写一次）随会话事实端口搬到新家：
+    // 会话事实只有这一条写入路径，多一处就会打破「先落库再进模型上下文」的顺序。
+    expect(session.match(/this\.ports\.session\.recordToolCalls\(/g)).toHaveLength(1)
+    expect(session.match(/this\.ports\.session\.recordToolResult\(/g)).toHaveLength(1)
   })
 
   it('routes presentation playback through the TTS playback owner', () => {

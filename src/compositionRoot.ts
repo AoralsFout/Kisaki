@@ -1,14 +1,18 @@
 /**
- * 组合根：显式安装所有跨模块服务与监听器，并构造对话切片的完整对象图。
+ * 组合根：显式安装所有跨模块服务与监听器，并构造对话切片与会话切片的对象图。
  *
- * 各模块不再在加载时或自己的函数体里自行接线；启动流程只调用一次 composeApplication()，
+ * 各模块不再在加载时或自己的函数体里自行接线：installer 与适配器的构造、以及
+ * 端口到 store 的注入，全部声明在本文件的三个导出函数里 —— composeApplication()
+ * 装 installer 并装配对话对象图，composeConversationAssembly() 是对话对象图的唯一
+ * 构造点，assembleSessionService() 是会话持久化适配器的唯一选择点（含真机/内存兜底）。
  * 因此「谁被装配、装配了几次」可以从这一处读出来。
  *
- * 「启动时构建一次」不等于「在 composeApplication() 的这一刻构造」：该函数早于
+ * 「在组合根声明」不等于「在 composeApplication() 的这一刻构造」：该函数早于
  * main.ts 安装 Pinia，也早于凭据预热，因此
  *  - 依赖 Pinia store 的端口延迟到首次调用才解析（见 SessionStoreChatSessionPort）；
  *  - 会话持久化必须等主窗口调 init() 才发生（每个窗口都会执行本函数，只有主窗口
- *    该创建或载入会话文档），故以装配工厂的形式注入，见 assembleSessionService。
+ *    该创建或载入会话文档），故以装配工厂的形式交给 SessionStore 调用，
+ *    见 assembleSessionService。
  */
 import { createLogger } from './utils/logger'
 import type { ApprovalGateway } from './application/tools/approvalGateway'
@@ -174,9 +178,8 @@ export async function composeApplication(): Promise<void> {
     { installLocalSettingsBridge },
     { installMotionPreferenceSync },
     { installTtsPlaybackTelemetry },
-    { setChatSessionPort, setChatCharacterIdentity },
+    { setChatCharacterIdentity },
     { setSessionServiceFactory },
-    { SessionStoreChatSessionPort },
     { useCharacterStore },
   ] = await Promise.all([
     import('./agent'),
@@ -185,7 +188,6 @@ export async function composeApplication(): Promise<void> {
     import('./tts/orchestrator'),
     import('./stores/chat'),
     import('./stores/session'),
-    import('./infrastructure/conversation/sessionStoreChatSessionPort'),
     import('./stores/character'),
   ])
 
@@ -194,8 +196,6 @@ export async function composeApplication(): Promise<void> {
   installMotionPreferenceSync()
   installTtsPlaybackTelemetry()
 
-  // 会话事实端口：组合根是唯一的注入点；端口自己延迟解析 SessionStore。
-  setChatSessionPort(new SessionStoreChatSessionPort())
   // 会话持久化的选择：真机优先、内存兜底，SessionStore 只消费装配结果。
   setSessionServiceFactory(assembleSessionService)
   // 角色身份来源：assistant 消息落库时记录 { id, name } 快照。

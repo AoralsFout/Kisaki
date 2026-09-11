@@ -33,19 +33,30 @@ describe('ModelStreamDecoder', () => {
   })
 })
 
-describe('say stream decoding', () => {
-  it('parses completed payloads and trims fields', () => {
-    expect(parseSayArgs('{"voice":"  hello ","display":" hi "}')).toEqual({
-      voice: 'hello',
-      display: 'hi',
-    })
-    expect(parseSayArgs('not-json')).toEqual({})
+describe('parseSayArgs', () => {
+  it('解析 voice 与 display，并裁剪两端空白', () => {
+    expect(parseSayArgs('{"voice":"こんにちは","display":"你好"}')).toEqual({ voice: 'こんにちは', display: '你好' })
+    expect(parseSayArgs('{"voice":"  あ  "}')).toEqual({ voice: 'あ', display: undefined })
   })
 
-  it('decodes incomplete fields and common escapes', () => {
-    expect(extractPartialSayArgs('{"voice":"hello","display":"line 1\\nline 2')).toEqual({
-      voice: 'hello',
-      display: 'line 1\nline 2',
+  it('缺失字段返回 undefined，非法 JSON 返回空对象', () => {
+    expect(parseSayArgs('{"voice":"あ"}')).toEqual({ voice: 'あ', display: undefined })
+    expect(parseSayArgs('not json')).toEqual({})
+  })
+})
+
+describe('extractPartialSayArgs', () => {
+  it('从未闭合的 JSON 参数中提取已到达的字段', () => {
+    expect(extractPartialSayArgs('{"voice":"こんにちは","display":"你')).toEqual({
+      voice: 'こんにちは',
+      display: '你',
+    })
+  })
+
+  it('解码常见的 JSON 转义', () => {
+    expect(extractPartialSayArgs('{"display":"第一行\\n第二行\\"引号\\""}')).toEqual({
+      voice: undefined,
+      display: '第一行\n第二行"引号"',
     })
   })
 })
