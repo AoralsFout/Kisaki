@@ -26,8 +26,12 @@ function sourceFiles(root: string): string[] {
 }
 
 function importsOf(source: string): string[] {
-  return [...source.matchAll(/(?:import|export)\s+(?:type\s+)?(?:[^'\"]+?\s+from\s+)?['\"]([^'\"]+)['\"]/g)]
+  const specifiers = [...source.matchAll(/(?:import|export)\s+(?:type\s+)?(?:[^'\"]+?\s+from\s+)?['\"]([^'\"]+)['\"]/g)]
     .map(match => match[1])
+  // 动态 import() 没有 from 子句，上面那条正则要求 import 后跟空白，扫不到它；
+  // 少了这一遍，`await import('pinia')` 就能绕过全部规则。
+  for (const match of source.matchAll(/\bimport\s*\(\s*['\"]([^'\"]+)['\"]/g)) specifiers.push(match[1])
+  return specifiers
 }
 
 describe('architecture boundaries', () => {
@@ -64,6 +68,19 @@ describe('architecture boundaries', () => {
       }
     }
     expect(violations).toEqual([])
+  })
+
+  it('keeps the ConversationSession round orchestrator free of framework dependencies', () => {
+    // 这条缝是本次重构唯一新增的对外缝，值得一条具名的、可追溯的断言；
+    // 其余越界（stores / components / infrastructure）由上面那条泛化规则覆盖。
+    const source = readFileSync(
+      join(SOURCE_ROOT, 'application', 'conversation', 'conversationSession.ts'),
+      'utf8',
+    )
+    // importsOf 现在也返回动态 import() 的说明符，`await import('pinia')` 同样在此拦下。
+    for (const forbidden of ['vue', 'pinia', '@tauri-apps/']) {
+      expect(importsOf(source).filter(specifier => specifier.includes(forbidden))).toEqual([])
+    }
   })
 
   it('does not allow ChatStore to import SessionStore', () => {
