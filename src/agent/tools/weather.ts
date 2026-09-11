@@ -5,6 +5,11 @@
  */
 import type { Tool } from '../types'
 import { createLogger } from '../../utils/logger'
+import { RequestError, toRequestError } from '../../application/net/requestError'
+import { RequestExecutor } from '../../application/net/requestExecutor'
+import { fetchTransport } from '../../infrastructure/net/fetchTransport'
+
+const requestExecutor = new RequestExecutor()
 
 const log = createLogger('ToolWeather')
 
@@ -37,13 +42,20 @@ export const weatherTool: Tool = {
     log.sensitiveDebug("tool_weather.city_sensitive.debug", "天气查询城市", { city })
 
     try {
-      const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, {
-        signal: AbortSignal.timeout(8000),
+      const data = await requestExecutor.run<any>({
+        request: { url: `https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh` },
+        transport: fetchTransport,
+        policy: { label: 'tool.weather', timeoutMs: 8000, maxAttempts: 2, backoffBaseMs: 400 },
+        consume: async response => {
+          if (!response.ok) {
+            throw new RequestError('http', `HTTP ${response.status}`, {
+              status: response.status,
+              retryable: false,
+            })
+          }
+          return await response.json()
+        },
       })
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-      const data = await res.json()
       const current = data.current_condition?.[0]
       const forecast = data.weather?.slice(0, days) ?? []
 
@@ -69,7 +81,8 @@ export const weatherTool: Tool = {
       log.info("tool_weather.module.info", `天气查询成功: ${current.temp_C}°C`, { city_length: city.length, current_temp_c: current.temp_C })
       return result
     } catch (err) {
-      if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
+      const failure = toRequestError(err)
+      if (failure.kind === 'timeout') {
         log.warn("tool_weather.module.warn", "天气查询超时", undefined, { city_length: city.length })
         return `查询 "${city}" 天气超时，请稍后重试`
       }

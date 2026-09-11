@@ -202,5 +202,12 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 建立 `AudioSink` 端口与按能力选择机制；HTMLAudio 与 Live2D 口型已拆为独立 Sink，Engine 不再直接持有缓冲播放实现。
   - [x] 将 MediaSource / PCM 两条流式播放通道拆为 `MediaSourceStreamSink` 与 `PcmStreamSink`。
   - [x] 用请求级 Tauri Channel 替换全局 `tts-audio-chunk` 事件，删除 stream_id 手工过滤。
-- [ ] 阶段 6：设置与网络。
+- [x] 阶段 6：设置与网络。
+  - [x] `SecretBackedSettings` 统一 AI / CosyVoice / Search 三份「配置文档 + API Key」生命周期：明文读取、解密缓存、保存加密、旧明文迁移、读取失败降级。
+  - [x] 跨窗口同步收敛为单一 `settingsChangeStream`；全仓库只剩基础设施层一个 `storage` 监听器。
+  - [x] `RequestExecutor` 统一 timeout / retry / cancel / 失败分类 / 重试遥测；AI 对话、快速对话、连接测试、搜索、音色列表、天气共用同一执行器。
+  - [x] 传输层拆为 `fetchTransport`（支持流式响应体）与 `tauriProxyTransport`（Rust 转发）。
+  - [x] SSE 帧解析提取为 `readServerSentEvents`，业务客户端不再自行解码流。
+  - [x] 删除未被使用的 `ai/apiClient.ts`。
+  - [ ] 静态资源加载（Live2D manifest、穿透掩码图片）与 Tauri 命令调用仍直接 fetch/invoke：它们不是外部服务请求，未纳入请求策略。
 - [ ] 阶段 7：清理。

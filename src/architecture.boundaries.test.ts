@@ -240,6 +240,11 @@ describe('architecture boundaries', () => {
       expect(source).not.toMatch(/for \(let attempt/)
     }
 
+    // SSE 帧解析属于传输层：业务客户端不得自行解码流
+    const aiClient = readFileSync(join(SOURCE_ROOT, 'ai', 'client.ts'), 'utf8')
+    expect(aiClient).toContain('readServerSentEvents(')
+    expect(aiClient).not.toContain('TextDecoder')
+
     expect(existsSync(join(SOURCE_ROOT, 'ai', 'apiClient.ts'))).toBe(false)
   })
 })

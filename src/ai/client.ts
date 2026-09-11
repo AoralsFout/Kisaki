@@ -13,6 +13,7 @@ import {
   type RequestTelemetrySink,
 } from '../application/net/requestExecutor'
 import { fetchTransport } from '../infrastructure/net/fetchTransport'
+import { readServerSentEvents } from '../infrastructure/net/serverSentEvents'
 
 const log = createLogger('API')
 
@@ -231,9 +232,7 @@ export async function chat(
         let receivedAny = false
 
         try {
-          const decoder = new TextDecoder()
           let fullText = ''
-          let buffer = ''
           let hasToolCalls = false
           // 累积 tool_calls (index → partial data)
           const toolCallMap = new Map<number, { id: string; name: string; args: string }>()
@@ -256,77 +255,53 @@ export async function chat(
             toolCallMap.clear()
           }
 
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
+          for await (const data of readServerSentEvents(reader)) {
+            if (data === '[DONE]') continue
 
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() ?? ''
-
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (!trimmed || !trimmed.startsWith('data: ')) continue
-              const data = trimmed.slice(6)
-              if (data === '[DONE]') continue
-
-              try {
-                const parsed = JSON.parse(data)
-                const choice = parsed.choices?.[0]
-                const delta = choice?.delta ?? {}
-
-                // ---- 思考内容 ----
-                let reasoningContent = ''
-                for (const key of ['reasoning_content', 'reasoning', 'think', 'thinking']) {
-                  const val = delta[key]
-                  if (typeof val === 'string' && val) { reasoningContent = val; break }
-                }
-                if (!reasoningContent && delta) {
-                  for (const key of Object.keys(delta)) {
-                    if (key === 'content' || key === 'role') continue
-                    const val = delta[key]
-                    if (typeof val === 'string' && val && !Array.isArray(delta[key]))
-                      { reasoningContent = val; break }
-                  }
-                }
-                if (reasoningContent) callbacks.onThinking?.(reasoningContent)
-
-                // ---- 工具调用（流式 delta）----
-                if (delta?.tool_calls) {
-                  hasToolCalls = true
-                  receivedAny = true
-                  for (const tcDelta of delta.tool_calls) {
-                    const idx = tcDelta.index ?? 0
-                    if (!toolCallMap.has(idx)) toolCallMap.set(idx, { id: '', name: '', args: '' })
-                    const entry = toolCallMap.get(idx)!
-                    if (tcDelta.id) entry.id = tcDelta.id
-                    if (tcDelta.function?.name) entry.name += tcDelta.function.name
-                    if (tcDelta.function?.arguments) entry.args += tcDelta.function.arguments
-                  }
-                  callbacks.onToolCallDelta?.(snapshotToolCalls())
-                }
-
-                // ---- 普通内容 ----
-                const contentDelta = delta?.content ?? ''
-                if (contentDelta) {
-                  receivedAny = true
-                  fullText += contentDelta
-                  callbacks.onChunk(contentDelta)
-                }
-              } catch { /* skip parse errors */ }
-            }
-          }
-
-          // 处理 buffer 中剩余的数据
-          if (buffer.trim().startsWith('data: ')) {
             try {
-              const parsed = JSON.parse(buffer.trim().slice(6))
-              const delta = parsed.choices?.[0]?.delta ?? {}
-              if (delta?.content) {
-                fullText += delta.content
-                callbacks.onChunk(delta.content)
+              const parsed = JSON.parse(data)
+              const choice = parsed.choices?.[0]
+              const delta = choice?.delta ?? {}
+
+              // ---- 思考内容 ----
+              let reasoningContent = ''
+              for (const key of ['reasoning_content', 'reasoning', 'think', 'thinking']) {
+                const val = delta[key]
+                if (typeof val === 'string' && val) { reasoningContent = val; break }
               }
-            } catch { /* ignore */ }
+              if (!reasoningContent && delta) {
+                for (const key of Object.keys(delta)) {
+                  if (key === 'content' || key === 'role') continue
+                  const val = delta[key]
+                  if (typeof val === 'string' && val && !Array.isArray(delta[key]))
+                    { reasoningContent = val; break }
+                }
+              }
+              if (reasoningContent) callbacks.onThinking?.(reasoningContent)
+
+              // ---- 工具调用（流式 delta）----
+              if (delta?.tool_calls) {
+                hasToolCalls = true
+                receivedAny = true
+                for (const tcDelta of delta.tool_calls) {
+                  const idx = tcDelta.index ?? 0
+                  if (!toolCallMap.has(idx)) toolCallMap.set(idx, { id: '', name: '', args: '' })
+                  const entry = toolCallMap.get(idx)!
+                  if (tcDelta.id) entry.id = tcDelta.id
+                  if (tcDelta.function?.name) entry.name += tcDelta.function.name
+                  if (tcDelta.function?.arguments) entry.args += tcDelta.function.arguments
+                }
+                callbacks.onToolCallDelta?.(snapshotToolCalls())
+              }
+
+              // ---- 普通内容 ----
+              const contentDelta = delta?.content ?? ''
+              if (contentDelta) {
+                receivedAny = true
+                fullText += contentDelta
+                callbacks.onChunk(contentDelta)
+              }
+            } catch { /* skip parse errors */ }
           }
 
           // 如果有工具调用，触发 onTools 并跳过 onDone

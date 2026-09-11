@@ -6,8 +6,23 @@
 import { loadCosyVoiceConfig, getHttpUrl } from './config'
 import type { VoiceInfo, CosyVoiceConfig } from './types'
 import { createLogger } from '../utils/logger'
+import { RequestError } from '../application/net/requestError'
+import { RequestExecutor, type RequestTelemetrySink } from '../application/net/requestExecutor'
+import { fetchTransport } from '../infrastructure/net/fetchTransport'
 
 const log = createLogger('TTSApi')
+
+const telemetry: RequestTelemetrySink = {
+  attemptFailed: event => log.warn(
+    'ttsapi.request_failed',
+    '音色列表请求失败',
+    event.error,
+    { kind: event.error.kind, status: event.error.status, attempt: event.attempt },
+  ),
+  completed: () => {},
+}
+
+const executor = new RequestExecutor(telemetry)
 
 /** 从服务端查询用户创建的自定义音色列表 */
 export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Promise<VoiceInfo[]> {
@@ -36,21 +51,27 @@ export async function fetchVoiceList(overrides?: Partial<CosyVoiceConfig>): Prom
     },
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  const data = await executor.run<{ output?: { voice_list?: Record<string, any>[] } }>({
+    request: {
+      url,
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: payload,
     },
-    body: JSON.stringify(payload),
+    transport: fetchTransport,
+    policy: { label: 'tts.voice_list', timeoutMs: 20000 },
+    consume: async response => {
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '')
+        throw new RequestError(
+          'http',
+          `查询音色列表失败 (${response.status}): ${errBody.slice(0, 200)}`,
+          { status: response.status, retryable: false },
+        )
+      }
+      return await response.json()
+    },
   })
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '')
-    throw new Error(`查询音色列表失败 (${response.status}): ${errBody.slice(0, 200)}`)
-  }
-
-  const data = await response.json()
   const rawVoices: Record<string, any>[] = data?.output?.voice_list ?? []
 
   const voices = rawVoices
