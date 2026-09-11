@@ -17,9 +17,14 @@ export interface AudioSink {
   play(source: AudioSource, context: AudioSinkContext): Promise<void>
 }
 
-/** Picks the first registered sink that declares support for the source. */
+/** Returns the first registered sink that declares support for the source. */
+export function findAudioSink(sinks: readonly AudioSink[], source: AudioSource): AudioSink | null {
+  return sinks.find(candidate => candidate.canPlay(source)) ?? null
+}
+
+/** Picks the sink for the source and fails loudly when none can play it. */
 export function selectAudioSink(sinks: readonly AudioSink[], source: AudioSource): AudioSink {
-  const sink = sinks.find(candidate => candidate.canPlay(source))
+  const sink = findAudioSink(sinks, source)
   if (!sink) throw new Error(`No TTS audio sink can play source: ${source.kind}`)
   return sink
 }

@@ -29,6 +29,7 @@ describe('buffered TTS providers', () => {
       loadConfig: async () => ({ apiKey: 'key', model: 'cosyvoice-v1', region: 'beijing' }),
       resolveWsUrl: () => 'wss://example.test/tts',
       synthesize,
+      openStream: vi.fn(),
     })
 
     await expect(provider.synthesize(
@@ -46,6 +47,7 @@ describe('buffered TTS providers', () => {
       loadConfig: async () => ({ apiKey: 'key', model: 'cosyvoice-v1', region: 'beijing' }),
       resolveWsUrl: () => 'wss://example.test/tts',
       synthesize,
+      openStream: vi.fn(),
     })
 
     const result = await provider.synthesize(
@@ -58,6 +60,7 @@ describe('buffered TTS providers', () => {
     expect(result.status).toBe('ready')
     if (result.status === 'ready') {
       expect(result.source).toMatchObject({ kind: 'buffered', mimeType: 'audio/mpeg' })
+      if (result.source.kind !== 'buffered') throw new Error('expected buffered source')
       expect(result.source.blob.size).toBe(3)
     }
   })
@@ -70,6 +73,7 @@ describe('buffered TTS providers', () => {
         refAudioPath: '', promptText: '', promptLang: '', textLang: 'ja-JP',
       }),
       synthesize,
+      openStream: vi.fn(),
     })
 
     await expect(provider.synthesize(
@@ -88,6 +92,7 @@ describe('buffered TTS providers', () => {
         refAudioPath: 'voice.wav', promptText: 'hello', promptLang: 'en-US', textLang: 'ja-JP',
       }),
       synthesize,
+      openStream: vi.fn(),
     })
 
     const result = await provider.synthesize(

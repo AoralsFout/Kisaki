@@ -3,7 +3,8 @@ use std::time::Duration;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
-use tauri::{Emitter, Manager};
+use tauri::ipc::Channel;
+use tauri::Manager;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_tungstenite::connect_async;
@@ -20,11 +21,9 @@ pub(crate) struct TtsResult {
     format: String,
 }
 
-/// TTS 流式音频帧事件
+/// TTS 流式音频帧（通过本次调用的 Channel 回传，不再走全局事件）
 #[derive(Clone, Serialize)]
 pub(crate) struct TtsChunk {
-    /// 所属流的唯一标识，前端据此过滤掉已被取代的旧流的音频帧
-    pub(crate) stream_id: String,
     pub(crate) data: String,
     pub(crate) format: String,
     pub(crate) is_last: bool,
@@ -373,11 +372,11 @@ pub(crate) async fn cosyvoice_tts(
     result
 }
 
-/// 通过 CosyVoice WebSocket API 流式合成语音，逐帧 emit 给前端
+/// 通过 CosyVoice WebSocket API 流式合成语音，逐帧经请求级 Channel 回传
 #[tauri::command]
 pub(crate) async fn cosyvoice_tts_stream(
     app_handle: tauri::AppHandle,
-    stream_id: String,
+    on_chunk: Channel<TtsChunk>,
     api_key: String,
     model: String,
     voice: String,
@@ -395,8 +394,8 @@ pub(crate) async fn cosyvoice_tts_stream(
     // 等待 task-started 并发送文本
     cosyvoice_send_text(&mut write, &mut read, &task_id, &text).await?;
 
-    // 逐帧接收音频，即时 emit 给前端。所有退出路径都在循环外统一发送结束标记，
-    // 确保前端 playStream 不会因缺少 is_last 而无限等待。
+    // 逐帧接收音频，即时推送给前端。所有退出路径都在循环外统一发送结束标记，
+    // 确保流式 Sink 不会因缺少 is_last 而无限等待。
     let mut has_data = false;
     let recv_result: Result<(), String> = loop {
         // 读取每帧最多等待 30 秒，避免服务端停滞导致命令永久挂起
@@ -408,12 +407,11 @@ pub(crate) async fn cosyvoice_tts_stream(
             Some(Ok(Message::Binary(data))) => {
                 has_data = true;
                 let chunk = TtsChunk {
-                    stream_id: stream_id.clone(),
                     data: base64::engine::general_purpose::STANDARD.encode(&data),
                     format: "mp3".to_string(),
                     is_last: false,
                 };
-                let _ = app_handle.emit("tts-audio-chunk", chunk);
+                let _ = on_chunk.send(chunk);
             }
             Some(Ok(Message::Text(text_msg))) => {
                 match parse_ws_event(&text_msg) {
@@ -437,16 +435,12 @@ pub(crate) async fn cosyvoice_tts_stream(
         }
     };
 
-    // 无论成功或失败，都发送结束标记（带 stream_id），通知前端结束本次流
-    let _ = app_handle.emit(
-        "tts-audio-chunk",
-        TtsChunk {
-            stream_id,
-            data: String::new(),
-            format: "mp3".to_string(),
-            is_last: true,
-        },
-    );
+    // 无论成功或失败，都发送结束标记，通知前端结束本次流
+    let _ = on_chunk.send(TtsChunk {
+        data: String::new(),
+        format: "mp3".to_string(),
+        is_last: true,
+    });
 
     // 连接处理：成功且来自连接池 → 归还复用；否则关闭/丢弃（坏连接不回收）
     match recv_result {
@@ -541,18 +535,13 @@ pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String
     Ok(GptSoVitsResult { audio_base64, format })
 }
 
-/// GPT-SoVITS 流式合成 — 逐 chunk emit 给前端，前端边收边播
+/// GPT-SoVITS 流式合成 — 逐 chunk 经请求级 Channel 回传，前端边收边播
 #[tauri::command]
 pub(crate) async fn gptsovits_tts_stream(
-    app_handle: tauri::AppHandle,
-    stream_id: String,
+    on_chunk: Channel<TtsChunk>,
     url: String,
 ) -> Result<(), String> {
-    crate::log::write_native_log(
-        "debug",
-        "TTS",
-        format!("GPT-SoVITS 流式请求: stream_id={}", stream_id),
-    );
+    crate::log::write_native_log("debug", "TTS", "GPT-SoVITS 流式请求".to_string());
 
     let response = gptsovits_client()?
         .get(&url)
@@ -579,8 +568,7 @@ pub(crate) async fn gptsovits_tts_stream(
         chunk_count += 1;
         let data = engine.encode(&chunk);
         let is_last = false; // 还不知道是否最后，最后单独发结束信号
-        let _ = app_handle.emit("tts-audio-chunk", TtsChunk {
-            stream_id: stream_id.clone(),
+        let _ = on_chunk.send(TtsChunk {
             data,
             format: "wav".to_string(),
             is_last,
@@ -588,8 +576,7 @@ pub(crate) async fn gptsovits_tts_stream(
     }
 
     // 发送结束标记
-    let _ = app_handle.emit("tts-audio-chunk", TtsChunk {
-        stream_id: stream_id.clone(),
+    let _ = on_chunk.send(TtsChunk {
         data: String::new(),
         format: "wav".to_string(),
         is_last: true,
@@ -598,7 +585,7 @@ pub(crate) async fn gptsovits_tts_stream(
     crate::log::write_native_log(
         "info",
         "TTS",
-        format!("GPT-SoVITS 流式完成: stream_id={}, {} chunks", stream_id, chunk_count),
+        format!("GPT-SoVITS 流式完成: {} chunks", chunk_count),
     );
     Ok(())
 }

@@ -170,12 +170,38 @@ describe('architecture boundaries', () => {
     const gptSoVits = readFileSync(join(SOURCE_ROOT, 'tts', 'gptsovits.ts'), 'utf8')
     expect(gptSoVits).not.toContain('export function playAudioBlob(')
 
-    const sinkFiles = sourceFiles(join(SOURCE_ROOT, 'tts', 'sinks'))
-    expect(sinkFiles.length).toBeGreaterThan(0)
-    for (const file of sinkFiles) {
-      const source = readFileSync(file, 'utf8')
-      expect(source).not.toContain('/stores/')
-      expect(source).not.toMatch(/from 'pinia'/)
+    for (const directory of ['sinks', 'streams', 'providers']) {
+      const files = sourceFiles(join(SOURCE_ROOT, 'tts', directory))
+      expect(files.length).toBeGreaterThan(0)
+      for (const file of files) {
+        const source = readFileSync(file, 'utf8')
+        expect(source).not.toContain('/stores/')
+        expect(source).not.toMatch(/from 'pinia'/)
+      }
     }
+  })
+
+  it('keeps streaming transport and playback out of the TTS engine', () => {
+    const engine = readFileSync(join(SOURCE_ROOT, 'tts', 'speak.ts'), 'utf8')
+    expect(engine).toContain('findAudioSink(')
+    expect(engine).not.toContain('new MediaSource(')
+    expect(engine).not.toContain('addSourceBuffer')
+    expect(engine).not.toContain('SourceBuffer')
+    expect(engine).not.toContain('new Audio(')
+    expect(engine).not.toContain('atob(')
+    expect(engine).not.toContain('listen(')
+    expect(engine).not.toContain('tts-audio-chunk')
+
+    // 只有请求级通道适配器可以直接碰 Tauri Channel。
+    const channelAdapter = readFileSync(join(SOURCE_ROOT, 'tts', 'streams', 'tauriChunkChannel.ts'), 'utf8')
+    expect(channelAdapter).toContain('new Channel<TtsChunkPayload>()')
+    const channelStream = readFileSync(join(SOURCE_ROOT, 'tts', 'streams', 'channelAudioStream.ts'), 'utf8')
+    expect(channelStream).not.toContain('@tauri-apps/')
+  })
+
+  it('replaces the global TTS audio event with a request-scoped channel', () => {
+    const rustTts = readFileSync(join(process.cwd(), 'src-tauri', 'src', 'tts.rs'), 'utf8')
+    expect(rustTts).not.toContain('tts-audio-chunk')
+    expect(rustTts).toContain('Channel<TtsChunk>')
   })
 })
