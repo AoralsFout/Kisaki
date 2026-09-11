@@ -1,8 +1,8 @@
 /**
  * 会话事实端口（`ChatSessionPort`）的 Pinia 适配器。
  *
- * 端口实现由 SessionStore 提供（`createChatSessionPort()`），装配与注入由组合根完成：
- * store 不再在自己的函数体里调用 `setChatSessionPort(...)`。
+ * 端口实现由 SessionStore 提供（`createChatSessionPort()`），装配由组合根在
+ * `composeConversationAssembly()` 里完成：它是端口集合里的 `session`，store 侧没有注入函数。
  *
  * 为什么是延迟解析：`composeApplication()` 早于 `main.ts` 安装 Pinia，那一刻
  * `useSessionStore()` 没有活动实例；而 store 是单例，延迟到首次调用解析一次即可。
