@@ -194,7 +194,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 建立 `AssistantMessageCoordinator` 提交边界；TTS 仅订阅已提交/修订事件。
   - [x] 将工具调用/结果的会话事实写入与模型上下文投影顺序移入 ConversationCoordinator；旧请求在异步持久化后不得污染新请求上下文。
   - [x] SessionStore 切换到 v2 后，将提交端口接到 Session aggregate 的原子 `AssistantCommitted`。
-- [ ] 阶段 5：TTS 管道。
+- [x] 阶段 5：TTS 管道。
   - [x] 建立无框架依赖的 `TtsPlaybackOrchestrator` 与显式 PlaybackSession 状态流。
   - [x] 将聊天与角色试听的播放入口，以及去重、取消、替换和遥测生命周期收敛到 Orchestrator。
   - [x] 将 CosyVoice / GPT-SoVITS 的配置预检与批量合成拆为统一 `TtsProvider`，输出 `AudioSource`。
