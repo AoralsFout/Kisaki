@@ -160,4 +160,22 @@ describe('architecture boundaries', () => {
     expect(source).not.toMatch(/invoke<[^>]+>\('cosyvoice_tts'/)
     expect(source).not.toContain('getGptSoVitsCharacterParams')
   })
+
+  it('keeps buffered audio playback behind sink ports', () => {
+    const engine = readFileSync(join(SOURCE_ROOT, 'tts', 'speak.ts'), 'utf8')
+    expect(engine).toContain('selectAudioSink(')
+    expect(engine).not.toContain('playAudioBlob(')
+    expect(engine).not.toContain('URL.createObjectURL(source.blob)')
+
+    const gptSoVits = readFileSync(join(SOURCE_ROOT, 'tts', 'gptsovits.ts'), 'utf8')
+    expect(gptSoVits).not.toContain('export function playAudioBlob(')
+
+    const sinkFiles = sourceFiles(join(SOURCE_ROOT, 'tts', 'sinks'))
+    expect(sinkFiles.length).toBeGreaterThan(0)
+    for (const file of sinkFiles) {
+      const source = readFileSync(file, 'utf8')
+      expect(source).not.toContain('/stores/')
+      expect(source).not.toMatch(/from 'pinia'/)
+    }
+  })
 })

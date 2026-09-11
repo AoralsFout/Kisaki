@@ -159,57 +159,6 @@ export function buildGptSoVitsStreamUrl(
   return `${baseUrl}/tts?${searchParams.toString()}`
 }
 
-/**
- * 通过 HTMLAudioElement 播放 GPT-SoVITS 返回的 blob
- * 返回 Promise，播放结束或出错时 resolve
- */
-export function playAudioBlob(
-  blob: Blob,
-  signal?: AbortSignal,
-  onFirstAudio?: () => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    try {
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-
-      audio.onended = () => {
-        URL.revokeObjectURL(url)
-        resolve()
-      }
-      audio.onerror = () => {
-        URL.revokeObjectURL(url)
-        reject(new Error('音频播放失败'))
-      }
-
-      if (signal) {
-        if (signal.aborted) {
-          audio.pause()
-          audio.src = ''
-          URL.revokeObjectURL(url)
-          resolve()
-          return
-        }
-        signal.addEventListener('abort', () => {
-          audio.pause()
-          audio.src = ''
-          URL.revokeObjectURL(url)
-          resolve()
-        }, { once: true })
-      }
-
-      audio.play()
-        .then(() => onFirstAudio?.())
-        .catch((err) => {
-          URL.revokeObjectURL(url)
-          reject(err)
-        })
-    } catch (err) {
-      reject(err)
-    }
-  })
-}
-
 /** 拼接两段字节 */
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   if (a.length === 0) return b

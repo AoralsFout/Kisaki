@@ -199,7 +199,8 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] 将聊天与角色试听的播放入口，以及去重、取消、替换和遥测生命周期收敛到 Orchestrator。
   - [x] 将 CosyVoice / GPT-SoVITS 的配置预检与批量合成拆为统一 `TtsProvider`，输出 `AudioSource`。
   - [ ] 将两套流式合成也接入 Provider/AudioSource 契约。
-  - [ ] 将 MediaSource / PCM / HTMLAudio / Live2D 口型拆为可选择的 `AudioSink`。
+  - [x] 建立 `AudioSink` 端口与按能力选择机制；HTMLAudio 与 Live2D 口型已拆为独立 Sink，Engine 不再直接持有缓冲播放实现。
+  - [ ] 将 MediaSource / PCM 两条流式播放通道也拆为 `AudioSink`。
   - [ ] 用请求级 Channel 或流句柄替换全局 `tts-audio-chunk` 事件。
 - [ ] 阶段 6：设置与网络。
 - [ ] 阶段 7：清理。

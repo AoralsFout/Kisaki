@@ -15,10 +15,13 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { loadCosyVoiceConfigSecure, getWsUrl, getTtsProvider, loadGptSoVitsConfig } from './config'
-import { playAudioBlob, buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
+import { buildGptSoVitsStreamUrl, PcmStreamPlayer } from './gptsovits'
 import { createLogger } from '../utils/logger'
 import { STORAGE_TTS_ENABLED } from '../constants'
 import type { AudioSource, TtsProvider } from '../application/tts/ttsProvider'
+import { selectAudioSink, type AudioSink } from '../application/tts/audioSink'
+import { HtmlAudioSink } from './sinks/htmlAudioSink'
+import { Live2DLipSyncSink, type VoicePlayer } from './sinks/live2DLipSyncSink'
 import { CosyVoiceProvider } from './providers/cosyVoiceProvider'
 import { GptSoVitsProvider } from './providers/gptSoVitsProvider'
 import { loadGptSoVitsCharacterParams } from './characterVoiceProfile'
@@ -33,6 +36,8 @@ export type {
   TtsPlaybackStatus,
 } from '../application/tts/ttsPlaybackOrchestrator'
 
+export type { VoicePlayer } from './sinks/live2DLipSyncSink'
+
 const log = createLogger('TTS')
 
 /** TTS 存储 key */
@@ -45,9 +50,6 @@ interface TtsChunk {
   format: string
   is_last: boolean
 }
-
-/** Live2D 口型播放器：播放给定音频 URL 并驱动模型口型；signal 中止即停。 */
-export type VoicePlayer = (audioUrl: string, signal: AbortSignal) => Promise<void>
 
 // ============================================================
 //  TtsEngine 类 — 封装所有 TTS 状态（原模块级 currentController）
@@ -62,9 +64,20 @@ export class TtsEngine {
   /** 以稳定 key 去重当前实例的连续配置警告。 */
   private configSkipKeys = new Set<string>()
   private readonly providers: ReadonlyMap<TtsProvider['id'], TtsProvider>
+  /** 音频输出实现按能力排序；首个 canPlay 命中的 Sink 负责本次播放。 */
+  private readonly sinks: readonly AudioSink[]
 
-  constructor(providers: readonly TtsProvider[] = [new CosyVoiceProvider(), new GptSoVitsProvider()]) {
+  constructor(
+    providers: readonly TtsProvider[] = [new CosyVoiceProvider(), new GptSoVitsProvider()],
+    sinks?: readonly AudioSink[],
+  ) {
     this.providers = new Map(providers.map(provider => [provider.id, provider]))
+    if (sinks) {
+      this.sinks = sinks
+    } else {
+      const htmlAudio = new HtmlAudioSink()
+      this.sinks = [new Live2DLipSyncSink(() => this.voicePlayer, htmlAudio), htmlAudio]
+    }
   }
 
   /** 配置类跳过只 warn 一次（同 key），后续以 trace 记录，既不刷屏也保留可观测性。 */
@@ -344,21 +357,8 @@ export class TtsEngine {
     signal: AbortSignal,
     onFirstAudio?: () => void,
   ): Promise<void> {
-    if (!this.voicePlayer) {
-      await playAudioBlob(source.blob, signal, onFirstAudio)
-      return
-    }
-
-    const url = URL.createObjectURL(source.blob)
-    try {
-      await this.voicePlayer(url, signal)
-      onFirstAudio?.()
-    } catch (error) {
-      log.warn('tts.buffered_lip_sync.warn', 'playVoice 口型播放失败，回退 HTMLAudio', error)
-      if (!signal.aborted) await playAudioBlob(source.blob, signal, onFirstAudio)
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+    const sink = selectAudioSink(this.sinks, source)
+    await sink.play(source, { signal, onFirstAudio })
   }
 
   /**
