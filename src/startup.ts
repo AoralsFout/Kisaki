@@ -9,7 +9,7 @@
  */
 import { loadConfigSecure, isConfigValid } from './ai'
 import { loadCosyVoiceConfigSecure } from './tts'
-import { useChatStore, setChatCharacterIdentity } from './stores/chat'
+import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
 import { useCharacterStore, initCharacterDataDir } from './character'
 import { initPassthrough } from './passthrough'
@@ -18,7 +18,11 @@ import { createLogger } from './utils/logger'
 
 const log = createLogger('Startup')
 
-/** 恢复窗口、预热凭据、加载会话与角色，并把角色身份来源接入 ChatStore。 */
+/**
+ * 恢复窗口、预热凭据、加载会话与角色。
+ *
+ * 角色身份来源的注入已上移到组合根（同属装配）；这里只负责按依赖顺序触发加载。
+ */
 export async function startMainWindow(): Promise<void> {
   await initWindowState('main', { showAfterRestore: true })
     .catch(() => { /* 浏览器预览环境无原生窗口 */ })
@@ -44,9 +48,6 @@ export async function startMainWindow(): Promise<void> {
     .catch((e) => log.error("startup.session_init_failed", "会话初始化失败", e))
   await charStore.init(sessionStore.currentSession?.characterId)
     .catch((e) => log.error("startup.character_init_failed", "角色初始化失败", e))
-
-  // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
-  setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
 }
 
 /** API 配置是否已保存（仅代表字段完整，不代表连接测试通过）。 */

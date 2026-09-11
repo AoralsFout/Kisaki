@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
 }))
 
+import { composeApplication } from '../../compositionRoot'
 import { useChatStore } from '../chat'
 import { useSessionStore } from '../session'
 
@@ -46,10 +47,13 @@ function useTauriDocument(saved: SessionDocument | null = null): { saves: Sessio
 }
 
 describe('SessionStore v2 projection facade', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     invokeMock.mockReset()
     localStorage.clear()
+    // 真机 / 内存仓储的选择与 SessionApplicationService 的构造都在组合根；
+    // store 只消费装配结果，因此测试也必须经组合根装配。
+    await composeApplication()
   })
 
   it('creates and persists only a strict v2 document on first launch', async () => {

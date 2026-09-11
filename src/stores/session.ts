@@ -3,11 +3,13 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import type { ChatContextSnapshot, ChatMessage as ProtocolMessage } from '../ai'
 import type { ChatMessage } from './chat'
-import { setChatSessionPort, useChatStore } from './chat'
+import { useChatStore } from './chat'
+import type { ChatSessionPort } from '../application/conversation/chatSessionPort'
+import type { SessionServiceFactory } from '../application/session/sessionServiceAssembly'
 import { useCharacterStore, type CharacterVisualState } from './character'
 import { DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
-import { SessionApplicationService } from '../application/session/sessionApplicationService'
+import type { SessionApplicationService } from '../application/session/sessionApplicationService'
 import type {
   CommitAssistantMessage,
   ReviseAssistantMessage,
@@ -19,8 +21,6 @@ import type {
   SessionCheckpoint,
 } from '../domain/conversation/events'
 import { SessionAggregate } from '../domain/conversation/sessionAggregate'
-import { TauriSessionRepository } from '../infrastructure/session/tauriSessionRepository'
-import { MemorySessionRepository } from '../infrastructure/session/memorySessionRepository'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('SessionStore')
@@ -44,6 +44,19 @@ export interface Session {
 
 function nextId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * 会话服务装配工厂。由组合根在启动时注入。
+ *
+ * store 不再自己构造仓储适配器、也不再自己决定真机持久化还是内存兜底：
+ * 那是装配决策，归属组合根；这里只消费装配结果。
+ */
+let createSessionService: SessionServiceFactory | null = null
+
+/** 由组合根注入会话服务装配；传 null 恢复「缺装配」状态。 */
+export function setSessionServiceFactory(factory: SessionServiceFactory | null): void {
+  createSessionService = factory
 }
 
 function toProtocolSnapshot(snapshot: ConversationSessionSnapshot): ChatContextSnapshot {
@@ -143,25 +156,12 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function initializeService(): Promise<void> {
-    service = new SessionApplicationService({
-      repository: new TauriSessionRepository(),
-      now: Date.now,
-      nextId,
-    })
-    try {
-      await service.initialize('新对话')
-    } catch (error) {
-      // 浏览器预览没有 Tauri 命令通道。此处保留易失的 v2 文档；
-      // 绝不读取或改写旧版会话格式。
-      log.warn('session.persistence_unavailable', '会话文件接口不可用，使用内存会话', error)
-      persistError.value = true
-      service = new SessionApplicationService({
-        repository: new MemorySessionRepository(),
-        now: Date.now,
-        nextId,
-      })
-      await service.initialize('新对话')
-    }
+    // 仓储选择（真机持久化 / 内存兜底）由组合根做出，这里只消费装配结果；
+    // 缺装配时显式失败，而不是悄悄退回某个默认实现。
+    if (!createSessionService) throw new Error('SessionStore 缺少会话服务装配：组合根未注入')
+    const assembly = await createSessionService({ now: Date.now, nextId })
+    service = assembly.service
+    persistError.value = assembly.degraded
   }
 
   async function resolveWorkspace(snapshot: ConversationSessionSnapshot): Promise<void> {
@@ -558,19 +558,27 @@ export const useSessionStore = defineStore('session', () => {
     return true
   }
 
-  setChatSessionPort({
-    currentSessionId: () => currentSessionId.value,
-    workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
-    acceptUserMessage,
-    recordToolCalls,
-    recordToolResult,
-    commitAssistantMessage,
-    reviseAssistantMessage,
-    beginCheckpoint,
-    backupFile,
-    markCheckpointFiles,
-    clearConversation,
-  })
+  /**
+   * 把本 store 的会话命令暴露为 ChatSessionPort。
+   *
+   * 这里只提供端口工厂，不自己注入：谁在什么时机把它接到 ChatStore 上由组合根决定
+   * （见 SessionStoreChatSessionPort）。端口读取的都是 ref 现值，解析时机不影响行为。
+   */
+  function createChatSessionPort(): ChatSessionPort {
+    return {
+      currentSessionId: () => currentSessionId.value,
+      workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
+      acceptUserMessage,
+      recordToolCalls,
+      recordToolResult,
+      commitAssistantMessage,
+      reviseAssistantMessage,
+      beginCheckpoint,
+      backupFile,
+      markCheckpointFiles,
+      clearConversation,
+    }
+  }
 
   return {
     sessions,
@@ -580,6 +588,7 @@ export const useSessionStore = defineStore('session', () => {
     currentSession,
     sessionList,
     canChangeCharacter,
+    createChatSessionPort,
     init,
     createSession,
     switchSession,

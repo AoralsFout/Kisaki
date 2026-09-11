@@ -29,12 +29,15 @@ import {
   readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
   replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
 } from '../files'
+import { composeApplication } from '../../../compositionRoot'
 import { useSessionStore } from '../../../stores/session'
 
 const ROOT = 'C:\\work\\ws'
 const WORKSPACE_ID = 'ws_test'
 
 async function setupSessionWithWorkspace(root: string | null) {
+  // 会话服务的装配（含真机不可用时的内存兜底）由组合根完成。
+  await composeApplication()
   const store = useSessionStore()
   await store.init()
   if (root) await store.setWorkspace({ id: WORKSPACE_ID, path: root })
@@ -47,7 +50,7 @@ describe('文件工具 - 未授权工作目录', () => {
     setActivePinia(createPinia())
     localStorageMock.clear()
     invokeMock.mockReset()
-    // 默认模拟非 Tauri 环境：session store 走 localStorage 回退，不产生 invoke 噪音
+    // 默认模拟非 Tauri 环境：组合根据此装配内存兜底仓储，不产生 invoke 噪音
     invokeMock.mockRejectedValue(new Error('not in tauri'))
   })
 
