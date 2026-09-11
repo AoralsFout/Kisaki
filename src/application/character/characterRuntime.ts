@@ -116,6 +116,29 @@ export class CharacterRuntime {
     this.publish()
   }
 
+  /**
+   * Best-effort restore of a persisted look. Unlike setLook (which validates
+   * commands and throws), a value the current renderer cannot render falls back
+   * to the current one, or to the first supported value. Never throws: restoring
+   * a session must not fail because the character has no image for a label.
+   */
+  restoreLook(change: Partial<CharacterLook>): void {
+    if (!this.state.look || !this.state.capabilities) return
+    const capabilities = this.state.capabilities
+    const current = this.state.look
+    const take = (value: string | undefined, values: readonly string[], fallback: string): string => {
+      if (value === undefined) return fallback
+      if (values.includes(value)) return value
+      return values.includes(fallback) ? fallback : (values[0] ?? '')
+    }
+    this.setLook({
+      emotion: take(change.emotion, capabilities.emotions, current.emotion),
+      stance: take(change.stance, capabilities.stances, current.stance),
+      costume: take(change.costume, capabilities.costumes, current.costume),
+      screenPose: take(change.screenPose, capabilities.screenPoses, current.screenPose),
+    })
+  }
+
   updateCapabilities(change: Partial<CharacterCapabilities>): void {
     if (!this.state.look || !this.state.capabilities) throw new Error('No character is selected')
     const capabilities: CharacterCapabilities = {

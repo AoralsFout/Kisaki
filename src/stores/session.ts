@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import type { ChatContextSnapshot, ChatMessage as ProtocolMessage } from '../ai'
@@ -6,12 +6,14 @@ import type { ChatMessage } from './chat'
 import { setChatSessionPort, useChatStore } from './chat'
 import { useCharacterStore, type CharacterVisualState } from './character'
 import { DEFAULT_POSE } from '../character/poses'
+import type { PoseKey } from '../character/poses'
 import { SessionApplicationService } from '../application/session/sessionApplicationService'
 import type {
   CommitAssistantMessage,
   ReviseAssistantMessage,
 } from '../application/conversation/assistantMessageCoordinator'
 import type {
+  CharacterLookSnapshot,
   ConversationSessionSnapshot,
   RecordedToolCall,
   SessionCheckpoint,
@@ -31,6 +33,8 @@ export interface Session {
   context: ChatContextSnapshot
   characterId?: string
   characterLocked: boolean
+  /** 会话记住的角色外观；加载该会话时恢复，null = 尚未记录 */
+  character: CharacterLookSnapshot | null
   workspaceRoot: string | null
   workspaceId: string | null
   checkpoints: SessionCheckpoint[]
@@ -86,6 +90,7 @@ function toView(snapshot: ConversationSessionSnapshot, workspaceRoot: string | n
     context: toProtocolSnapshot(snapshot),
     characterId: snapshot.characterId ?? undefined,
     characterLocked: snapshot.characterLocked,
+    character: snapshot.character,
     workspaceRoot,
     workspaceId: snapshot.workspaceGrantId,
     checkpoints: snapshot.checkpoints,
@@ -102,6 +107,8 @@ export const useSessionStore = defineStore('session', () => {
   const workspaceRoots = new Map<string, string>()
   let service: SessionApplicationService | null = null
   let initializing: Promise<void> | null = null
+  /** true = 正在套用会话/检查点外观，期间的角色变化不写回会话 */
+  let restoringCharacter = false
 
   const currentSession = computed(() => (
     sessions.value.find(session => session.id === currentSessionId.value) ?? null
@@ -176,40 +183,99 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  /**
+   * 旧版会话没有记录外观：退回最近一次检查点记下的外观，
+   * 总比把用户设置的情绪/位置直接丢掉更接近原状。
+   */
+  function latestCheckpointLook(session: Session): CharacterLookSnapshot | null {
+    for (let index = session.checkpoints.length - 1; index >= 0; index -= 1) {
+      const character = session.checkpoints[index].character
+      if (character) return character
+    }
+    return null
+  }
+
+  function sameLook(left: CharacterLookSnapshot | null, right: CharacterLookSnapshot): boolean {
+    return left !== null
+      && left.emotion === right.emotion
+      && left.stance === right.stance
+      && left.costume === right.costume
+      && left.screenPose === right.screenPose
+  }
+
+  /**
+   * 把当前角色外观写回指定会话（默认当前会话）。外观变化时由 watch 触发，
+   * 因此「设置后不切会话就关窗」也不会丢。
+   */
+  async function persistCharacterState(sessionId = currentSessionId.value): Promise<void> {
+    const charStore = useCharacterStore()
+    // 恢复过程中角色会先被重置再套用会话外观，中间的过渡值不能写回会话。
+    if (restoringCharacter || !service || !charStore.data) return
+    const session = sessions.value.find(candidate => candidate.id === sessionId)
+    if (!session) return
+    const look = charStore.getVisualStateSnapshot()
+    if (sameLook(session.character, look)) return
+    try {
+      await runCommand(() => requireService().setCharacterState(sessionId, look))
+    } catch {
+      // runCommand 已记录持久化失败并置 persistError，外观本身仍然生效。
+    }
+  }
+
   async function restoreCharacter(session: Session, checkpoint?: SessionCheckpoint | null): Promise<void> {
     const charStore = useCharacterStore()
     const checkpointCharacter = checkpoint?.character ?? null
     const characterId = checkpointCharacter?.characterId ?? session.characterId
-    if (
-      characterId
-      && characterId !== charStore.currentId
-      && charStore.availableList.includes(characterId)
-    ) {
-      try {
-        await charStore.loadCharacter(characterId, true)
-      } catch (error) {
-        log.warn('session.character_restore_failed', '恢复会话角色失败，保持当前角色', error)
+    restoringCharacter = true
+    try {
+      if (
+        characterId
+        && characterId !== charStore.currentId
+        && charStore.availableList.includes(characterId)
+      ) {
+        try {
+          await charStore.loadCharacter(characterId, true)
+        } catch (error) {
+          log.warn('session.character_restore_failed', '恢复会话角色失败，保持当前角色', error)
+        }
       }
-    }
-    if (checkpointCharacter) {
-      charStore.applyVisualState({
-        emotion: checkpointCharacter.emotion,
-        stance: checkpointCharacter.stance,
-        costume: checkpointCharacter.costume,
-        screenPose: checkpointCharacter.screenPose,
-      } as CharacterVisualState)
-      return
-    }
-    const data = charStore.data
-    if (data) {
-      charStore.applyVisualState({
-        emotion: data.emotions[0] ?? '',
-        stance: data.poses[0] ?? '',
-        costume: data.costumes[0] ?? '',
-        screenPose: DEFAULT_POSE,
-      })
+      // 优先级：回档检查点 > 会话记住的外观 > 旧会话的最近检查点 > 角色默认。
+      const look = checkpointCharacter ?? session.character ?? latestCheckpointLook(session)
+      if (look) {
+        charStore.applyVisualState({
+          emotion: look.emotion,
+          stance: look.stance,
+          costume: look.costume,
+          screenPose: look.screenPose as PoseKey,
+        } as CharacterVisualState)
+        return
+      }
+      const data = charStore.data
+      if (data) {
+        charStore.applyVisualState({
+          emotion: data.emotions[0] ?? '',
+          stance: data.poses[0] ?? '',
+          costume: data.costumes[0] ?? '',
+          screenPose: DEFAULT_POSE,
+        })
+      }
+    } finally {
+      restoringCharacter = false
     }
   }
+
+  // 外观一变就写回当前会话，这样切走、切回甚至直接关窗都不会丢状态。
+  const charStore = useCharacterStore()
+  watch(
+    () => [
+      charStore.currentId,
+      charStore.currentEmotion,
+      charStore.currentStance,
+      charStore.currentCostume,
+      charStore.currentScreenPose,
+    ],
+    () => { void persistCharacterState() },
+  )
 
   function loadCurrentChat(): void {
     const session = currentSession.value
@@ -244,6 +310,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function createSession(name?: string): Promise<Session> {
+    await persistCharacterState()
     const created = await runCommand(() => requireService().create({
       title: name?.trim() || nextSessionName(),
       characterId: useCharacterStore().currentId,
@@ -258,6 +325,8 @@ export const useSessionStore = defineStore('session', () => {
     const target = sessions.value.find(session => session.id === sessionId)
     if (!target) return false
     const previousId = currentSessionId.value
+    // 先把当前外观落回原会话，再切：切换过程中 currentSession 已指向目标会话。
+    await persistCharacterState(previousId)
     currentSessionId.value = sessionId
     useChatStore().loadMessages(target.messages, target.context)
     try {
@@ -307,6 +376,8 @@ export const useSessionStore = defineStore('session', () => {
     const sessionId = currentSessionId.value
     if (!sessionId) return
     await runCommand(() => requireService().bindCharacter(sessionId, useCharacterStore().currentId))
+    // 换角色会清空会话记录的外观（旧标签对新角色无意义），随后写回新角色的。
+    await persistCharacterState(sessionId)
   }
 
   async function setWorkspace(grant: { id: string; path: string }): Promise<void> {

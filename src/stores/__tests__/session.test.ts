@@ -20,6 +20,7 @@ function document(): SessionDocument {
       title: 'Saved session',
       characterId: 'alice',
       characterLocked: false,
+      character: null,
       workspaceGrantId: null,
       timeline: [],
       checkpoints: [],

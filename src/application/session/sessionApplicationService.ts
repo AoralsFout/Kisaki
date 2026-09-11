@@ -1,5 +1,6 @@
 import type {
   AssistantMessageCommitted,
+  CharacterLookSnapshot,
   ConversationImage,
   ConversationSessionSnapshot,
   RecordedToolCall,
@@ -105,6 +106,13 @@ export class SessionApplicationService {
   async bindCharacter(sessionId: string, characterId: string | null): Promise<void> {
     await this.commit(() => {
       this.requireCollection().get(sessionId).bindCharacter(characterId, this.dependencies.now())
+    })
+  }
+
+  /** Remembers the look the session is left in, so switching back restores it. */
+  async setCharacterState(sessionId: string, character: CharacterLookSnapshot | null): Promise<void> {
+    await this.commit(() => {
+      this.requireCollection().get(sessionId).setCharacterState(character, this.dependencies.now())
     })
   }
 

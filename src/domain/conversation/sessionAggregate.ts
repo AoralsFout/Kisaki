@@ -2,6 +2,7 @@ import type {
   AssistantMessageCommitted,
   AssistantMessageRevised,
   AssistantToolCallsProduced,
+  CharacterLookSnapshot,
   ContextCompacted,
   ConversationEvent,
   ConversationImage,
@@ -53,6 +54,18 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
 }
 
+function assertCharacterLookShape(value: unknown, label: string): void {
+  if (
+    !isRecord(value)
+    || typeof value.emotion !== 'string'
+    || typeof value.stance !== 'string'
+    || typeof value.costume !== 'string'
+    || typeof value.screenPose !== 'string'
+  ) {
+    throw new Error(`${label} is invalid`)
+  }
+}
+
 function assertCheckpointShape(checkpoint: unknown): asserts checkpoint is SessionCheckpoint {
   if (
     !isRecord(checkpoint)
@@ -64,16 +77,10 @@ function assertCheckpointShape(checkpoint: unknown): asserts checkpoint is Sessi
     throw new Error('Session checkpoint is invalid')
   }
   if (checkpoint.character === null) return
-  if (
-    !isRecord(checkpoint.character)
-    || !isNullableString(checkpoint.character.characterId)
-    || typeof checkpoint.character.emotion !== 'string'
-    || typeof checkpoint.character.stance !== 'string'
-    || typeof checkpoint.character.costume !== 'string'
-    || typeof checkpoint.character.screenPose !== 'string'
-  ) {
+  if (!isRecord(checkpoint.character) || !isNullableString(checkpoint.character.characterId)) {
     throw new Error('Session checkpoint character snapshot is invalid')
   }
+  assertCharacterLookShape(checkpoint.character, 'Session checkpoint character snapshot')
 }
 
 function assertEventShape(event: unknown): asserts event is ConversationEvent {
@@ -158,6 +165,10 @@ function assertSnapshotShape(value: unknown): asserts value is ConversationSessi
   ) {
     throw new Error('Session bindings are invalid')
   }
+  // Absent on documents written before sessions remembered a look; read as null.
+  if (value.character !== undefined && value.character !== null) {
+    assertCharacterLookShape(value.character, 'Session character look')
+  }
   if (!Array.isArray(value.timeline) || !Array.isArray(value.checkpoints)) {
     throw new Error('Session timeline or checkpoints are invalid')
   }
@@ -194,6 +205,7 @@ export class SessionAggregate {
       title: options.title,
       characterId: options.characterId ?? null,
       characterLocked: false,
+      character: null,
       workspaceGrantId: options.workspaceGrantId ?? null,
       timeline: [],
       checkpoints: [],
@@ -205,7 +217,7 @@ export class SessionAggregate {
 
   static restore(snapshot: unknown): SessionAggregate {
     assertSnapshotShape(snapshot)
-    return new SessionAggregate(snapshot)
+    return new SessionAggregate({ ...snapshot, character: snapshot.character ?? null })
   }
 
   snapshot(): ConversationSessionSnapshot {
@@ -222,7 +234,16 @@ export class SessionAggregate {
     if (this.state.characterLocked && characterId !== this.state.characterId) {
       throw new Error('Cannot change character after the conversation has started')
     }
+    // A different character must not inherit the previous one's look labels.
+    if (characterId !== this.state.characterId) this.state.character = null
     this.state.characterId = characterId
+    this.state.updatedAt = now
+  }
+
+  /** Remembers the look this session is left in, so loading it restores that state. */
+  setCharacterState(character: CharacterLookSnapshot | null, now: number): void {
+    if (character !== null) assertCharacterLookShape(character, 'Session character look')
+    this.state.character = clone(character)
     this.state.updatedAt = now
   }
 

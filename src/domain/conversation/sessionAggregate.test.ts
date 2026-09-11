@@ -154,6 +154,49 @@ describe('SessionAggregate', () => {
     )).toThrow('Unknown assistant message id')
   })
 
+  it('remembers the look a session is left in and restores it', () => {
+    const session = createSession()
+    expect(session.snapshot().character).toBeNull()
+
+    session.setCharacterState(
+      { emotion: '开心', stance: '侧立', costume: '校服', screenPose: 'half-right' },
+      11,
+    )
+
+    const restored = SessionAggregate.restore(JSON.parse(JSON.stringify(session.snapshot())))
+    expect(restored.snapshot()).toMatchObject({
+      character: { emotion: '开心', stance: '侧立', costume: '校服', screenPose: 'half-right' },
+      updatedAt: 11,
+    })
+  })
+
+  it('reads a session written before looks were stored as having none', () => {
+    const { character: _dropped, ...legacy } = createSession().snapshot()
+
+    expect(SessionAggregate.restore(legacy).snapshot().character).toBeNull()
+  })
+
+  it('rejects a malformed stored look', () => {
+    const snapshot = { ...createSession().snapshot(), character: { emotion: 1 } }
+
+    expect(() => SessionAggregate.restore(snapshot)).toThrow('Session character look is invalid')
+  })
+
+  it('drops the stored look when the session binds a different character', () => {
+    const session = createSession()
+    session.bindCharacter('alice', 10)
+    session.setCharacterState(
+      { emotion: 'happy', stance: 'idle', costume: 'default', screenPose: 'center' },
+      11,
+    )
+
+    session.bindCharacter('alice', 12)
+    expect(session.snapshot().character).not.toBeNull()
+
+    session.bindCharacter('bob', 13)
+    expect(session.snapshot().character).toBeNull()
+  })
+
   it('rolls back timeline, checkpoints, and compacted context at one user-turn boundary', () => {
     const session = createSession()
     session.acceptUserMessage(

@@ -73,12 +73,16 @@ export type ConversationEvent =
   | AssistantMessageRevised
   | ContextCompacted
 
-export interface CheckpointCharacterSnapshot {
-  characterId: string | null
+/** Visual state of a character: what a checkpoint records and what a session remembers. */
+export interface CharacterLookSnapshot {
   emotion: string
   stance: string
   costume: string
   screenPose: string
+}
+
+export interface CheckpointCharacterSnapshot extends CharacterLookSnapshot {
+  characterId: string | null
 }
 
 export interface SessionCheckpoint {
@@ -99,6 +103,12 @@ export interface ConversationSessionSnapshot {
   title: string
   characterId: string | null
   characterLocked: boolean
+  /**
+   * Look this session is left in. Restored on load so a session keeps its own
+   * emotion/position instead of falling back to the character defaults.
+   * null for a session that has not stored one yet.
+   */
+  character: CharacterLookSnapshot | null
   workspaceGrantId: string | null
   timeline: ConversationEvent[]
   checkpoints: SessionCheckpoint[]

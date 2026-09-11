@@ -167,13 +167,17 @@ export const useCharacterStore = defineStore('character', () => {
 
   // ── 视觉状态操作 ──
 
-  /** 应用一组视觉状态（会话恢复时使用） */
+  /**
+   * 应用一组视觉状态（会话/检查点恢复时使用）。
+   * 走 Runtime 的 best-effort 入口：持久化数据里的标签可能不属于当前角色
+   * （换角色、Live2D 能力收敛到 manifest 之后），恢复失败不应该中断会话加载。
+   */
   function applyVisualState(state: Partial<CharacterVisualState>) {
     if (!runtime.snapshot().characterId) {
       pendingVisualState = { ...pendingVisualState, ...state }
       return
     }
-    runtime.setLook(state)
+    runtime.restoreLook(state)
   }
 
   /** 获取当前视觉状态快照（会话保存时使用） */

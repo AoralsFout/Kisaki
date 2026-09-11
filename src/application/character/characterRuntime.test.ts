@@ -41,6 +41,45 @@ describe('CharacterRuntime', () => {
     }))
   })
 
+  it('restores persisted looks without throwing on labels the renderer cannot render', () => {
+    const runtime = new CharacterRuntime()
+    runtime.selectCharacter(character())
+    runtime.setLook({ emotion: 'happy', stance: 'wave', screenPose: 'left' })
+
+    // A Live2D character renders no illustration labels at all ('' defaults), and a
+    // label from another character may not exist here.
+    runtime.restoreLook({ emotion: '', stance: 'unknown', costume: 'formal', screenPose: 'nowhere' })
+
+    expect(runtime.snapshot().look).toEqual({
+      emotion: 'happy',
+      stance: 'wave',
+      costume: 'formal',
+      screenPose: 'left',
+    })
+  })
+
+  it('restores a persisted look onto a character whose capability list is empty', () => {
+    const runtime = new CharacterRuntime()
+    runtime.selectCharacter(character({
+      id: 'live',
+      render: 'live2d',
+      capabilities: {
+        emotions: [], stances: [], costumes: [], screenPoses: ['center'],
+        motions: [], emotionDescriptions: {},
+      },
+      defaults: { emotion: '', stance: '', costume: '', screenPose: 'center' },
+    }))
+
+    runtime.restoreLook({ emotion: 'Chijing', stance: '', costume: '', screenPose: 'center' })
+
+    expect(runtime.snapshot().look).toEqual({
+      emotion: '',
+      stance: '',
+      costume: '',
+      screenPose: 'center',
+    })
+  })
+
   it('routes updates only to the active renderer kind', async () => {
     const runtime = new CharacterRuntime()
     const illustration: CharacterRenderer = { apply: vi.fn() }

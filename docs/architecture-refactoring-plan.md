@@ -181,6 +181,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] IllustrationController 接入 Renderer 端口并删除重复视觉状态与双向 watch。
   - [x] Live2D 表情/屏幕位置接入 Runtime，并在 manifest ready 后收敛能力。
   - [x] 删除 commandBus 与 agent/context 两套全局控制器注册表；UI/Agent 统一经 Runtime facade 控制角色。
+  - [x] 会话持久化各自的角色外观（情绪/姿势/服装/屏幕位置），切回时恢复：Runtime 仍是唯一状态源，session 只存快照；恢复走 best-effort 通道，标签不属于当前角色时不得中断会话命令。
 - [x] 阶段 3：ToolExecutionCoordinator。
   - [x] Tool.policy 就地声明 workspace、批准与检查点要求，删除按工具名维护的平行分类表。
   - [x] ApprovalGateway 统一文件、命令、截图三类 pending/resolver/timeout/abort 生命周期。
