@@ -21,7 +21,8 @@ export const localSettingsStore: SettingsStoragePort = {
  * 全应用唯一的跨窗口配置监听：把 storage 事件转成配置变更流。
  * 配置消费者订阅 change stream，不再各自注册 window 监听器。
  */
-if (typeof window !== 'undefined') {
+export function installLocalSettingsBridge(): void {
+  if (typeof window === 'undefined') return
   window.addEventListener('storage', event => {
     if (event.key) publishSettingsChange([event.key])
   })

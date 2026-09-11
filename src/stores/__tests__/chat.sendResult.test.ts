@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { initTools } from '../../agent'
+
+// 工具注册不再是模块加载副作用，需要工具元数据的用例显式组合一次。
+beforeAll(() => initTools())
 
 const request = vi.hoisted(() => vi.fn())
 const translate = vi.hoisted(() => vi.fn())

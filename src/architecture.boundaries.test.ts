@@ -247,4 +247,44 @@ describe('architecture boundaries', () => {
 
     expect(existsSync(join(SOURCE_ROOT, 'ai', 'apiClient.ts'))).toBe(false)
   })
+
+  it('installs cross-module services only from the composition root', () => {
+    // 工具注册只能在组合根触发，模块加载不得再顺手注册
+    const violations: string[] = []
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      const path = relative(SOURCE_ROOT, file).replace(/\\/g, '/')
+      const source = readFileSync(file, 'utf8')
+      // agent/index.ts 只是定义，组合根是唯一的调用点
+      if (/\binitTools\(\)/.test(source) && path !== 'agent/index.ts' && path !== 'compositionRoot.ts') {
+        violations.push(path)
+      }
+      if (path !== 'infrastructure/settings/localSettingsStore.ts'
+        && /addEventListener\(\s*'storage'/.test(source)) {
+        violations.push(`${path}:storage-listener`)
+      }
+    }
+    expect(violations).toEqual([])
+
+    const root = readFileSync(join(SOURCE_ROOT, 'compositionRoot.ts'), 'utf8')
+    for (const installer of [
+      'initTools()',
+      'installLocalSettingsBridge()',
+      'installMotionPreferenceSync()',
+      'installTtsPlaybackTelemetry()',
+    ]) {
+      expect(root).toContain(installer)
+    }
+  })
+
+  it('keeps the TTS engine surface limited to what callers use', () => {
+    const engine = readFileSync(join(SOURCE_ROOT, 'tts', 'speak.ts'), 'utf8')
+    // 批次播放只剩内部回退路径；对外只保留流式入口
+    expect(engine).not.toContain('async speakText(')
+    expect(engine).not.toContain('isSpeaking(')
+    expect(engine).not.toContain('export function cancelSpeak(')
+
+    const voices = ['speakText', 'speakTextStreaming', 'cancelSpeak', 'isSpeaking']
+    const index = readFileSync(join(SOURCE_ROOT, 'tts', 'index.ts'), 'utf8')
+    for (const name of voices) expect(index).not.toContain(name)
+  })
 })

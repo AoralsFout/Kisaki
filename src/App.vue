@@ -17,13 +17,13 @@ import CommandConfirm from './components/CommandConfirm.vue'
 import ScreenCaptureConfirm from './components/ScreenCaptureConfirm.vue'
 import CommandExecution from './components/CommandExecution.vue'
 import Onboarding from './components/Onboarding.vue'
-import { useChatStore, setChatCharacterIdentity } from './stores/chat'
+import { useChatStore } from './stores/chat'
 import { useSessionStore } from './stores/session'
-import { useCharacterStore, initCharacterDataDir } from './character'
+import { useCharacterStore } from './character'
 import { isTtsEnabled, setTtsEnabled } from './tts'
 import { loadConfigSecure, isConfigValid } from './ai'
 import type { ChatInputPayload } from './ai'
-import { loadCosyVoiceConfigSecure } from './tts'
+import { startMainWindow } from './startup'
 import { resolveDisplayLanguage } from './stores/language'
 import { createLogger } from './utils/logger'
 import {
@@ -41,8 +41,7 @@ import {
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows, getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
 import { listen, emitTo } from '@tauri-apps/api/event'
-import { initPassthrough, setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
-import { initWindowState } from './utils/windowState'
+import { setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
 import { adjustCharacterOpacity, getCharacterOpacity } from './character/opacity'
 
 const log = createLogger('App')
@@ -329,36 +328,15 @@ const contextDetail = computed(() => t('chat.history.contextDetail', {
 }))
 
 onMounted(async () => {
-  // 主窗口在 Tauri 配置中隐藏创建：先恢复上次的位置/大小再显示，
-  // 避免默认位置白窗闪现后瞬移。穿透初始化放在恢复之后，确保初始坐标正确。
-  await initWindowState('main', { showAfterRestore: true })
-    .catch(() => { /* 浏览器预览环境无原生窗口 */ })
-  await initPassthrough().catch(() => { /* 浏览器预览环境无原生窗口 */ })
-
-  // 加载并解密 API Key（填充解密缓存，后续 sync loadConfig 直接取缓存）
-  await Promise.allSettled([
-    loadConfigSecure(),
-    loadCosyVoiceConfigSecure(),
-  ])
+  // 启动序列（窗口恢复、凭据预热、会话与角色加载）由 startup.ts 负责，
+  // 本组件只保留界面状态与事件绑定。
+  await startMainWindow()
   void refreshApiConfigured()
-  // 初始化 data_dir 路径（供 imageUrl / loadCharacterJson 使用），
-  // await 确保 data_dir 就绪后再加载角色，避免时序竞态。
-  await initCharacterDataDir().catch(() => { /* 非 Tauri 环境降级 */ })
-  chat.init()
-  // 先读取上次会话，再直接加载该会话绑定的角色。
-  // 如果反过来先初始化角色，Store 会默认加载 kisaki，会话恢复时又切到
-  // 真正的角色，导致启动闪现和不必要的两次配置/图片加载。
-  await sessionStore.init()
-    .catch((e) => log.error("app.module.error", "会话初始化失败", e))
-  await charStore.init(sessionStore.currentSession?.characterId)
-    .catch((e) => log.error("app.module.error", "角色初始化失败", e))
   // 首次运行：无完成标记时显示引导；已被「稍后」搁置则不再整层弹出，
   // 改以主窗口的配置待办入口恢复（仅主窗口）。
   onboardingDone.value = isOnboardingDone()
   onboardingDismissed.value = isOnboardingDismissed()
   showOnboarding.value = !onboardingDone.value && !onboardingDismissed.value
-  // 注入角色身份来源：assistant 消息落库时记录 { id, name } 快照
-  setChatCharacterIdentity(() => (charStore.data ? { id: charStore.currentId, name: charStore.name } : null))
   // 角色和会话状态均已恢复，此时再挂载渲染器，首帧即为正确角色。
   charReady.value = true
 

@@ -6,13 +6,14 @@ import { setTtsProvider } from '../config'
 import { TtsEngine } from '../speak'
 
 describe('buffered TTS providers', () => {
-  it('lets the engine route buffered playback through the provider contract', async () => {
+  it('falls back to buffered synthesis through the provider contract', async () => {
     setTtsProvider('cosyvoice')
     const synthesize = vi.fn().mockResolvedValue({ status: 'skipped', reason: 'provider_preflight' })
+    // 该 Provider 不提供流式协议，因此引擎必须回退到批合成路径。
     const provider: TtsProvider = { id: 'cosyvoice', synthesize }
     const engine = new TtsEngine([provider])
 
-    await expect(engine.speakText('hello', 'voice-1')).resolves.toEqual({
+    await expect(engine.speakTextStreaming('hello', 'voice-1')).resolves.toEqual({
       status: 'skipped',
       reason: 'provider_preflight',
     })

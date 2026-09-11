@@ -37,12 +37,12 @@ const DEFAULT_BACKOFF_BASE_MS = 600
 const MAX_BACKOFF_MS = 10_000
 
 /** 429 / 5xx 属于可重试的瞬时状态。 */
-export function isRetryableStatus(status: number): boolean {
+function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500
 }
 
 /** 合并两个 AbortSignal：任一触发则合并信号触发。 */
-export function combineAbortSignals(primary: AbortSignal, secondary: AbortSignal): AbortSignal {
+function combineAbortSignals(primary: AbortSignal, secondary: AbortSignal): AbortSignal {
   const controller = new AbortController()
   if (primary.aborted || secondary.aborted) {
     controller.abort()

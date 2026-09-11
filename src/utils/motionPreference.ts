@@ -42,10 +42,12 @@ try {
   // 不支持 BroadcastChannel 时仍在当前窗口立即生效，并由 storage 事件跨窗口兜底。
 }
 
-// 跨窗口同步：只订阅统一配置变更流，不再自行注册 window 监听。
-subscribeSettingsChange(changedKeys => {
-  if (changedKeys.includes(STORAGE_REDUCED_MOTION)) applyPreference(readStoredPreference())
-})
+/** 跨窗口同步：只订阅统一配置变更流，不再自行注册 window 监听。 */
+export function installMotionPreferenceSync(): void {
+  subscribeSettingsChange(changedKeys => {
+    if (changedKeys.includes(STORAGE_REDUCED_MOTION)) applyPreference(readStoredPreference())
+  })
+}
 
 /** 持久化偏好、立即更新当前窗口，并广播到其它已打开窗口。 */
 export function setReducedMotionEnabled(enabled: boolean): void {

@@ -139,20 +139,23 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
 7. SettingsRepository 与 RequestExecutor。
 8. 删除旧实现和临时适配器。
 
-## 最终验收指标
+## 验收结果
 
-| 指标 | 当前 | 目标 |
-|---|---:|---:|
-| 对话事实表示 | 约 4 份 | 1 个 timeline + 纯投影 |
-| 对话运行状态 Owner | 多模块 | 1 个 ConversationRun |
-| 工具确认机制 | 3 套 | 1 个 ApprovalGateway |
-| 工具执行循环 | 2 套 | 1 套 |
-| 角色视觉状态源 | 多份 | 1 个 CharacterRuntime |
-| 角色全局注册入口 | 2 套 | 0 |
-| TTS 流消费实现 | 至少 2 套 | 1 套 |
-| 解密缓存 | 3 个 | 1 个 |
-| Store 循环依赖 | Chat ↔ Session | 0 |
-| 业务层直接 I/O | 多处 | 0 |
+| 指标 | 重构前 | 目标 | 结果 |
+|---|---:|---|---|
+| 对话事实表示 | 约 4 份 | 1 个 timeline + 纯投影 | ✅ v2 timeline + UI/模型双投影 |
+| 对话运行状态 Owner | 多模块 | 1 个 ConversationRun | ✅ ConversationCoordinator |
+| 工具确认机制 | 3 套 | 1 个 ApprovalGateway | ✅ |
+| 工具执行循环 | 2 套 | 1 套 | ✅ ToolCallBatch 统一原生/文本调用 |
+| 角色视觉状态源 | 多份 | 1 个 CharacterRuntime | ✅ |
+| 角色全局注册入口 | 2 套 | 0 | ✅ |
+| TTS 流消费实现 | 至少 2 套 | 1 套 | ✅ 请求级 Channel + 4 个 Sink |
+| 解密缓存 | 3 个 | 1 个 | ✅ SecretBackedSettings |
+| 配置跨窗口监听 | 6 个 | 1 个 | ✅ settingsChangeStream |
+| 出站请求策略 | 4 套 | 1 套 | ✅ RequestExecutor |
+| Store 循环依赖 | Chat ↔ Session | 0 | ✅ 架构测试防回归 |
+| 模块加载期副作用 | 多处 | 由组合根显式安装 | ✅ compositionRoot |
+| 业务层直接 I/O | 多处 | 0 | ⚠️ 服务请求已归零；静态资源与 Tauri 命令调用保留 |
 
 ## 当前推进状态
 
@@ -210,4 +213,9 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
   - [x] SSE 帧解析提取为 `readServerSentEvents`，业务客户端不再自行解码流。
   - [x] 删除未被使用的 `ai/apiClient.ts`。
   - [ ] 静态资源加载（Live2D manifest、穿透掩码图片）与 Tauri 命令调用仍直接 fetch/invoke：它们不是外部服务请求，未纳入请求策略。
-- [ ] 阶段 7：清理。
+- [x] 阶段 7：清理。
+  - [x] 新增 `compositionRoot.ts`：工具注册、配置跨窗口桥、动效偏好同步、TTS 播放遥测集中安装，由 `main.ts` 启动时调用一次（幂等）。
+  - [x] 删除模块加载期副作用：`agent/service` 不再在导入时 `initTools()`；`localSettingsStore` / `motionPreference` / `tts orchestrator` 改为导出 `install*` 函数。
+  - [x] 主窗口启动序列提取到 `startup.ts`，`App.vue` 只保留界面状态与事件绑定。
+  - [x] 删除无调用方的 TTS 公开 API：模块级 `speakText` / `speakTextStreaming` / `cancelSpeak` / `isSpeaking`，以及 `TtsEngine.speakText` / `isSpeaking`。
+  - [x] 安装点与依赖方向由 `architecture.boundaries.test.ts` 自动检查：storage 监听唯一、`initTools()` 只由组合根调用、业务层不得直连请求策略或解码 SSE。

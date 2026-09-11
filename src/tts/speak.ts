@@ -129,37 +129,6 @@ export class TtsEngine {
     }
   }
 
-  /** 检查是否正在播报 */
-  isSpeaking(): boolean {
-    return this.currentController !== null
-  }
-
-  /** 合成并播报文本（批处理模式） */
-  async speakText(text: string, voiceId: string, hooks: TtsPlaybackHooks = {}): Promise<TtsPlaybackResult> {
-    if (!text.trim()) return { status: 'skipped', reason: 'empty_text' }
-    if (!this.isEnabled()) return { status: 'skipped', reason: 'disabled' }
-    const provider = getTtsProvider()
-    if (provider === 'none') return { status: 'skipped', reason: 'provider_none' }
-    this.cancel()
-
-    const controller = new AbortController()
-    this.currentController = controller
-
-    try {
-      return await this.speakBuffered(provider, text, voiceId, controller, hooks)
-    } catch (err) {
-      log.warn("tts.speak_text.warn", "批处理播报失败", err)
-      return {
-        status: controller.signal.aborted ? 'cancelled' : 'failed',
-        reason: (err as Error).message,
-      }
-    } finally {
-      if (this.currentController === controller) {
-        this.currentController = null
-      }
-    }
-  }
-
   /** 合成并流式播报文本（边接收边播放，延迟更低） */
   async speakTextStreaming(text: string, voiceId: string, hooks: TtsPlaybackHooks = {}): Promise<TtsPlaybackResult> {
     if (!text.trim()) return { status: 'skipped', reason: 'empty_text' }
@@ -265,13 +234,5 @@ export const ttsEngine = new TtsEngine()
 export function isTtsEnabled(): boolean { return ttsEngine.isEnabled() }
 /** 设置语音播报开关 */
 export function setTtsEnabled(enabled: boolean) { ttsEngine.setEnabled(enabled) }
-/** 合成并播报文本（批处理模式） */
-export function speakText(text: string, voiceId: string, hooks?: TtsPlaybackHooks): Promise<TtsPlaybackResult> { return ttsEngine.speakText(text, voiceId, hooks) }
-/** 合成并流式播报文本 */
-export function speakTextStreaming(text: string, voiceId: string, hooks?: TtsPlaybackHooks): Promise<TtsPlaybackResult> { return ttsEngine.speakTextStreaming(text, voiceId, hooks) }
-/** 取消当前播报 */
-export function cancelSpeak() { ttsEngine.cancel() }
-/** 检查是否正在播报 */
-export function isSpeaking(): boolean { return ttsEngine.isSpeaking() }
 /** 注册/注销 Live2D 口型播放器 */
 export function setVoicePlayer(fn: VoicePlayer | null) { ttsEngine.setVoicePlayer(fn) }

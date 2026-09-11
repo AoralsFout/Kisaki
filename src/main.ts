@@ -3,10 +3,10 @@ import { createPinia } from "pinia";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./styles/tokens.css";
 import "./styles/ui.css";
-import "./utils/motionPreference";
 import { createLogger, installGlobalErrorHandlers } from "./utils/logger";
 import i18n from "./i18n";
 import { QUERY_DEV, QUERY_LOGS, QUERY_SETTINGS } from "./constants";
+import { composeApplication } from "./compositionRoot";
 
 // 正式模式禁用 WebView 默认右键菜单（透明无边框桌宠不应弹出浏览器菜单）。
 // 开发模式保留默认菜单，让每个窗口都能从右键菜单检查当前页面。
@@ -38,6 +38,8 @@ async function loadRootComponent(): Promise<Component> {
 }
 
 async function bootstrap() {
+  // 先安装跨模块服务与监听器，再挂载界面，避免首帧依赖尚未就绪。
+  await composeApplication()
   const RootComponent = await loadRootComponent()
   const app = createApp(RootComponent)
   app.use(createPinia())

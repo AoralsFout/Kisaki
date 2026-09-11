@@ -8,7 +8,7 @@ export {
   getTtsProvider, setTtsProvider,
 } from './config'
 export { fetchVoiceList } from './api'
-export { speakText, speakTextStreaming, cancelSpeak, isSpeaking, isTtsEnabled, setTtsEnabled, setVoicePlayer } from './speak'
+export { isTtsEnabled, setTtsEnabled, setVoicePlayer } from './speak'
 export type { VoicePlayer, TtsPlaybackHooks, TtsPlaybackResult, TtsPlaybackStatus } from './speak'
 export { ttsPlaybackOrchestrator } from './orchestrator'
 export type { TtsPlaybackSnapshot, TtsPlaybackState } from '../application/tts/ttsPlaybackOrchestrator'

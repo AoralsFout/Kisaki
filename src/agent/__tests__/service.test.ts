@@ -4,8 +4,12 @@
  * 覆盖：简单调用、嵌套 JSON 参数、字符串内的花括号/引号、
  * 畸形调用跳过、strip 语义。
  */
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { agentService } from '../service'
+import { initTools } from '../index'
+
+// 工具注册不再是模块加载副作用，需要注册表的用例显式组合一次。
+beforeAll(() => initTools())
 
 describe('extractTextToolCalls（兜底文本调用解析）', () => {
   it('提取简单工具调用', () => {

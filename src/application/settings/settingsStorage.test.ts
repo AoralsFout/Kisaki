@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { publishSettingsChange, subscribeSettingsChange } from './settingsChangeStream'
-import { createMemorySettingsStorage } from './settingsStorage'
+import type { SettingsStoragePort } from './settingsStorage'
 import { SecretBackedSettings, type SecretBackedConfig } from './secretBackedSettings'
 import type { SecretGateway, SecretKind } from './secretGateway'
 
 interface TestConfig extends SecretBackedConfig {
   model: string
+}
+
+/** 内存实现：只用于测试，不进入生产代码。 */
+function createMemorySettingsStorage(initial: Record<string, string> = {}): SettingsStoragePort {
+  const values = new Map(Object.entries(initial))
+  return {
+    read: key => values.get(key) ?? null,
+    write: (key, value) => { values.set(key, value) },
+  }
 }
 
 const DEFAULTS: TestConfig = { apiKey: '', model: 'default' }

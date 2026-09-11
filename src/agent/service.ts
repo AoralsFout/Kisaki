@@ -7,9 +7,6 @@
 import type { ToolDefinition, ToolCall, ToolResult } from './types'
 import { getDefinitions, getTool, type CharacterToolContext } from './registry'
 import { executeToolCall } from './executor'
-import { createLogger } from '../utils/logger'
-
-const log = createLogger('AgentSvc')
 
 /** Agent 服务的公开接口 */
 export interface AgentService {
@@ -142,9 +139,3 @@ function parseTextToolCalls(
   }
   return calls
 }
-
-// ─── 初始化工具注册（模块加载时执行一次） ────────────────
-
-import { initTools } from './index'
-initTools()
-log.info("agent_svc.module.info", "Agent 服务初始化完成")
