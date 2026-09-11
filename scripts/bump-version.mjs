@@ -36,9 +36,21 @@ cargo = cargo.replace(/^version = ".*"/m, `version = "${ver}"`);
 writeFileSync('src-tauri/Cargo.toml', cargo);
 console.log('  ✔ src-tauri/Cargo.toml');
 
-// 5) 提交 + tag
+// 5) 同步 Cargo.lock
+// Cargo.toml 版本一变，lock 就过期；CI 走 `cargo test --locked` / `cargo clippy --locked`，
+// lock 过期会直接报错退出。只更新本包版本，不动任何依赖。
+// 注意 [package] 段与 [lib] 段都有 name 键，必须锚定到 [package] 才能取到包名。
+const crateName = /^\[package\][\s\S]*?^name = "([^"]+)"/m.exec(cargo)?.[1];
+if (!crateName) {
+  console.error('无法从 src-tauri/Cargo.toml 解析包名，Cargo.lock 未同步');
+  process.exit(1);
+}
+execSync(`cargo update -p ${crateName} --offline`, { cwd: 'src-tauri', stdio: 'inherit' });
+console.log('  ✔ src-tauri/Cargo.lock');
+
+// 6) 提交 + tag
 if (!syncOnly) {
-  execSync('git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/tauri.conf.json', { stdio: 'inherit' });
+  execSync('git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json', { stdio: 'inherit' });
   execSync(`git commit -m "chore: bump version to ${ver}"`, { stdio: 'inherit' });
   execSync(`git tag v${ver}`, { stdio: 'inherit' });
   console.log(`\n  ✔ git commit & tag v${ver}\n`);

@@ -24,14 +24,14 @@ if (!/default\s*=\s*\[\s*\]/.test(cargo)) {
   errors.push('Cargo 默认 feature 必须为空，禁止正式版默认开启实验命令')
 }
 
+// 只把仓库当前实际维护的法律文档作为发布门槛。
+// CHANGELOG.md、docs/release-readiness.md、docs/rc-test-matrix.md、docs/release-runbook.md
+// 已在 f770eea「docs: clean documents」中删除，继续要求它们存在会让 tag 构建必然失败
+// （v0.2.15 即因此发布中断）。
 for (const file of [
   'PRIVACY.md',
   'SECURITY.md',
   'THIRD_PARTY_NOTICES.md',
-  'CHANGELOG.md',
-  'docs/release-readiness.md',
-  'docs/rc-test-matrix.md',
-  'docs/release-runbook.md',
 ]) {
   if (!existsSync(file)) errors.push(`缺少发布文档: ${file}`)
 }
