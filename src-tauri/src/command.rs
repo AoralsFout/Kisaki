@@ -989,7 +989,7 @@ mod tests {
         slow_request.timeout_secs = Some(30);
         slow_request.script = Some(
             if cfg!(windows) {
-                "Write-Output 'kisaki-ready'; Start-Sleep -Seconds 30"
+                "[Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); Start-Sleep -Seconds 30"
             } else {
                 "printf 'kisaki-ready\n'; sleep 30"
             }
