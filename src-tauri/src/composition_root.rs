@@ -26,10 +26,6 @@ fn app_paths() -> &'static AppPaths {
     APP_PATHS.get().expect("AppPaths 未装配")
 }
 
-pub(crate) fn characters_dir() -> PathBuf {
-    app_paths().characters_dir().to_path_buf()
-}
-
 pub(crate) fn log_dir() -> PathBuf {
     let dir = app_paths().logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
@@ -41,23 +37,6 @@ pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
     let dir = APP_PATHS.get()?.logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
     Some(dir)
-}
-
-/// AI 文件改动备份根目录（app_cache_dir/backups）。
-pub(crate) fn backups_dir() -> PathBuf {
-    let dir = app_paths().backups_dir().to_path_buf();
-    let _ = fs::create_dir_all(&dir);
-    dir
-}
-
-/// v2 会话领域模型的数据文件。
-pub(crate) fn sessions_v2_file() -> PathBuf {
-    app_paths().sessions_v2_file()
-}
-
-/// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
-pub(crate) fn legacy_sessions_file() -> PathBuf {
-    app_paths().legacy_sessions_file()
 }
 
 /// dev 使用项目目录存放角色、日志和会话；生产使用 app data，不复制预置角色。
