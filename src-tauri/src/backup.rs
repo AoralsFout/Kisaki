@@ -409,7 +409,7 @@ mod tests {
             fs::write(root.path().join("first.txt"), "已改动").unwrap();
             fs::write(root.path().join("second.txt"), "已改动").unwrap();
             grant_id = grant.id;
-            fileio::revoke_workspace(&grants, &grant_id).unwrap();
+            grants.revoke(&grant_id).unwrap();
             assert!(checkpoint_backup(
                 fixture.paths(),
                 &grants,

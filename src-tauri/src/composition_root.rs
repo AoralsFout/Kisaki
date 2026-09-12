@@ -22,10 +22,12 @@ fn install_legacy_paths(paths: Arc<AppPaths>) -> Result<(), &'static str> {
     Ok(())
 }
 
+#[allow(dead_code)] // 独立业务链迁移期间暂存，#36 删除整个兼容入口。
 fn app_paths() -> &'static AppPaths {
     APP_PATHS.get().expect("AppPaths 未装配")
 }
 
+#[allow(dead_code)] // 独立业务链迁移期间暂存，#36 删除整个兼容入口。
 pub(crate) fn log_dir() -> PathBuf {
     let dir = app_paths().logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
@@ -33,6 +35,7 @@ pub(crate) fn log_dir() -> PathBuf {
 }
 
 /// 日志系统初始化前返回 None，供 panic hook 和测试期的尽力而为日志使用。
+#[allow(dead_code)] // 独立业务链迁移期间暂存，#36 删除整个兼容入口。
 pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
     let dir = APP_PATHS.get()?.logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
