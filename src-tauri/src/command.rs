@@ -1046,9 +1046,9 @@ mod tests {
     }
 
     fn waiting_request(workspace_id: &str, release_file: &str) -> PrepareExecutionRequest {
-        // 显式刷新控制台，不能依赖 PowerShell 格式化管道何时刷新重定向输出。
+        // 就绪与释放只使用 .NET API，不依赖清理环境后的 PowerShell cmdlet 和模块装载。
         let script = if cfg!(windows) {
-            format!("[Console]::Out.WriteLine('[DEBUG-ci-cwd] native=' + [Environment]::CurrentDirectory + ';ps=' + (Get-Location).Path); [Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); while (-not (Test-Path -LiteralPath '{release_file}')) {{ Start-Sleep -Milliseconds 20 }}")
+            format!("[Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); while (-not [IO.File]::Exists('{release_file}')) {{ [Threading.Thread]::Sleep(20) }}")
         } else {
             format!(
                 "printf 'kisaki-ready\\n'; while [ ! -f '{release_file}' ]; do sleep 0.02; done"
