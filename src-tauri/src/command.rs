@@ -1048,7 +1048,7 @@ mod tests {
     fn waiting_request(workspace_id: &str, release_file: &str) -> PrepareExecutionRequest {
         // 显式刷新控制台，不能依赖 PowerShell 格式化管道何时刷新重定向输出。
         let script = if cfg!(windows) {
-            format!("[Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); while (-not (Test-Path -LiteralPath '{release_file}')) {{ Start-Sleep -Milliseconds 20 }}")
+            format!("[Console]::Out.WriteLine('[DEBUG-ci-cwd] native=' + [Environment]::CurrentDirectory + ';ps=' + (Get-Location).Path); [Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); while (-not (Test-Path -LiteralPath '{release_file}')) {{ Start-Sleep -Milliseconds 20 }}")
         } else {
             format!(
                 "printf 'kisaki-ready\\n'; while [ ! -f '{release_file}' ]; do sleep 0.02; done"
@@ -1061,6 +1061,7 @@ mod tests {
         registry: Arc<ExecutionRegistry>,
         plan: ExecutionPlan,
         token: String,
+        diagnostics: Arc<Mutex<Vec<ExecutionOutputEvent>>>,
         output: mpsc::Receiver<ExecutionOutputEvent>,
         done: mpsc::Receiver<Result<ExecutionResult, String>>,
         worker: Option<std::thread::JoinHandle<()>>,
@@ -1071,7 +1072,10 @@ mod tests {
             let token = fixture.approve(&plan);
             let (output_tx, output) = mpsc::channel();
             let (done_tx, done) = mpsc::channel();
+            let diagnostics = Arc::new(Mutex::new(Vec::new()));
+            let captured = Arc::clone(&diagnostics);
             let emit: OutputEmitter = Arc::new(move |event| {
+                captured.lock().unwrap().push(event.clone());
                 let _ = output_tx.send(event);
             });
             let registry = Arc::clone(&fixture.registry);
@@ -1087,6 +1091,7 @@ mod tests {
                 registry: Arc::clone(&fixture.registry),
                 plan,
                 token,
+                diagnostics,
                 output,
                 done,
                 worker: Some(worker),
@@ -1125,7 +1130,13 @@ mod tests {
             let result = self
                 .done
                 .recv_timeout(Duration::from_secs(10))
-                .expect("任务未按预期结束");
+                .unwrap_or_else(|error| {
+                    let output = self.diagnostics.lock().unwrap().clone();
+                    panic!(
+                        "任务未按预期结束: {error:?}; command={}; cwd={}; output={output:?}",
+                        self.plan.display_command, self.plan.cwd
+                    );
+                });
             self.worker
                 .take()
                 .unwrap()
