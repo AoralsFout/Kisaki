@@ -149,7 +149,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
         ));
     }
 
-    crate::log::write_native_log(
+    let _ = crate::log::write_native_log(
+        paths,
         "info",
         "Pack",
         format!("导入角色包: {}（{} 个条目）", src_path, archive.len()),
@@ -166,7 +167,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
         let enclosed = match entry.enclosed_name() {
             Some(p) => p.to_path_buf(),
             None => {
-                crate::log::write_native_log(
+                let _ = crate::log::write_native_log(
+                    paths,
                     "warn",
                     "Pack",
                     format!("跳过不安全条目: {}", raw_name),
@@ -193,7 +195,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
         let content = match read_entry_limited(&mut entry, MAX_MANIFEST_JSON_BYTES as u64) {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(e) => {
-                crate::log::write_native_log(
+                let _ = crate::log::write_native_log(
+                    paths,
                     "warn",
                     "Pack",
                     format!("character.json 读取失败，跳过: {}", e),
@@ -217,7 +220,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
         }) {
             Some(id) => id,
             None => {
-                crate::log::write_native_log(
+                let _ = crate::log::write_native_log(
+                    paths,
                     "warn",
                     "Pack",
                     format!("{} 无 id 字段且位于包根，跳过", raw_name),
@@ -225,7 +229,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
                 continue;
             }
         };
-        crate::log::write_native_log(
+        let _ = crate::log::write_native_log(
+            paths,
             "debug",
             "Pack",
             format!("发现角色: id={} 前缀=\"{}\"", id, prefix.display()),
@@ -309,7 +314,8 @@ pub(crate) fn import(paths: &AppPaths, src_path: &str) -> Result<ImportResult, S
     }
     imported.sort();
     skipped.sort();
-    crate::log::write_native_log(
+    let _ = crate::log::write_native_log(
+        paths,
         "info",
         "Pack",
         format!("导入完成: imported={:?} skipped={:?}", imported, skipped),
@@ -372,6 +378,33 @@ mod tests {
                 .count(),
             1
         );
+        let logs: Vec<_> = crate::log::list_files(fixture.paths())
+            .unwrap()
+            .iter()
+            .flat_map(|filename| crate::log::read_file(fixture.paths(), filename).unwrap())
+            .map(|entry| serde_json::to_value(entry).unwrap())
+            .collect();
+        assert!(logs.first().unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("导入角色包: "));
+        assert!(logs.last().unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("导入完成: "));
+        assert!(logs.iter().any(|entry| entry["level"] == "warn"
+            && entry["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("跳过不安全条目: ")));
+        for entry in logs {
+            assert_eq!(entry["schemaVersion"], 2);
+            assert_eq!(entry["namespace"], "Pack");
+            assert_eq!(entry["source"], "Rust");
+            assert_eq!(entry["event"], "native.runtime_log");
+        }
+        let other = TempAppPaths::new();
+        assert!(crate::log::list_files(other.paths()).unwrap().is_empty());
     }
 
     #[test]

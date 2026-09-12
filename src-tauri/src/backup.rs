@@ -263,7 +263,8 @@ fn prune_old_checkpoints(paths: &AppPaths, cp: &Path) {
         };
         if let Some(age) = checkpoint_age_seconds(name) {
             if age > max_age {
-                crate::log::write_native_log(
+                let _ = crate::log::write_native_log(
+                    paths,
                     "info",
                     "Backup",
                     format!("清理过期检查点（{} 天前）: {}", age / 86400, p.display()),
@@ -608,6 +609,25 @@ mod tests {
         assert!(paths.backups_dir().join("session").join(fresh_id).is_dir());
         assert!(other_session.is_dir());
         assert!(unparseable.is_dir());
+        let files = crate::log::list_files(paths).unwrap();
+        assert_eq!(files.len(), 1);
+        let logs = serde_json::to_value(crate::log::read_file(paths, &files[0]).unwrap()).unwrap();
+        assert_eq!(logs.as_array().unwrap().len(), 1);
+        assert_eq!(logs[0]["schemaVersion"], 2);
+        assert_eq!(logs[0]["level"], "info");
+        assert_eq!(logs[0]["namespace"], "Backup");
+        assert_eq!(logs[0]["source"], "Rust");
+        assert_eq!(logs[0]["event"], "native.runtime_log");
+        assert!(logs[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("清理过期检查点（"));
+        assert!(logs[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&old.display().to_string()));
+        let other = TempAppPaths::new();
+        assert!(crate::log::list_files(other.paths()).unwrap().is_empty());
     }
 
     #[cfg(any(unix, windows))]
