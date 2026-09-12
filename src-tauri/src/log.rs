@@ -178,7 +178,7 @@ pub(crate) fn prune_log_files(retention_days: u32) -> Result<u32, String> {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        if !is_log_filename(&name) || !log_file_date(&name).is_some_and(|date| date < cutoff) {
+        if !is_log_filename(&name) || log_file_date(&name).is_none_or(|date| date >= cutoff) {
             continue;
         }
         fs::remove_file(entry.path()).map_err(|e| format!("删除过期日志失败: {}", e))?;
