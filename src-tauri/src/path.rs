@@ -3,8 +3,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// 未迁移票的目录调用暂时保留再导出；兼容状态仅由组合根装配。
-pub(crate) use crate::composition_root::{initialized_log_dir, log_dir};
 // 保留既有 Tauri 命令的 Rust 返回类型路径，能力实现与状态归 WorkspaceGrants。
 pub(crate) use crate::workspace_grants::WorkspaceGrant;
 

@@ -20,6 +20,8 @@ mod workspace_grants;
 #[cfg(test)]
 mod test_support;
 
+use std::sync::Arc;
+
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -52,7 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let paths = composition_root::setup(app)?;
-            log::install_panic_hook();
+            log::install_panic_hook(Arc::clone(&paths));
             // asset:// 仅允许读取角色目录。静态配置保持空 scope，运行时加入实际目录，
             // 兼容 dev 的仓库 characters/ 与生产 app_data_dir，同时避免暴露全盘文件。
             app.asset_protocol_scope()
@@ -80,7 +82,8 @@ pub fn run() {
                             }
                         })
                 {
-                    log::write_native_log(
+                    let _ = log::write_native_log(
+                        &paths,
                         "warn",
                         "Shortcut",
                         format!("注册全局快捷键 Alt+K 失败: {e}"),
