@@ -45,16 +45,6 @@ pub(crate) fn backups_dir() -> PathBuf {
     dir
 }
 
-/// v2 会话领域模型的数据文件。
-pub(crate) fn sessions_v2_file() -> PathBuf {
-    app_paths().sessions_v2_file()
-}
-
-/// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
-pub(crate) fn legacy_sessions_file() -> PathBuf {
-    app_paths().legacy_sessions_file()
-}
-
 /// 路径安全校验 — 防止 path traversal 攻击
 ///
 /// 验证路径组件不包含 `..`、路径分隔符等危险字符。
