@@ -4,12 +4,14 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use tauri::Manager;
 
 use crate::app_paths::{AppPaths, AppPathsError};
+use crate::command::ExecutionRegistry;
+use crate::tts;
 use crate::workspace_grants::WorkspaceGrants;
-use crate::{command, tts};
 
 // ─── 迁移期目录兼容入口 ───────────────────────────────
 // 尚未迁移的业务只引用组合根的同一份 AppPaths，不再保存独立目录配置。
@@ -89,12 +91,15 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<Arc<AppPaths>, Box<dyn Error
     // 兼容入口只共享这一份已准备好的不可变配置，不再各自解析或创建目录状态。
     let grants = Arc::new(WorkspaceGrants::new(Arc::clone(&paths)));
     install_legacy_paths(Arc::clone(&paths))?;
-    command::init_output_dir(Arc::clone(&paths))?;
+    let registry = Arc::new(ExecutionRegistry::new(Arc::clone(&paths), Instant::now));
     if !app.manage(Arc::clone(&paths)) {
         return Err("AppPaths 已装配，拒绝重复托管".into());
     }
     if !app.manage(grants) {
         return Err("WorkspaceGrants 已装配，拒绝重复托管".into());
+    }
+    if !app.manage(registry) {
+        return Err("ExecutionRegistry 已装配，拒绝重复托管".into());
     }
     if !app.manage(tts::TtsConnectionPool::new()) {
         return Err("TTS 连接池已装配，拒绝重复托管".into());

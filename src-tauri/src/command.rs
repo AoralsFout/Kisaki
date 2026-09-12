@@ -13,7 +13,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, LazyLock, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -38,61 +38,94 @@ const MAX_SNAPSHOT_FILES: usize = 20_000;
 const MAX_CHANGED_FILES: usize = 200;
 const MAX_EXECUTION_LOGS: usize = 50;
 
-static OUTPUT_PATHS: OnceLock<Arc<AppPaths>> = OnceLock::new();
-static PLANS: LazyLock<Mutex<HashMap<String, StoredPlan>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-static CANCELLED_JOBS: LazyLock<Mutex<HashSet<String>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
-static ACTIVE_JOBS: LazyLock<Mutex<HashMap<String, String>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// 一次应用运行的执行状态；目录与单调时钟必须在装配时显式提供。
+pub(crate) struct ExecutionRegistry {
+    paths: Arc<AppPaths>,
+    clock: Box<dyn Fn() -> Instant + Send + Sync>,
+    state: Mutex<ExecutionState>,
+}
 
-struct ActiveJobGuard(String);
+#[derive(Default)]
+struct ExecutionState {
+    plans: HashMap<String, StoredPlan>,
+    active_jobs: HashMap<String, ActiveJob>,
+}
+
+struct ActiveJob {
+    workspace_id: String,
+    // 取消标记跟随任务存活，不能在任务结束后成为游离的 id。
+    cancelled: bool,
+}
+
+struct ActiveJobGuard {
+    registry: Arc<ExecutionRegistry>,
+    job_id: String,
+}
 
 impl Drop for ActiveJobGuard {
     fn drop(&mut self) {
-        if let Ok(mut jobs) = ACTIVE_JOBS.lock() {
-            jobs.remove(&self.0);
+        let mut state = self
+            .registry
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.active_jobs.remove(&self.job_id);
+    }
+}
+
+impl ExecutionRegistry {
+    pub(crate) fn new(
+        paths: Arc<AppPaths>,
+        clock: impl Fn() -> Instant + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            paths,
+            clock: Box::new(clock),
+            state: Mutex::new(ExecutionState::default()),
         }
-        if let Ok(mut cancelled) = CANCELLED_JOBS.lock() {
-            cancelled.remove(&self.0);
+    }
+
+    fn lock_state(&self) -> Result<MutexGuard<'_, ExecutionState>, String> {
+        self.state
+            .lock()
+            .map_err(|_| "执行注册表锁失败".to_string())
+    }
+
+    /// 返回任务是否仍可取消；未知或已结束的 id 不留下取消标记。
+    /// 待执行计划上的取消会随一次性消费转交给运行中任务。
+    pub(crate) fn cancel_execution(&self, job_id: &str) -> Result<bool, String> {
+        let mut state = self.lock_state()?;
+        prune_expired_plans(&mut state.plans, (self.clock)());
+        if let Some(plan) = state.plans.get_mut(job_id) {
+            plan.cancelled = true;
+            return Ok(true);
         }
+        if let Some(job) = state.active_jobs.get_mut(job_id) {
+            job.cancelled = true;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// 与准备、消费和运行登记共用同一把锁，撤销不能漏掉阶段转换中的任务。
+    pub(crate) fn revoke_workspace(
+        &self,
+        grants: &WorkspaceGrants,
+        workspace_id: &str,
+    ) -> Result<(), String> {
+        let mut state = self.lock_state()?;
+        state
+            .plans
+            .retain(|_, plan| plan.public.workspace_id != workspace_id);
+        for job in state.active_jobs.values_mut() {
+            if job.workspace_id == workspace_id {
+                job.cancelled = true;
+            }
+        }
+        // 沿用既有顺序：先撤销执行权限，再提交授权表；写盘失败也不恢复旧计划。
+        grants.revoke(workspace_id)
     }
 }
-
-/// 撤销工作区时丢弃待批准计划，并取消仍在该能力下运行的任务。
-pub(crate) fn revoke_workspace_tasks(workspace_id: &str) {
-    if let Ok(mut plans) = PLANS.lock() {
-        plans.retain(|_, plan| plan.public.workspace_id != workspace_id);
-    }
-    let active = ACTIVE_JOBS
-        .lock()
-        .map(|jobs| {
-            jobs.iter()
-                .filter(|(_, id)| id.as_str() == workspace_id)
-                .map(|(job, _)| job.clone())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if let Ok(mut cancelled) = CANCELLED_JOBS.lock() {
-        cancelled.extend(active);
-    }
-}
-
-/// 迁移期仅共享组合根已准备的 AppPaths，不再单独构造执行输出位置。
-pub(crate) fn init_output_dir(paths: Arc<AppPaths>) -> Result<(), String> {
-    OUTPUT_PATHS
-        .set(paths)
-        .map_err(|_| "命令日志目录已初始化".to_string())
-}
-
-fn output_dir() -> PathBuf {
-    OUTPUT_PATHS
-        .get()
-        .expect("AppPaths 未装配")
-        .execution_output_dir()
-        .to_path_buf()
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct PrepareExecutionRequest {
     pub workspace_id: String,
@@ -155,14 +188,15 @@ struct StoredPlan {
     env: BTreeMap<String, String>,
     created_at: Instant,
     approval: Option<Approval>,
+    cancelled: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct ExecutionOutputEvent {
-    job_id: String,
-    seq: u64,
-    stream: String,
-    chunk: String,
+pub(crate) struct ExecutionOutputEvent {
+    pub job_id: String,
+    pub seq: u64,
+    pub stream: String,
+    pub chunk: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -288,148 +322,163 @@ fn plan_digest(plan: &ExecutionPlan) -> Result<String, String> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn prune_expired_plans(plans: &mut HashMap<String, StoredPlan>) {
-    plans.retain(|_, plan| plan.created_at.elapsed() <= PLAN_TTL);
+fn prune_expired_plans(plans: &mut HashMap<String, StoredPlan>, now: Instant) {
+    plans.retain(|_, plan| now.saturating_duration_since(plan.created_at) <= PLAN_TTL);
 }
 
 #[tauri::command]
 pub(crate) fn agent_prepare_execution(
     grants: tauri::State<'_, Arc<WorkspaceGrants>>,
+    registry: tauri::State<'_, Arc<ExecutionRegistry>>,
     request: PrepareExecutionRequest,
 ) -> Result<ExecutionPlan, String> {
-    prepare_execution(&grants, request)
-}
-
-pub(crate) fn prepare_execution(
-    grants: &WorkspaceGrants,
-    request: PrepareExecutionRequest,
-) -> Result<ExecutionPlan, String> {
-    command_available()?;
-    validate_env(&request.env)?;
-    let root = grants.resolve(&request.workspace_id)?;
-    let (cwd, cwd_relative) = resolve_cwd(&root, request.cwd.as_deref())?;
-    let timeout_secs = request
-        .timeout_secs
-        .unwrap_or(DEFAULT_TIMEOUT_SECS)
-        .clamp(1, MAX_TIMEOUT_SECS);
-    let id = format!("run_{}", uuid::Uuid::new_v4().simple());
-    let intent = request
-        .intent
-        .unwrap_or_default()
-        .trim()
-        .chars()
-        .take(300)
-        .collect();
-
-    let (kind, display_command, program, args, script, shell, mut warnings) =
-        match request.kind.as_str() {
-            "process" => {
-                let requested = request.program.as_deref().unwrap_or_default();
-                let executable = resolve_program(&root, requested)?;
-                if request.args.iter().any(|arg| arg.contains('\0')) {
-                    return Err("程序参数不能包含 NUL".to_string());
-                }
-                let display = std::iter::once(quote_display_arg(requested))
-                    .chain(request.args.iter().map(|arg| quote_display_arg(arg)))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                (
-                    ExecutionKind::Process {
-                        executable,
-                        args: request.args.clone(),
-                    },
-                    display,
-                    Some(requested.to_string()),
-                    request.args,
-                    None,
-                    None,
-                    vec!["程序在工作区模式下运行，仍拥有当前用户权限".to_string()],
-                )
-            }
-            "shell" => {
-                let script = request.script.unwrap_or_default();
-                if script.trim().is_empty() || script.contains('\0') {
-                    return Err("Shell 脚本不能为空且不能包含 NUL".to_string());
-                }
-                let shell = if cfg!(windows) { "PowerShell" } else { "sh" };
-                (
-                    ExecutionKind::Shell {
-                        script: script.clone(),
-                    },
-                    script.clone(),
-                    None,
-                    Vec::new(),
-                    Some(script),
-                    Some(shell.to_string()),
-                    vec![
-                        "Shell 可解释管道、重定向和多条命令，风险高于结构化进程".to_string(),
-                        "Shell 在工作区模式下运行，仍拥有当前用户权限".to_string(),
-                    ],
-                )
-            }
-            _ => return Err("未知执行类型，仅支持 process 或 shell".to_string()),
-        };
-
-    if !request.env.is_empty() {
-        warnings.push("仅显示环境变量名称；值不会写入确认界面或日志".to_string());
-    }
-    warnings.push("当前 Runner 尚未提供 OS 级文件或网络隔离".to_string());
-
-    let mut public = ExecutionPlan {
-        id: id.clone(),
-        digest: String::new(),
-        workspace_id: request.workspace_id,
-        kind: request.kind,
-        display_command,
-        program,
-        args,
-        script,
-        shell,
-        cwd: cwd.to_string_lossy().into_owned(),
-        cwd_relative,
-        timeout_secs,
-        env_keys: request.env.keys().cloned().collect(),
-        intent,
-        isolation: "workspace_unconfined".to_string(),
-        network: "host_inherited".to_string(),
-        warnings,
-    };
-    public.digest = plan_digest(&public)?;
-
-    let stored = StoredPlan {
-        public: public.clone(),
-        root,
-        cwd,
-        kind,
-        env: request.env,
-        created_at: Instant::now(),
-        approval: None,
-    };
-    let mut plans = PLANS.lock().map_err(|_| "执行计划锁失败".to_string())?;
-    prune_expired_plans(&mut plans);
-    plans.insert(id, stored);
-    Ok(public)
+    registry.prepare_execution(&grants, request)
 }
 
 #[tauri::command]
-pub(crate) fn agent_approve_execution(plan_id: String, digest: String) -> Result<String, String> {
-    command_available()?;
-    let mut plans = PLANS.lock().map_err(|_| "执行计划锁失败".to_string())?;
-    prune_expired_plans(&mut plans);
-    let plan = plans
-        .get_mut(&plan_id)
-        .ok_or_else(|| "执行计划不存在或已过期，请重新确认".to_string())?;
-    if plan.public.digest != digest {
-        return Err("执行计划摘要不匹配，拒绝批准".to_string());
-    }
-    let token = format!("approve_{}", uuid::Uuid::new_v4().simple());
-    plan.approval = Some(Approval {
-        token: token.clone(),
-        expires_at: Instant::now() + APPROVAL_TTL,
-    });
-    Ok(token)
+pub(crate) fn agent_approve_execution(
+    registry: tauri::State<'_, Arc<ExecutionRegistry>>,
+    plan_id: String,
+    digest: String,
+) -> Result<String, String> {
+    registry.approve_execution(&plan_id, &digest)
 }
 
+impl ExecutionRegistry {
+    pub(crate) fn prepare_execution(
+        &self,
+        grants: &WorkspaceGrants,
+        request: PrepareExecutionRequest,
+    ) -> Result<ExecutionPlan, String> {
+        command_available()?;
+        validate_env(&request.env)?;
+        let mut state = self.lock_state()?;
+        let root = grants.resolve(&request.workspace_id)?;
+        let (cwd, cwd_relative) = resolve_cwd(&root, request.cwd.as_deref())?;
+        let timeout_secs = request
+            .timeout_secs
+            .unwrap_or(DEFAULT_TIMEOUT_SECS)
+            .clamp(1, MAX_TIMEOUT_SECS);
+        let id = format!("run_{}", uuid::Uuid::new_v4().simple());
+        let intent = request
+            .intent
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(300)
+            .collect();
+
+        let (kind, display_command, program, args, script, shell, mut warnings) =
+            match request.kind.as_str() {
+                "process" => {
+                    let requested = request.program.as_deref().unwrap_or_default();
+                    let executable = resolve_program(&root, requested)?;
+                    if request.args.iter().any(|arg| arg.contains('\0')) {
+                        return Err("程序参数不能包含 NUL".to_string());
+                    }
+                    let display = std::iter::once(quote_display_arg(requested))
+                        .chain(request.args.iter().map(|arg| quote_display_arg(arg)))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    (
+                        ExecutionKind::Process {
+                            executable,
+                            args: request.args.clone(),
+                        },
+                        display,
+                        Some(requested.to_string()),
+                        request.args,
+                        None,
+                        None,
+                        vec!["程序在工作区模式下运行，仍拥有当前用户权限".to_string()],
+                    )
+                }
+                "shell" => {
+                    let script = request.script.unwrap_or_default();
+                    if script.trim().is_empty() || script.contains('\0') {
+                        return Err("Shell 脚本不能为空且不能包含 NUL".to_string());
+                    }
+                    let shell = if cfg!(windows) { "PowerShell" } else { "sh" };
+                    (
+                        ExecutionKind::Shell {
+                            script: script.clone(),
+                        },
+                        script.clone(),
+                        None,
+                        Vec::new(),
+                        Some(script),
+                        Some(shell.to_string()),
+                        vec![
+                            "Shell 可解释管道、重定向和多条命令，风险高于结构化进程".to_string(),
+                            "Shell 在工作区模式下运行，仍拥有当前用户权限".to_string(),
+                        ],
+                    )
+                }
+                _ => return Err("未知执行类型，仅支持 process 或 shell".to_string()),
+            };
+
+        if !request.env.is_empty() {
+            warnings.push("仅显示环境变量名称；值不会写入确认界面或日志".to_string());
+        }
+        warnings.push("当前 Runner 尚未提供 OS 级文件或网络隔离".to_string());
+
+        let mut public = ExecutionPlan {
+            id: id.clone(),
+            digest: String::new(),
+            workspace_id: request.workspace_id,
+            kind: request.kind,
+            display_command,
+            program,
+            args,
+            script,
+            shell,
+            cwd: cwd.to_string_lossy().into_owned(),
+            cwd_relative,
+            timeout_secs,
+            env_keys: request.env.keys().cloned().collect(),
+            intent,
+            isolation: "workspace_unconfined".to_string(),
+            network: "host_inherited".to_string(),
+            warnings,
+        };
+        public.digest = plan_digest(&public)?;
+
+        let now = (self.clock)();
+        let stored = StoredPlan {
+            public: public.clone(),
+            root,
+            cwd,
+            kind,
+            env: request.env,
+            created_at: now,
+            approval: None,
+            cancelled: false,
+        };
+        prune_expired_plans(&mut state.plans, now);
+        state.plans.insert(id, stored);
+        Ok(public)
+    }
+
+    pub(crate) fn approve_execution(&self, plan_id: &str, digest: &str) -> Result<String, String> {
+        command_available()?;
+        let mut state = self.lock_state()?;
+        let now = (self.clock)();
+        prune_expired_plans(&mut state.plans, now);
+        let plan = state
+            .plans
+            .get_mut(plan_id)
+            .ok_or_else(|| "执行计划不存在或已过期，请重新确认".to_string())?;
+        if plan.public.digest != digest {
+            return Err("执行计划摘要不匹配，拒绝批准".to_string());
+        }
+        let token = format!("approve_{}", uuid::Uuid::new_v4().simple());
+        plan.approval = Some(Approval {
+            token: token.clone(),
+            expires_at: now + APPROVAL_TTL,
+        });
+        Ok(token)
+    }
+}
 fn clean_environment(cmd: &mut StdCommand, requested: &BTreeMap<String, String>) {
     const ALLOWED: &[&str] = &[
         "PATH",
@@ -505,7 +554,7 @@ fn kill_process_tree(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
-type OutputEmitter = Arc<dyn Fn(ExecutionOutputEvent) + Send + Sync>;
+pub(crate) type OutputEmitter = Arc<dyn Fn(ExecutionOutputEvent) + Send + Sync>;
 
 fn drain_pipe(
     mut pipe: impl Read,
@@ -651,18 +700,18 @@ fn prune_output_dir(dir: &Path) {
 }
 
 #[tauri::command]
-pub(crate) fn agent_cancel_execution(job_id: String) -> Result<(), String> {
-    CANCELLED_JOBS
-        .lock()
-        .map_err(|_| "取消任务锁失败".to_string())?
-        .insert(job_id);
-    Ok(())
+pub(crate) fn agent_cancel_execution(
+    registry: tauri::State<'_, Arc<ExecutionRegistry>>,
+    job_id: String,
+) -> Result<(), String> {
+    registry.cancel_execution(&job_id).map(|_| ())
 }
 
 #[tauri::command]
 pub(crate) async fn agent_execute_plan(
     app: tauri::AppHandle,
     grants: tauri::State<'_, Arc<WorkspaceGrants>>,
+    registry: tauri::State<'_, Arc<ExecutionRegistry>>,
     plan_id: String,
     approval_token: String,
 ) -> Result<ExecutionResult, String> {
@@ -670,192 +719,227 @@ pub(crate) async fn agent_execute_plan(
         let _ = app.emit("kisaki-execution-output", event);
     });
     let grants = Arc::clone(grants.inner());
+    let registry = Arc::clone(registry.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        execute_plan_blocking(&grants, emit, plan_id, approval_token)
+        registry.execute_plan(&grants, emit, &plan_id, &approval_token)
     })
     .await
     .map_err(|e| format!("任务执行线程失败: {}", e))?
 }
 
-fn execute_plan_blocking(
-    grants: &WorkspaceGrants,
-    emit: OutputEmitter,
-    plan_id: String,
-    approval_token: String,
-) -> Result<ExecutionResult, String> {
-    command_available()?;
-    let plan = {
-        let mut plans = PLANS.lock().map_err(|_| "执行计划锁失败".to_string())?;
-        prune_expired_plans(&mut plans);
-        let stored = plans
-            .get(&plan_id)
-            .ok_or_else(|| "执行计划不存在或已过期，请重新确认".to_string())?;
-        let approval = stored
-            .approval
-            .as_ref()
-            .ok_or_else(|| "执行计划尚未获得批准".to_string())?;
-        if approval.token != approval_token || Instant::now() > approval.expires_at {
-            return Err("批准令牌无效或已过期".to_string());
-        }
-        plans.remove(&plan_id).expect("已校验的计划必须存在")
-    };
+impl ExecutionRegistry {
+    pub(crate) fn execute_plan(
+        self: &Arc<Self>,
+        grants: &WorkspaceGrants,
+        emit: OutputEmitter,
+        plan_id: &str,
+        approval_token: &str,
+    ) -> Result<ExecutionResult, String> {
+        command_available()?;
+        let (plan, current_root, _active_guard) = {
+            let mut state = self.lock_state()?;
+            let now = (self.clock)();
+            prune_expired_plans(&mut state.plans, now);
+            let stored = state
+                .plans
+                .get(plan_id)
+                .ok_or_else(|| "执行计划不存在或已过期，请重新确认".to_string())?;
+            let approval = stored
+                .approval
+                .as_ref()
+                .ok_or_else(|| "执行计划尚未获得批准".to_string())?;
+            if approval.token != approval_token || now > approval.expires_at {
+                return Err("批准令牌无效或已过期".to_string());
+            }
+            let plan = state.plans.remove(plan_id).expect("已校验的计划必须存在");
+            let current_root = grants.resolve(&plan.public.workspace_id)?;
+            if current_root != plan.root {
+                return Err("工作目录能力在确认后发生变化".to_string());
+            }
+            let (current_cwd, _) = resolve_cwd(&current_root, Some(&plan.public.cwd_relative))?;
+            if current_cwd != plan.cwd {
+                return Err("命令工作目录在确认后发生变化".to_string());
+            }
+            state.active_jobs.insert(
+                plan_id.to_string(),
+                ActiveJob {
+                    workspace_id: plan.public.workspace_id.clone(),
+                    cancelled: plan.cancelled,
+                },
+            );
+            let guard = ActiveJobGuard {
+                registry: Arc::clone(self),
+                job_id: plan_id.to_string(),
+            };
+            (plan, current_root, guard)
+        };
+        let (before, before_truncated) = snapshot_workspace(&current_root);
 
-    let current_root = grants.resolve(&plan.public.workspace_id)?;
-    if current_root != plan.root {
-        return Err("工作目录能力在确认后发生变化".to_string());
-    }
-    let (before, before_truncated) = snapshot_workspace(&current_root);
-
-    let mut cmd = match &plan.kind {
-        ExecutionKind::Process { executable, args } => {
-            let mut command = StdCommand::new(executable);
-            command.args(args);
-            command
-        }
-        ExecutionKind::Shell { script } => {
-            if cfg!(windows) {
-                let mut command = StdCommand::new("powershell.exe");
-                let utf8_script = format!(
+        let mut cmd = match &plan.kind {
+            ExecutionKind::Process { executable, args } => {
+                let mut command = StdCommand::new(executable);
+                command.args(args);
+                command
+            }
+            ExecutionKind::Shell { script } => {
+                if cfg!(windows) {
+                    let mut command = StdCommand::new("powershell.exe");
+                    let utf8_script = format!(
                     "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $OutputEncoding=[Console]::OutputEncoding; {}",
                     script
                 );
-                command.args([
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    &utf8_script,
-                ]);
-                command
-            } else {
-                let mut command = StdCommand::new("sh");
-                command.args(["-c", script]);
-                command
-            }
-        }
-    };
-    cmd.current_dir(&plan.cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    clean_environment(&mut cmd, &plan.env);
-    configure_process_group(&mut cmd);
-
-    let start = Instant::now();
-    ACTIVE_JOBS
-        .lock()
-        .map_err(|_| "活动任务锁失败".to_string())?
-        .insert(plan_id.clone(), plan.public.workspace_id.clone());
-    let _active_guard = ActiveJobGuard(plan_id.clone());
-    let mut child = cmd.spawn().map_err(|e| format!("启动任务失败: {}", e))?;
-    let seq = Arc::new(AtomicU64::new(1));
-    let (tx, rx) = mpsc::channel::<(&'static str, Vec<u8>, bool)>();
-    if let Some(stdout) = child.stdout.take() {
-        let (tx, emit, job, seq) = (tx.clone(), emit.clone(), plan_id.clone(), seq.clone());
-        std::thread::spawn(move || {
-            let (bytes, truncated) = drain_pipe(stdout, emit, job, "stdout", seq);
-            let _ = tx.send(("stdout", bytes, truncated));
-        });
-    }
-    if let Some(stderr) = child.stderr.take() {
-        let (tx, emit, job, seq) = (tx.clone(), emit.clone(), plan_id.clone(), seq.clone());
-        std::thread::spawn(move || {
-            let (bytes, truncated) = drain_pipe(stderr, emit, job, "stderr", seq);
-            let _ = tx.send(("stderr", bytes, truncated));
-        });
-    }
-    drop(tx);
-
-    let mut timed_out = false;
-    let mut cancelled = false;
-    let exit_code = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.code(),
-            Ok(None) => {
-                cancelled = CANCELLED_JOBS
-                    .lock()
-                    .map(|jobs| jobs.contains(&plan_id))
-                    .unwrap_or(false);
-                timed_out = start.elapsed() >= Duration::from_secs(plan.public.timeout_secs);
-                if cancelled || timed_out {
-                    kill_process_tree(&mut child);
-                    break None;
+                    command.args([
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        &utf8_script,
+                    ]);
+                    command
+                } else {
+                    let mut command = StdCommand::new("sh");
+                    command.args(["-c", script]);
+                    command
                 }
-                std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
             }
-            Err(e) => return Err(format!("等待任务完成失败: {}", e)),
+        };
+        cmd.current_dir(&plan.cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        clean_environment(&mut cmd, &plan.env);
+        configure_process_group(&mut cmd);
+
+        let start = Instant::now();
+        let mut child = cmd.spawn().map_err(|e| format!("启动任务失败: {}", e))?;
+        // 输出线程也持有同一注册表；守卫收尾后不再向已结束任务发送迟到输出。
+        // 调用外部回调前释放状态锁，回调可以安全地取消或撤销自己的任务。
+        let registry = Arc::clone(self);
+        let emit: OutputEmitter = Arc::new(move |event| {
+            let active = registry
+                .state
+                .lock()
+                .map(|state| state.active_jobs.contains_key(&event.job_id))
+                .unwrap_or(false);
+            if active {
+                emit(event);
+            }
+        });
+        let seq = Arc::new(AtomicU64::new(1));
+        let (tx, rx) = mpsc::channel::<(&'static str, Vec<u8>, bool)>();
+        if let Some(stdout) = child.stdout.take() {
+            let (tx, emit, job, seq) = (tx.clone(), emit.clone(), plan_id.to_string(), seq.clone());
+            std::thread::spawn(move || {
+                let (bytes, truncated) = drain_pipe(stdout, emit, job, "stdout", seq);
+                let _ = tx.send(("stdout", bytes, truncated));
+            });
         }
-    };
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut truncated = false;
-    let deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
-    let mut pending = 2;
-    while pending > 0 && Instant::now() < deadline {
-        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok(("stdout", bytes, was_truncated)) => {
-                stdout = bytes;
-                truncated |= was_truncated;
-                pending -= 1;
-            }
-            Ok(("stderr", bytes, was_truncated)) => {
-                stderr = bytes;
-                truncated |= was_truncated;
-                pending -= 1;
-            }
-            Ok(_) => {}
-            Err(_) => break,
+        if let Some(stderr) = child.stderr.take() {
+            let (tx, emit, job, seq) = (tx.clone(), emit.clone(), plan_id.to_string(), seq.clone());
+            std::thread::spawn(move || {
+                let (bytes, truncated) = drain_pipe(stderr, emit, job, "stderr", seq);
+                let _ = tx.send(("stderr", bytes, truncated));
+            });
         }
+        drop(tx);
+
+        let mut timed_out = false;
+        let mut cancelled = false;
+        let exit_code = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status.code(),
+                Ok(None) => {
+                    cancelled = self
+                        .state
+                        .lock()
+                        .map(|state| {
+                            state
+                                .active_jobs
+                                .get(plan_id)
+                                .is_some_and(|job| job.cancelled)
+                        })
+                        .unwrap_or(false);
+                    timed_out = start.elapsed() >= Duration::from_secs(plan.public.timeout_secs);
+                    if cancelled || timed_out {
+                        kill_process_tree(&mut child);
+                        break None;
+                    }
+                    std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+                }
+                Err(e) => return Err(format!("等待任务完成失败: {}", e)),
+            }
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut truncated = false;
+        let deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
+        let mut pending = 2;
+        while pending > 0 && Instant::now() < deadline {
+            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(("stdout", bytes, was_truncated)) => {
+                    stdout = bytes;
+                    truncated |= was_truncated;
+                    pending -= 1;
+                }
+                Ok(("stderr", bytes, was_truncated)) => {
+                    stderr = bytes;
+                    truncated |= was_truncated;
+                    pending -= 1;
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+
+        let (after, after_truncated) = snapshot_workspace(&current_root);
+        let (changed_files, mut changes_truncated) = changed_files(&before, &after);
+        changes_truncated |= before_truncated || after_truncated;
+
+        let logs = self.paths.execution_output_dir();
+        fs::create_dir_all(logs).map_err(|e| format!("创建任务日志目录失败: {}", e))?;
+        let output_ref = format!("{}.log", plan_id);
+        let output_path = logs.join(&output_ref);
+        let mut log = Vec::new();
+        log.extend_from_slice(
+            format!(
+                "plan: {}\ndigest: {}\ncommand: {}\n\n",
+                plan_id, plan.public.digest, plan.public.display_command
+            )
+            .as_bytes(),
+        );
+        log.extend_from_slice(b"--- stdout ---\n");
+        log.extend_from_slice(&stdout);
+        log.extend_from_slice(b"\n--- stderr ---\n");
+        log.extend_from_slice(&stderr);
+        log.extend_from_slice(format!("\n--- exit code: {:?} ---\n", exit_code).as_bytes());
+        fs::write(&output_path, log).map_err(|e| format!("写入任务日志失败: {}", e))?;
+        prune_output_dir(logs);
+
+        let status = if cancelled {
+            "cancelled"
+        } else if timed_out {
+            "timed_out"
+        } else if exit_code == Some(0) {
+            "completed"
+        } else {
+            "failed"
+        };
+        Ok(ExecutionResult {
+            job_id: plan_id.to_string(),
+            status: status.to_string(),
+            exit_code,
+            stdout_tail: output_tail(&stdout),
+            stderr_tail: output_tail(&stderr),
+            output_ref,
+            duration_ms: start.elapsed().as_millis(),
+            timed_out,
+            cancelled,
+            truncated,
+            changed_files,
+            changes_truncated,
+            isolation: plan.public.isolation,
+        })
     }
-
-    let (after, after_truncated) = snapshot_workspace(&current_root);
-    let (changed_files, mut changes_truncated) = changed_files(&before, &after);
-    changes_truncated |= before_truncated || after_truncated;
-
-    let logs = output_dir();
-    fs::create_dir_all(&logs).map_err(|e| format!("创建任务日志目录失败: {}", e))?;
-    let output_ref = format!("{}.log", plan_id);
-    let output_path = logs.join(&output_ref);
-    let mut log = Vec::new();
-    log.extend_from_slice(
-        format!(
-            "plan: {}\ndigest: {}\ncommand: {}\n\n",
-            plan_id, plan.public.digest, plan.public.display_command
-        )
-        .as_bytes(),
-    );
-    log.extend_from_slice(b"--- stdout ---\n");
-    log.extend_from_slice(&stdout);
-    log.extend_from_slice(b"\n--- stderr ---\n");
-    log.extend_from_slice(&stderr);
-    log.extend_from_slice(format!("\n--- exit code: {:?} ---\n", exit_code).as_bytes());
-    fs::write(&output_path, log).map_err(|e| format!("写入任务日志失败: {}", e))?;
-    prune_output_dir(&logs);
-
-    let status = if cancelled {
-        "cancelled"
-    } else if timed_out {
-        "timed_out"
-    } else if exit_code == Some(0) {
-        "completed"
-    } else {
-        "failed"
-    };
-    Ok(ExecutionResult {
-        job_id: plan_id,
-        status: status.to_string(),
-        exit_code,
-        stdout_tail: output_tail(&stdout),
-        stderr_tail: output_tail(&stderr),
-        output_ref,
-        duration_ms: start.elapsed().as_millis(),
-        timed_out,
-        cancelled,
-        truncated,
-        changed_files,
-        changes_truncated,
-        isolation: plan.public.isolation,
-    })
 }
 
 #[cfg(test)]
@@ -864,12 +948,63 @@ mod tests {
     use crate::fileio;
     use crate::test_support::{TempAppPaths, TempDir};
 
-    fn temp_workspace() -> (TempAppPaths, TempDir, WorkspaceGrants, String) {
-        let fixture = TempAppPaths::new();
-        let root = TempDir::new();
-        let grants = WorkspaceGrants::new(fixture.shared_paths());
-        let grant = grants.grant_from_selection(root.path()).unwrap();
-        (fixture, root, grants, grant.id)
+    struct Fixture {
+        paths: TempAppPaths,
+        root: TempDir,
+        grants: Arc<WorkspaceGrants>,
+        registry: Arc<ExecutionRegistry>,
+        workspace_id: String,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            Self::with_clock(Instant::now)
+        }
+
+        fn with_clock(clock: impl Fn() -> Instant + Send + Sync + 'static) -> Self {
+            let paths = TempAppPaths::new();
+            let root = TempDir::new();
+            let grants = Arc::new(WorkspaceGrants::new(paths.shared_paths()));
+            let registry = Arc::new(ExecutionRegistry::new(paths.shared_paths(), clock));
+            let workspace_id = grants.grant_from_selection(root.path()).unwrap().id;
+            Self {
+                paths,
+                root,
+                grants,
+                registry,
+                workspace_id,
+            }
+        }
+
+        fn prepare(&self, request: PrepareExecutionRequest) -> ExecutionPlan {
+            self.registry
+                .prepare_execution(&self.grants, request)
+                .unwrap()
+        }
+
+        fn approve(&self, plan: &ExecutionPlan) -> String {
+            self.registry
+                .approve_execution(&plan.id, &plan.digest)
+                .unwrap()
+        }
+
+        fn execute(&self, plan: &ExecutionPlan, token: &str) -> Result<ExecutionResult, String> {
+            self.registry
+                .execute_plan(&self.grants, Arc::new(|_| {}), &plan.id, token)
+        }
+
+        fn assert_finished(&self, plan: &ExecutionPlan, token: &str) {
+            assert!(
+                !self.registry.cancel_execution(&plan.id).unwrap(),
+                "终态不能残留任务或取消标记"
+            );
+            assert!(self
+                .registry
+                .approve_execution(&plan.id, &plan.digest)
+                .unwrap_err()
+                .contains("不存在"));
+            assert!(self.execute(plan, token).unwrap_err().contains("不存在"));
+        }
     }
 
     fn process_request(workspace_id: &str) -> PrepareExecutionRequest {
@@ -890,153 +1025,608 @@ mod tests {
         }
     }
 
+    fn controlled_fixture() -> (Fixture, Arc<AtomicU64>) {
+        let seconds = Arc::new(AtomicU64::new(0));
+        let clock_seconds = Arc::clone(&seconds);
+        let origin = Instant::now();
+        let fixture = Fixture::with_clock(move || {
+            origin + Duration::from_secs(clock_seconds.load(Ordering::Relaxed))
+        });
+        (fixture, seconds)
+    }
+
+    fn shell_request(workspace_id: &str, script: String) -> PrepareExecutionRequest {
+        let mut request = process_request(workspace_id);
+        request.kind = "shell".to_string();
+        request.program = None;
+        request.args.clear();
+        request.script = Some(script);
+        request.timeout_secs = Some(30);
+        request
+    }
+
+    fn waiting_request(workspace_id: &str, release_file: &str) -> PrepareExecutionRequest {
+        // 显式刷新控制台，不能依赖 PowerShell 格式化管道何时刷新重定向输出。
+        let script = if cfg!(windows) {
+            format!("[Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); while (-not (Test-Path -LiteralPath '{release_file}')) {{ Start-Sleep -Milliseconds 20 }}")
+        } else {
+            format!(
+                "printf 'kisaki-ready\\n'; while [ ! -f '{release_file}' ]; do sleep 0.02; done"
+            )
+        };
+        shell_request(workspace_id, script)
+    }
+
+    struct RunningJob {
+        registry: Arc<ExecutionRegistry>,
+        plan: ExecutionPlan,
+        token: String,
+        output: mpsc::Receiver<ExecutionOutputEvent>,
+        done: mpsc::Receiver<Result<ExecutionResult, String>>,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl RunningJob {
+        fn spawn(fixture: &Fixture, plan: ExecutionPlan) -> Self {
+            let token = fixture.approve(&plan);
+            let (output_tx, output) = mpsc::channel();
+            let (done_tx, done) = mpsc::channel();
+            let emit: OutputEmitter = Arc::new(move |event| {
+                let _ = output_tx.send(event);
+            });
+            let registry = Arc::clone(&fixture.registry);
+            let grants = Arc::clone(&fixture.grants);
+            let id = plan.id.clone();
+            let approval = token.clone();
+            let worker = std::thread::spawn(move || {
+                let result = registry.execute_plan(&grants, emit, &id, &approval);
+                // 主断言失败后，通道关闭不应产生掩盖原始失败的第二次 panic。
+                let _ = done_tx.send(result);
+            });
+            Self {
+                registry: Arc::clone(&fixture.registry),
+                plan,
+                token,
+                output,
+                done,
+                worker: Some(worker),
+            }
+        }
+
+        fn wait_ready(&self) {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut stdout = String::new();
+            let mut stderr = String::new();
+            loop {
+                if let Ok(event) = self.output.recv_timeout(Duration::from_millis(50)) {
+                    assert_eq!(event.job_id, self.plan.id);
+                    assert!(event.seq > 0);
+                    match event.stream.as_str() {
+                        "stdout" => stdout.push_str(&event.chunk),
+                        "stderr" => stderr.push_str(&event.chunk),
+                        stream => panic!("未知输出流: {stream}"),
+                    }
+                    // 就绪文本可以跨多个真实管道块，不把块边界当作消息边界。
+                    if stdout.contains("kisaki-ready") {
+                        return;
+                    }
+                }
+                if let Ok(result) = self.done.try_recv() {
+                    panic!("任务在就绪前终止: {result:?}; stdout={stdout:?}; stderr={stderr:?}");
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "等待就绪超时; stdout={stdout:?}; stderr={stderr:?}"
+                );
+            }
+        }
+
+        fn finish(&mut self) -> Result<ExecutionResult, String> {
+            let result = self
+                .done
+                .recv_timeout(Duration::from_secs(10))
+                .expect("任务未按预期结束");
+            self.worker
+                .take()
+                .unwrap()
+                .join()
+                .expect("执行线程意外 panic");
+            result
+        }
+    }
+
+    impl Drop for RunningJob {
+        fn drop(&mut self) {
+            // 即使断言失败也终止本测试启动的任务，再释放它引用的真实目录。
+            let _ = self.registry.cancel_execution(&self.plan.id);
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    #[test]
+    fn independent_execution_registries_keep_plans_and_output_separate() {
+        let first = Fixture::new();
+        let second = Fixture::new();
+        let first_plan = first.prepare(process_request(&first.workspace_id));
+        let second_plan = second.prepare(process_request(&second.workspace_id));
+        assert!(second
+            .registry
+            .approve_execution(&first_plan.id, &first_plan.digest)
+            .unwrap_err()
+            .contains("不存在"));
+        assert!(!second.registry.cancel_execution(&first_plan.id).unwrap());
+        for (own, other, plan) in [
+            (&first, &second, first_plan),
+            (&second, &first, second_plan),
+        ] {
+            assert_eq!(
+                own.grants.resolve(&own.workspace_id).unwrap(),
+                own.root.path()
+            );
+            let token = own.approve(&plan);
+            assert!(other
+                .registry
+                .execute_plan(&own.grants, Arc::new(|_| {}), &plan.id, &token)
+                .unwrap_err()
+                .contains("不存在"));
+            let result = own.execute(&plan, &token).unwrap();
+            assert_eq!(result.status, "completed");
+            assert!(!result.stdout_tail.trim().is_empty());
+            assert!(own
+                .paths
+                .paths()
+                .execution_output_dir()
+                .join(&result.output_ref)
+                .is_file());
+            assert!(!other
+                .paths
+                .paths()
+                .execution_output_dir()
+                .join(&result.output_ref)
+                .exists());
+            own.assert_finished(&plan, &token);
+        }
+    }
+
     #[test]
     fn prepare_rejects_absolute_program() {
-        let (_fixture, root, grants, workspace_id) = temp_workspace();
-        let mut request = process_request(&workspace_id);
-        request.program = Some(root.path().join("tool.exe").to_string_lossy().into_owned());
-        assert!(prepare_execution(&grants, request)
+        let fixture = Fixture::new();
+        let mut request = process_request(&fixture.workspace_id);
+        request.program = Some(
+            fixture
+                .root
+                .path()
+                .join("tool.exe")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        assert!(fixture
+            .registry
+            .prepare_execution(&fixture.grants, request)
             .unwrap_err()
             .contains("绝对"));
     }
 
     #[test]
     fn approval_is_bound_to_digest() {
-        let (_fixture, _root, grants, workspace_id) = temp_workspace();
-        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
-        assert!(agent_approve_execution(plan.id.clone(), "bad".into()).is_err());
-        let token = agent_approve_execution(plan.id.clone(), plan.digest.clone()).unwrap();
-        assert!(token.starts_with("approve_"));
-        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
+        let fixture = Fixture::new();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        assert!(fixture
+            .registry
+            .approve_execution(&plan.id, "bad")
+            .unwrap_err()
+            .contains("摘要不匹配"));
+        assert!(fixture.approve(&plan).starts_with("approve_"));
+        fileio::revoke_workspace(&fixture.grants, &fixture.registry, &fixture.workspace_id)
+            .unwrap();
     }
 
     #[test]
     fn sensitive_environment_is_rejected() {
-        let mut env = BTreeMap::new();
-        env.insert("API_TOKEN".to_string(), "secret".to_string());
-        assert!(validate_env(&env).unwrap_err().contains("敏感"));
+        let fixture = Fixture::new();
+        let mut request = process_request(&fixture.workspace_id);
+        request
+            .env
+            .insert("API_TOKEN".to_string(), "secret".to_string());
+        assert!(fixture
+            .registry
+            .prepare_execution(&fixture.grants, request)
+            .unwrap_err()
+            .contains("敏感"));
     }
 
     #[test]
     fn structured_process_cannot_disguise_shell() {
-        let root = TempDir::new();
-        assert!(resolve_program(root.path(), "powershell.exe")
-            .unwrap_err()
-            .contains("run_shell"));
-        assert!(resolve_program(root.path(), "sh")
-            .unwrap_err()
-            .contains("run_shell"));
+        let fixture = Fixture::new();
+        for program in [
+            "powershell.exe",
+            "sh",
+            "CMD.exe",
+            "pwsh",
+            "bash",
+            "zsh",
+            "fish",
+        ] {
+            let mut request = process_request(&fixture.workspace_id);
+            request.program = Some(program.to_string());
+            assert!(fixture
+                .registry
+                .prepare_execution(&fixture.grants, request)
+                .unwrap_err()
+                .contains("run_shell"));
+        }
     }
 
     #[test]
     fn prepare_and_execute_resolve_only_the_injected_authorization_state() {
-        let (_fixture, _root, grants, workspace_id) = temp_workspace();
-        let other_fixture = TempAppPaths::new();
-        let other_grants = WorkspaceGrants::new(other_fixture.shared_paths());
-        assert!(
-            prepare_execution(&other_grants, process_request(&workspace_id))
-                .unwrap_err()
-                .contains("授权不存在")
-        );
-        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
-        let token = agent_approve_execution(plan.id.clone(), plan.digest).unwrap();
-        let emit: OutputEmitter = Arc::new(|_| {});
-        assert!(execute_plan_blocking(&other_grants, emit, plan.id, token)
+        let fixture = Fixture::new();
+        let other = Fixture::new();
+        assert!(fixture
+            .registry
+            .prepare_execution(&other.grants, process_request(&fixture.workspace_id))
             .unwrap_err()
             .contains("授权不存在"));
-        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
-        assert!(prepare_execution(&grants, process_request(&workspace_id)).is_err());
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        let token = fixture.approve(&plan);
+        assert!(fixture
+            .registry
+            .execute_plan(&other.grants, Arc::new(|_| {}), &plan.id, &token)
+            .unwrap_err()
+            .contains("授权不存在"));
+        fixture.assert_finished(&plan, &token);
+        fileio::revoke_workspace(&fixture.grants, &fixture.registry, &fixture.workspace_id)
+            .unwrap();
+        assert!(fixture
+            .registry
+            .prepare_execution(&fixture.grants, process_request(&fixture.workspace_id))
+            .is_err());
     }
 
     #[test]
     fn revocation_discards_only_plans_for_the_requested_capability() {
-        let (_fixture, root, grants, workspace_id) = temp_workspace();
-        let other_id = grants.grant_from_selection(root.path()).unwrap().id;
-        let first = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
-        let second = prepare_execution(&grants, process_request(&other_id)).unwrap();
-        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
-        assert!(agent_approve_execution(first.id, first.digest)
+        let fixture = Fixture::new();
+        let other_id = fixture
+            .grants
+            .grant_from_selection(fixture.root.path())
+            .unwrap()
+            .id;
+        let first = fixture.prepare(process_request(&fixture.workspace_id));
+        let second = fixture.prepare(process_request(&other_id));
+        assert!(fixture.registry.cancel_execution(&first.id).unwrap());
+        fileio::revoke_workspace(&fixture.grants, &fixture.registry, &fixture.workspace_id)
+            .unwrap();
+        assert!(fixture
+            .registry
+            .approve_execution(&first.id, &first.digest)
             .unwrap_err()
             .contains("不存在"));
-        assert!(agent_approve_execution(second.id, second.digest).is_ok());
-        assert_eq!(grants.resolve(&other_id).unwrap(), root.path());
-        fileio::revoke_workspace(&grants, &other_id).unwrap();
+        assert!(!fixture.registry.cancel_execution(&first.id).unwrap());
+        assert!(fixture
+            .registry
+            .approve_execution(&second.id, &second.digest)
+            .is_ok());
+        assert_eq!(
+            fixture.grants.resolve(&other_id).unwrap(),
+            fixture.root.path()
+        );
     }
 
     #[test]
-    fn approved_process_executes_and_revocation_cancels_only_its_own_active_job() {
-        // 执行输出仍使用本票不迁移的兼容入口；所有真实执行共用本测试的独立 fixture。
-        let (fixture, root, grants, workspace_id) = temp_workspace();
-        init_output_dir(fixture.shared_paths()).unwrap();
-        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
-        let token = agent_approve_execution(plan.id.clone(), plan.digest.clone()).unwrap();
-        let emit: OutputEmitter = Arc::new(|_| {});
-        let result = execute_plan_blocking(&grants, emit, plan.id, token).unwrap();
-        assert_eq!(result.status, "completed");
-        assert_eq!(result.exit_code, Some(0));
-        assert!(!result.stdout_tail.trim().is_empty());
+    fn approval_rejects_missing_wrong_and_consumed_tokens_without_losing_a_valid_plan() {
+        let fixture = Fixture::new();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
         assert!(fixture
-            .paths()
-            .execution_output_dir()
-            .join(&result.output_ref)
-            .is_file());
+            .execute(&plan, "")
+            .unwrap_err()
+            .contains("尚未获得批准"));
+        let old_token = fixture.approve(&plan);
+        let token = fixture.approve(&plan);
+        assert_ne!(old_token, token);
+        for invalid in ["not-an-approval", old_token.as_str()] {
+            assert!(fixture
+                .execute(&plan, invalid)
+                .unwrap_err()
+                .contains("令牌无效"));
+        }
+        assert_eq!(fixture.execute(&plan, &token).unwrap().status, "completed");
+        fixture.assert_finished(&plan, &token);
+    }
 
-        let other_id = grants.grant_from_selection(root.path()).unwrap().id;
-        let mut slow_request = process_request(&workspace_id);
-        slow_request.kind = "shell".to_string();
-        slow_request.program = None;
-        slow_request.args.clear();
-        slow_request.timeout_secs = Some(30);
-        slow_request.script = Some(
-            if cfg!(windows) {
-                "[Console]::Out.WriteLine('kisaki-ready'); [Console]::Out.Flush(); Start-Sleep -Seconds 30"
-            } else {
-                "printf 'kisaki-ready\n'; sleep 30"
-            }
-            .to_string(),
+    #[test]
+    fn approval_expires_after_sixty_seconds_and_can_be_renewed() {
+        let (fixture, seconds) = controlled_fixture();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        let expired = fixture.approve(&plan);
+        seconds.store(61, Ordering::Relaxed);
+        assert!(fixture
+            .execute(&plan, &expired)
+            .unwrap_err()
+            .contains("令牌无效或已过期"));
+        let renewed = fixture.approve(&plan);
+        assert_ne!(expired, renewed);
+        seconds.store(120, Ordering::Relaxed);
+        assert_eq!(
+            fixture.execute(&plan, &renewed).unwrap().status,
+            "completed"
         );
-        let first = prepare_execution(&grants, slow_request.clone()).unwrap();
-        slow_request.workspace_id = other_id.clone();
-        let second = prepare_execution(&grants, slow_request).unwrap();
-        let first_job = first.id.clone();
-        let second_job = second.id.clone();
-        std::thread::scope(|scope| {
-            let (ready_tx, ready_rx) = mpsc::channel();
-            let (done_tx, done_rx) = mpsc::channel();
-            let emit: OutputEmitter = Arc::new(move |event| {
-                if event.stream == "stdout" && !event.chunk.trim().is_empty() {
-                    let _ = ready_tx.send(event.job_id);
-                }
-            });
-            for plan in [first, second] {
-                let token = agent_approve_execution(plan.id.clone(), plan.digest).unwrap();
-                let emit = Arc::clone(&emit);
-                let done_tx = done_tx.clone();
-                let grants = &grants;
-                scope.spawn(move || {
-                    let result = execute_plan_blocking(grants, emit, plan.id.clone(), token);
-                    done_tx.send((plan.id, result)).unwrap();
-                });
-            }
-            drop(done_tx);
-            let mut ready = HashSet::new();
-            while ready.len() < 2 {
-                ready.insert(ready_rx.recv_timeout(Duration::from_secs(15)).unwrap());
-            }
-            assert!(ready.contains(&first_job) && ready.contains(&second_job));
-            fileio::revoke_workspace(&grants, &workspace_id).unwrap();
-            let (job_id, result) = done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-            assert_eq!(job_id, first_job);
-            let result = result.unwrap();
+        fixture.assert_finished(&plan, &renewed);
+    }
+
+    #[test]
+    fn approval_and_plan_keep_the_existing_inclusive_ttl_boundaries() {
+        for seconds_at_execution in [60, 300] {
+            let (fixture, seconds) = controlled_fixture();
+            let plan = fixture.prepare(process_request(&fixture.workspace_id));
+            let token = if seconds_at_execution == 60 {
+                let token = fixture.approve(&plan);
+                seconds.store(60, Ordering::Relaxed);
+                token
+            } else {
+                seconds.store(300, Ordering::Relaxed);
+                fixture.approve(&plan)
+            };
+            assert_eq!(fixture.execute(&plan, &token).unwrap().status, "completed");
+            fixture.assert_finished(&plan, &token);
+        }
+    }
+
+    #[test]
+    fn expired_plans_are_rejected_and_do_not_leave_cancellation_state() {
+        let (fixture, seconds) = controlled_fixture();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        let token = fixture.approve(&plan);
+        seconds.store(301, Ordering::Relaxed);
+        assert!(fixture
+            .execute(&plan, &token)
+            .unwrap_err()
+            .contains("计划不存在或已过期"));
+        fixture.assert_finished(&plan, &token);
+        assert!(!fixture.registry.cancel_execution("never-issued").unwrap());
+    }
+
+    #[test]
+    fn cancellation_before_execution_is_consumed_with_the_plan() {
+        let fixture = Fixture::new();
+        let plan = fixture.prepare(waiting_request(&fixture.workspace_id, "never-release"));
+        assert!(fixture.registry.cancel_execution(&plan.id).unwrap());
+        let token = fixture.approve(&plan);
+        let result = fixture.execute(&plan, &token).unwrap();
+        assert_eq!(result.status, "cancelled");
+        assert!(result.cancelled);
+        fixture.assert_finished(&plan, &token);
+        assert!(fixture.grants.resolve(&fixture.workspace_id).is_ok());
+    }
+
+    #[test]
+    fn active_cancellation_keeps_authorization_and_cleans_the_finished_job() {
+        let fixture = Fixture::new();
+        let plan = fixture.prepare(waiting_request(&fixture.workspace_id, "never-release"));
+        let mut job = RunningJob::spawn(&fixture, plan);
+        job.wait_ready();
+        assert!(fixture.registry.cancel_execution(&job.plan.id).unwrap());
+        let result = job.finish().unwrap();
+        assert_eq!(result.status, "cancelled");
+        assert!(result.cancelled);
+        assert!(fixture.grants.resolve(&fixture.workspace_id).is_ok());
+        fixture.assert_finished(&job.plan, &job.token);
+    }
+
+    #[test]
+    fn revocation_cancels_only_its_own_running_capability_even_for_the_same_directory() {
+        for same_directory in [true, false] {
+            let fixture = Fixture::new();
+            let other_root = TempDir::new();
+            let root = if same_directory {
+                fixture.root.path()
+            } else {
+                other_root.path()
+            };
+            let other_id = fixture.grants.grant_from_selection(root).unwrap().id;
+            let first = fixture.prepare(waiting_request(&fixture.workspace_id, "release-first"));
+            let second = fixture.prepare(waiting_request(&other_id, "release-second"));
+            let mut first_job = RunningJob::spawn(&fixture, first);
+            let mut second_job = RunningJob::spawn(&fixture, second);
+            first_job.wait_ready();
+            second_job.wait_ready();
+
+            fileio::revoke_workspace(&fixture.grants, &fixture.registry, &fixture.workspace_id)
+                .unwrap();
+
+            let result = first_job.finish().unwrap();
             assert_eq!(result.status, "cancelled");
             assert!(result.cancelled);
-            assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
-            assert_eq!(grants.resolve(&other_id).unwrap(), root.path());
-            agent_cancel_execution(second_job.clone()).unwrap();
-            let (job_id, result) = done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-            assert_eq!(job_id, second_job);
-            assert_eq!(result.unwrap().status, "cancelled");
+            assert!(fixture.grants.resolve(&fixture.workspace_id).is_err());
+            assert_eq!(fixture.grants.resolve(&other_id).unwrap(), root);
+            assert!(matches!(
+                second_job.done.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            fs::write(root.join("release-second"), "允许另一能力正常完成").unwrap();
+            assert_eq!(second_job.finish().unwrap().status, "completed");
+            fixture.assert_finished(&first_job.plan, &first_job.token);
+            fixture.assert_finished(&second_job.plan, &second_job.token);
+        }
+    }
+
+    #[test]
+    fn output_callback_can_cancel_without_holding_the_registry_lock() {
+        let fixture = Fixture::new();
+        let plan = fixture.prepare(waiting_request(&fixture.workspace_id, "never-release"));
+        let token = fixture.approve(&plan);
+        let registry = Arc::clone(&fixture.registry);
+        let emit: OutputEmitter = Arc::new(move |event| {
+            if event.stream == "stdout" && !event.chunk.is_empty() {
+                registry.cancel_execution(&event.job_id).unwrap();
+            }
         });
-        fileio::revoke_workspace(&grants, &other_id).unwrap();
+        let result = fixture
+            .registry
+            .execute_plan(&fixture.grants, emit, &plan.id, &token)
+            .unwrap();
+        assert_eq!(result.status, "cancelled");
+        fixture.assert_finished(&plan, &token);
+    }
+
+    #[test]
+    fn timeout_and_nonzero_exit_cleanup_have_distinct_terminal_results() {
+        let fixture = Fixture::new();
+        let failed = fixture.prepare(shell_request(&fixture.workspace_id, "exit 7".to_string()));
+        let token = fixture.approve(&failed);
+        let result = fixture.execute(&failed, &token).unwrap();
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.exit_code, Some(7));
+        assert!(!result.cancelled && !result.timed_out);
+        fixture.assert_finished(&failed, &token);
+
+        let mut request = waiting_request(&fixture.workspace_id, "never-release");
+        request.timeout_secs = Some(1);
+        let timed_out = fixture.prepare(request);
+        let token = fixture.approve(&timed_out);
+        let result = fixture.execute(&timed_out, &token).unwrap();
+        assert_eq!(result.status, "timed_out");
+        assert!(result.timed_out);
+        assert!(!result.cancelled);
+        fixture.assert_finished(&timed_out, &token);
+    }
+
+    #[test]
+    fn spawn_and_output_storage_failures_cleanup_consumed_jobs() {
+        let fixture = Fixture::new();
+        let mut request = process_request(&fixture.workspace_id);
+        request.program = Some(format!("kisaki-missing-{}", uuid::Uuid::new_v4().simple()));
+        let missing = fixture.prepare(request);
+        let token = fixture.approve(&missing);
+        assert!(fixture
+            .execute(&missing, &token)
+            .unwrap_err()
+            .contains("启动任务失败"));
+        fixture.assert_finished(&missing, &token);
+
+        fs::remove_dir(fixture.paths.paths().execution_output_dir()).unwrap();
+        fs::write(fixture.paths.paths().execution_output_dir(), "阻断输出目录").unwrap();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        let token = fixture.approve(&plan);
+        assert!(fixture
+            .execute(&plan, &token)
+            .unwrap_err()
+            .contains("创建任务日志目录失败"));
+        fixture.assert_finished(&plan, &token);
+    }
+
+    #[test]
+    fn execution_revalidates_the_confirmed_working_directory() {
+        let fixture = Fixture::new();
+        let cwd = fixture.root.path().join("nested");
+        fs::create_dir(&cwd).unwrap();
+        let mut request = process_request(&fixture.workspace_id);
+        request.cwd = Some("nested".to_string());
+        let plan = fixture.prepare(request);
+        let token = fixture.approve(&plan);
+        fs::remove_dir(&cwd).unwrap();
+        assert!(fixture
+            .execute(&plan, &token)
+            .unwrap_err()
+            .contains("工作目录不存在"));
+        fixture.assert_finished(&plan, &token);
+    }
+
+    #[test]
+    fn real_output_keeps_events_limits_tails_and_the_injected_log_location() {
+        let fixture = Fixture::new();
+        let bytes = MAX_OUTPUT_BYTES + 256;
+        let script = if cfg!(windows) {
+            format!("[Console]::Out.Write(('x' * {bytes})); [Console]::Out.Flush(); [Console]::Error.WriteLine('stderr-marker'); [Console]::Error.Flush()")
+        } else {
+            format!("head -c {bytes} /dev/zero | tr '\\000' x; printf 'stderr-marker\\n' >&2")
+        };
+        let plan = fixture.prepare(shell_request(&fixture.workspace_id, script));
+        let token = fixture.approve(&plan);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let emit: OutputEmitter = Arc::new(move |event| captured.lock().unwrap().push(event));
+        let result = fixture
+            .registry
+            .execute_plan(&fixture.grants, emit, &plan.id, &token)
+            .unwrap();
+        assert_eq!(result.status, "completed");
+        assert!(result.truncated);
+        assert_eq!(result.stdout_tail, "x".repeat(OUTPUT_TAIL_BYTES));
+        assert!(result.stderr_tail.contains("stderr-marker"));
+        let events = events.lock().unwrap();
+        assert!(events
+            .iter()
+            .all(|event| event.job_id == plan.id && event.seq > 0));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.stream == "stdout")
+                .map(|event| event.chunk.len())
+                .sum::<usize>(),
+            bytes
+        );
+        let sequences: HashSet<_> = events.iter().map(|event| event.seq).collect();
+        assert_eq!(sequences.len(), events.len());
+        assert!(events.iter().any(|event| event.stream == "stderr"));
+        let log = fs::read(
+            fixture
+                .paths
+                .paths()
+                .execution_output_dir()
+                .join(&result.output_ref),
+        )
+        .unwrap();
+        assert!(log.starts_with(format!("plan: {}\ndigest: {}", plan.id, plan.digest).as_bytes()));
+        assert!(String::from_utf8_lossy(&log).contains("stderr-marker"));
+        assert!(log.len() < MAX_OUTPUT_BYTES + 4096);
+        fixture.assert_finished(&plan, &token);
+    }
+
+    #[test]
+    fn execution_log_retention_only_prunes_its_injected_output_directory() {
+        let fixture = Fixture::new();
+        let other = Fixture::new();
+        for index in 0..MAX_EXECUTION_LOGS + 3 {
+            let file = fs::File::create(
+                fixture
+                    .paths
+                    .paths()
+                    .execution_output_dir()
+                    .join(format!("old-{index}.log")),
+            )
+            .unwrap();
+            file.set_times(
+                fs::FileTimes::new()
+                    .set_modified(UNIX_EPOCH + Duration::from_secs(index as u64 + 1)),
+            )
+            .unwrap();
+        }
+        fs::write(
+            other.paths.paths().execution_output_dir().join("keep.log"),
+            "不得清理其他状态",
+        )
+        .unwrap();
+        let plan = fixture.prepare(process_request(&fixture.workspace_id));
+        let token = fixture.approve(&plan);
+        let result = fixture.execute(&plan, &token).unwrap();
+        assert_eq!(
+            fs::read_dir(fixture.paths.paths().execution_output_dir())
+                .unwrap()
+                .count(),
+            MAX_EXECUTION_LOGS
+        );
+        assert!(fixture
+            .paths
+            .paths()
+            .execution_output_dir()
+            .join(result.output_ref)
+            .is_file());
+        assert_eq!(
+            fs::read_to_string(other.paths.paths().execution_output_dir().join("keep.log"))
+                .unwrap(),
+            "不得清理其他状态"
+        );
+        fixture.assert_finished(&plan, &token);
     }
 }
