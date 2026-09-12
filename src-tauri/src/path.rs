@@ -1,59 +1,15 @@
-use std::collections::HashMap;
+//! 路径解析与安全校验；本模块不持有目录配置或可变授权状态。
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
-
-use crate::app_paths::AppPaths;
-
-// ─── 迁移期目录兼容入口 ───────────────────────────────
-// 尚未迁移的业务只引用组合根的同一份 AppPaths，不再保存独立目录配置。
-static APP_PATHS: OnceLock<Arc<AppPaths>> = OnceLock::new();
-
-pub(crate) fn init_dirs(paths: Arc<AppPaths>) -> Result<(), &'static str> {
-    APP_PATHS.set(paths).map_err(|_| "AppPaths 兼容入口已装配")?;
-    load_workspace_grants();
-    Ok(())
-}
-
-fn app_paths() -> &'static AppPaths {
-    APP_PATHS.get().expect("AppPaths 未装配")
-}
-
-pub(crate) fn characters_dir() -> PathBuf {
-    app_paths().characters_dir().to_path_buf()
-}
-
-pub(crate) fn log_dir() -> PathBuf {
-    let dir = app_paths().logs_dir().to_path_buf();
-    let _ = fs::create_dir_all(&dir);
-    dir
-}
-
-/// 日志系统初始化前返回 None，供 panic hook 和测试期的尽力而为日志使用。
-pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
-    let dir = APP_PATHS.get()?.logs_dir().to_path_buf();
-    let _ = fs::create_dir_all(&dir);
-    Some(dir)
-}
-
-/// AI 文件改动备份根目录（app_cache_dir/backups）。
-pub(crate) fn backups_dir() -> PathBuf {
-    let dir = app_paths().backups_dir().to_path_buf();
-    let _ = fs::create_dir_all(&dir);
-    dir
-}
-
-/// v2 会话领域模型的数据文件。
-pub(crate) fn sessions_v2_file() -> PathBuf {
-    app_paths().sessions_v2_file()
-}
-
-/// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
-pub(crate) fn legacy_sessions_file() -> PathBuf {
-    app_paths().legacy_sessions_file()
-}
+// 未迁移票的目录调用暂时保留再导出；兼容状态仅由组合根装配。
+pub(crate) use crate::composition_root::{
+    backups_dir, characters_dir, initialized_log_dir, legacy_sessions_file, log_dir,
+    sessions_v2_file,
+};
+// 保留既有 Tauri 命令的 Rust 返回类型路径，能力实现与状态归 WorkspaceGrants。
+pub(crate) use crate::workspace_grants::WorkspaceGrant;
 
 /// 路径安全校验 — 防止 path traversal 攻击
 ///
@@ -116,6 +72,10 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("无法解析工作目录 '{}': {}", base.display(), e))?;
 
+    if !canonical_base.is_dir() {
+        return Err("工作目录无效或已不存在".to_string());
+    }
+
     // 逐层向下校验并解析符号链接，最终返回「已解析的已存在前缀 + 词法拼接的新建后缀」。
     //  - 组件是符号链接（含指向不存在目标的悬空链接）→ 必须能解析到基目录内；
     //  - 组件是普通已存在项 → 继续向下；
@@ -127,25 +87,31 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
     while let Some(comp) = comps.next() {
         if let Component::Normal(name) = comp {
             let next = resolved.join(name);
-            if next.is_symlink() {
-                let real = next
-                    .canonicalize()
-                    .map_err(|e| format!("无法解析符号链接 '{}': {}", next.display(), e))?;
-                if !real.starts_with(&canonical_base) {
-                    return Err("路径越权访问被拒绝（符号链接指向工作目录之外）".to_string());
-                }
-                resolved = real;
-            } else if next.exists() {
-                resolved = next;
-            } else {
-                // 首个不存在的组件：从这里开始全是新建项，直接词法拼接即可
-                resolved = next;
-                for rest in comps {
-                    if let Component::Normal(n) = rest {
-                        resolved = resolved.join(n);
+            match fs::symlink_metadata(&next) {
+                Ok(_) => {
+                    // 所有已存在的组件都解析真实路径，不依赖平台如何标记 junction。
+                    // 悬空链接也会走到这里，并因无法 canonicalize 而明确拒绝。
+                    let real = next.canonicalize().map_err(|e| {
+                        format!("无法解析路径或符号链接 '{}': {}", next.display(), e)
+                    })?;
+                    if !real.starts_with(&canonical_base) {
+                        return Err("路径越权访问被拒绝（符号链接指向工作目录之外）".to_string());
                     }
+                    resolved = real;
                 }
-                break;
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    // 首个不存在的组件之后只能是新建项，词法拼接已校验过的后缀。
+                    resolved = next;
+                    for rest in comps {
+                        if let Component::Normal(name) = rest {
+                            resolved = resolved.join(name);
+                        }
+                    }
+                    break;
+                }
+                Err(error) => {
+                    return Err(format!("无法检查路径 '{}': {}", next.display(), error));
+                }
             }
         }
     }
@@ -156,269 +122,170 @@ pub(crate) fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-// ─── 工作目录能力授权 ───────────────────────────────
-//
-// 前端不再把任意绝对路径登记为白名单项。只有 Rust 原生目录选择器确认过的目录
-// 才会获得随机、不可猜测的 capability id；文件与命令 API 只接受这个 id。
-// 授权表持久化到 app data，允许会话重启后继续使用用户此前明确选择的目录。
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct WorkspaceGrant {
-    pub id: String,
-    pub path: String,
-}
-
-static WORKSPACE_GRANTS: LazyLock<Mutex<HashMap<String, PathBuf>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-
-fn load_workspace_grants() {
-    let Some(paths) = APP_PATHS.get() else {
-        return;
-    };
-    let file = paths.workspace_grants_file();
-    let Ok(text) = fs::read_to_string(file) else {
-        return;
-    };
-    let Ok(saved) = serde_json::from_str::<HashMap<String, PathBuf>>(&text) else {
-        return;
-    };
-    if let Ok(mut grants) = WORKSPACE_GRANTS.lock() {
-        grants.extend(saved.into_iter().filter(|(_, path)| path.is_dir()));
-    }
-}
-
-fn persist_workspace_grants(grants: &HashMap<String, PathBuf>) -> Result<(), String> {
-    let Some(paths) = APP_PATHS.get() else {
-        #[cfg(test)]
-        return Ok(());
-        #[cfg(not(test))]
-        return Err("工作目录授权存储尚未初始化".to_string());
-    };
-    let file = paths.workspace_grants_file();
-    if let Some(parent) = file.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建授权目录失败: {}", e))?;
-    }
-    let text =
-        serde_json::to_string(grants).map_err(|e| format!("序列化工作目录授权失败: {}", e))?;
-    let tmp = file.with_extension("tmp");
-    fs::write(&tmp, text).map_err(|e| format!("写入工作目录授权失败: {}", e))?;
-    if file.exists() {
-        fs::remove_file(file).map_err(|e| format!("更新工作目录授权失败: {}", e))?;
-    }
-    fs::rename(&tmp, file).map_err(|e| format!("提交工作目录授权失败: {}", e))
-}
-
-/// 为原生目录选择器返回的路径签发一个独立能力。
-pub(crate) fn grant_workspace(root: &Path) -> Result<WorkspaceGrant, String> {
-    let canon = root
-        .canonicalize()
-        .map_err(|e| format!("无法解析工作目录: {}", e))?;
-    if !canon.is_dir() {
-        return Err("工作目录无效或已不存在".to_string());
-    }
-    let id = format!("ws_{}", uuid::Uuid::new_v4().simple());
-    let mut grants = WORKSPACE_GRANTS
-        .lock()
-        .map_err(|_| "工作目录授权锁失败".to_string())?;
-    grants.insert(id.clone(), canon.clone());
-    persist_workspace_grants(&grants)?;
-    Ok(WorkspaceGrant {
-        id,
-        path: canon.to_string_lossy().into_owned(),
-    })
-}
-
-/// 解析并重新校验一个工作目录能力。
-pub(crate) fn resolve_workspace(id: &str) -> Result<PathBuf, String> {
-    if id.trim().is_empty() {
-        return Err("工作目录能力不能为空".to_string());
-    }
-    let path = WORKSPACE_GRANTS
-        .lock()
-        .map_err(|_| "工作目录授权锁失败".to_string())?
-        .get(id)
-        .cloned()
-        .ok_or_else(|| "工作目录授权不存在或已撤销，请重新选择工作区".to_string())?;
-    let canon = path
-        .canonicalize()
-        .map_err(|e| format!("无法解析工作目录: {}", e))?;
-    if !canon.is_dir() {
-        return Err("工作目录无效或已不存在".to_string());
-    }
-    Ok(canon)
-}
-
-/// 撤销一个能力。能力按会话独立签发，不会影响其它会话选择的同一路径。
-pub(crate) fn revoke_workspace(id: &str) -> Result<(), String> {
-    let mut grants = WORKSPACE_GRANTS
-        .lock()
-        .map_err(|_| "工作目录授权锁失败".to_string())?;
-    grants.remove(id);
-    persist_workspace_grants(&grants)
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use std::fs;
-    use std::path::PathBuf;
+    use crate::test_support::TempDir;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("kisaki-path-test-{}-{}", name, std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    /// 跨平台真实目录链接 fixture，析构只删除链接本身，绝不递归访问目标。
+    #[cfg(any(unix, windows))]
+    pub(crate) struct DirectoryLink(PathBuf);
+
+    #[cfg(any(unix, windows))]
+    impl DirectoryLink {
+        pub(crate) fn new(target: &Path, link: &Path) -> Self {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(target, link).unwrap();
+            #[cfg(windows)]
+            {
+                // mklink /J 无需管理员权限；cmd 使用普通绝对路径而非 verbatim 前缀。
+                let link_arg = link
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .to_string();
+                let target_arg = target
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .to_string();
+                let output = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(link_arg)
+                    .arg(target_arg)
+                    .current_dir(link.parent().unwrap())
+                    .output()
+                    .expect("mklink /J 执行失败");
+                assert!(output.status.success(), "创建 junction 失败: {:?}", output);
+            }
+            Self(link.to_path_buf())
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    impl Drop for DirectoryLink {
+        fn drop(&mut self) {
+            #[cfg(unix)]
+            let result = fs::remove_file(&self.0);
+            #[cfg(windows)]
+            let result = fs::remove_dir(&self.0);
+            if let Err(error) = result {
+                eprintln!("清理测试链接 {} 失败: {error}", self.0.display());
+            }
+        }
     }
 
     #[test]
     fn rejects_parent_dir_traversal() {
-        let base = temp_dir("traversal");
-        let err = safe_join_rel(&base, "../secret.txt").unwrap_err();
-        assert!(err.contains(".."), "应拒绝 .. 路径，实际: {}", err);
-        let _ = fs::remove_dir_all(&base);
+        let base = TempDir::new();
+        for relative in ["../secret.txt", "a/../../secret.txt", ".."] {
+            let error = safe_join_rel(base.path(), relative).unwrap_err();
+            assert!(error.contains(".."), "应拒绝父目录路径: {relative}");
+        }
     }
 
     #[test]
     fn rejects_absolute_paths() {
-        let base = temp_dir("absolute");
-        let abs = std::path::absolute(&base).unwrap();
-        let abs_str = abs.to_string_lossy().into_owned();
-        // 直接把绝对路径字符串传给 safe_join_rel，应该被拒绝
-        let err = safe_join_rel(&base, &abs_str).unwrap_err();
-        assert!(
-            err.contains("绝对路径") || err.contains("不允许"),
-            "应拒绝绝对路径，实际: {}",
-            err
-        );
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn workspace_capability_resolves_and_revokes() {
-        let base = temp_dir("workspace-grant");
-        let grant = grant_workspace(&base).unwrap();
-        assert_eq!(resolve_workspace(&grant.id).unwrap(), base.canonicalize().unwrap());
-        revoke_workspace(&grant.id).unwrap();
-        assert!(resolve_workspace(&grant.id).is_err());
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn nested_existing_and_new_paths_work() {
-        let base = temp_dir("nested");
-        fs::create_dir_all(base.join("a/b")).unwrap();
-
-        // 已存在的目录
-        let p = safe_join_rel(&base, "a/b").unwrap();
-        assert!(p.starts_with(base.canonicalize().unwrap()));
-        // 不存在的叶子文件（写入场景）
-        let p = safe_join_rel(&base, "a/b/new.txt").unwrap();
-        assert!(p.starts_with(base.canonicalize().unwrap()));
-        // 多级不存在（创建父目录场景）
-        let p = safe_join_rel(&base, "x/y/z.txt").unwrap();
-        assert!(p.starts_with(base.canonicalize().unwrap()));
-
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_symlink_escape_when_leaf_does_not_exist() {
-        use std::os::unix::fs::symlink;
-
-        let base = temp_dir("escape");
-        let outside = temp_dir("escape-outside");
-        fs::create_dir_all(&outside).unwrap();
-        symlink(&outside, base.join("link")).unwrap();
-
-        // 旧实现漏洞场景：目标叶子不存在，但父级 link 指向 base 之外
-        let err = safe_join_rel(&base, "link/evil.txt").unwrap_err();
-        assert!(
-            err.contains("越权") || err.contains("符号链接"),
-            "父级符号链接指向外部应被拒绝，实际: {}",
-            err
-        );
-
-        let _ = fs::remove_dir_all(&base);
-        let _ = fs::remove_dir_all(&outside);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_dangling_symlink() {
-        use std::os::unix::fs::symlink;
-
-        let base = temp_dir("dangling");
-        symlink(base.join("not-exist-target"), base.join("dangling")).unwrap();
-
-        let err = safe_join_rel(&base, "dangling").unwrap_err();
-        assert!(
-            err.contains("符号链接"),
-            "悬空符号链接应被拒绝，实际: {}",
-            err
-        );
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn allows_symlink_inside_base() {
-        use std::os::unix::fs::symlink;
-
-        let base = temp_dir("inside");
-        fs::create_dir_all(base.join("real")).unwrap();
-        symlink(base.join("real"), base.join("link")).unwrap();
-
-        let p = safe_join_rel(&base, "link/f.txt").unwrap();
-        assert!(
-            p.starts_with(base.canonicalize().unwrap()),
-            "指向基目录内部的符号链接应放行"
-        );
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn resolves_symlink_to_real_path() {
-        use std::os::unix::fs::symlink;
-
-        let base = temp_dir("resolve");
-        fs::create_dir_all(base.join("real")).unwrap();
-        symlink(base.join("real"), base.join("link")).unwrap();
-
-        // 返回的应是解析后的真实路径（不经过 link 符号链接），消除 TOCTOU 窗口
-        let p = safe_join_rel(&base, "link/f.txt").unwrap();
-        let canonical = base.canonicalize().unwrap();
-        assert_eq!(p, canonical.join("real").join("f.txt"));
-        assert!(!p.to_string_lossy().contains("/link/"));
-        let _ = fs::remove_dir_all(&base);
+        let base = TempDir::new();
+        let error = safe_join_rel(base.path(), &base.path().to_string_lossy()).unwrap_err();
+        assert!(error.contains("绝对路径"));
+        #[cfg(windows)]
+        for absolute in [r"C:\outside.txt", r"\outside.txt", r"C:outside.txt"] {
+            assert!(safe_join_rel(base.path(), absolute)
+                .unwrap_err()
+                .contains("绝对路径"));
+        }
     }
 
     #[cfg(windows)]
     #[test]
-    fn rejects_junction_escape_when_leaf_does_not_exist() {
-        // Windows 目录联接（junction）无需管理员即可创建（mklink /J）
-        let base = temp_dir("junction");
-        let outside = temp_dir("junction-outside");
-        fs::create_dir_all(&outside).unwrap();
+    fn rejects_windows_alternate_data_streams() {
+        let base = TempDir::new();
+        assert!(safe_join_rel(base.path(), "file.txt:hidden")
+            .unwrap_err()
+            .contains("数据流"));
+    }
 
-        let status = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(base.join("link").to_string_lossy().as_ref())
-            .arg(outside.to_string_lossy().as_ref())
-            .status()
-            .expect("mklink /J 执行失败");
-        assert!(status.success(), "mklink /J 创建 junction 失败");
+    #[test]
+    fn rejects_non_directory_base() {
+        let base = TempDir::new();
+        let regular_file = base.path().join("file.txt");
+        fs::write(&regular_file, "不是目录").unwrap();
+        assert!(safe_join_rel(&regular_file, "child.txt")
+            .unwrap_err()
+            .contains("工作目录无效"));
+    }
 
-        let err = safe_join_rel(&base, "link/evil.txt").unwrap_err();
-        assert!(
-            err.contains("越权") || err.contains("符号链接"),
-            "父级 junction 指向外部应被拒绝，实际: {}",
-            err
+    #[test]
+    fn nested_existing_and_new_paths_work() {
+        let base = TempDir::new();
+        fs::create_dir_all(base.path().join("a/b")).unwrap();
+        for relative in ["a/b", "a/b/new.txt", "x/y/z.txt"] {
+            assert_eq!(
+                safe_join_rel(base.path(), relative).unwrap(),
+                base.path().join(relative)
+            );
+        }
+        assert_eq!(safe_join_rel(base.path(), ".").unwrap(), base.path());
+        assert_eq!(safe_join_rel(base.path(), "").unwrap(), base.path());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn rejects_symlink_or_junction_escape_for_existing_and_new_leaves() {
+        let base = TempDir::new();
+        let outside = TempDir::new();
+        fs::write(outside.path().join("secret.txt"), "保留外部文件").unwrap();
+        let _link = DirectoryLink::new(outside.path(), &base.path().join("link"));
+        for relative in ["link/evil.txt", "link/secret.txt", "link"] {
+            assert!(safe_join_rel(base.path(), relative)
+                .unwrap_err()
+                .contains("越权"));
+        }
+        assert_eq!(
+            fs::read_to_string(outside.path().join("secret.txt")).unwrap(),
+            "保留外部文件"
         );
+    }
 
-        let _ = fs::remove_dir_all(&base);
-        let _ = fs::remove_dir_all(&outside);
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn rejects_dangling_directory_links() {
+        let base = TempDir::new();
+        let target = base.path().join("target");
+        fs::create_dir(&target).unwrap();
+        let _link = DirectoryLink::new(&target, &base.path().join("dangling"));
+        fs::remove_dir(&target).unwrap();
+        assert!(safe_join_rel(base.path(), "dangling/leaf.txt")
+            .unwrap_err()
+            .contains("符号链接"));
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn resolves_internal_directory_links_to_real_paths() {
+        let base = TempDir::new();
+        let real = base.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let _link = DirectoryLink::new(&real, &base.path().join("link"));
+        assert_eq!(
+            safe_join_rel(base.path(), "link/f.txt").unwrap(),
+            real.join("f.txt")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_external_and_dangling_file_symlinks() {
+        let base = TempDir::new();
+        let outside = TempDir::new();
+        let target = outside.path().join("secret.txt");
+        fs::write(&target, "外部文件").unwrap();
+        std::os::unix::fs::symlink(&target, base.path().join("file-link")).unwrap();
+        assert!(safe_join_rel(base.path(), "file-link")
+            .unwrap_err()
+            .contains("越权"));
+        fs::remove_file(&target).unwrap();
+        assert!(safe_join_rel(base.path(), "file-link")
+            .unwrap_err()
+            .contains("符号链接"));
     }
 }
