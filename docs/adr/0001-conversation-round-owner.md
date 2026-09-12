@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-09-11
-- 关联：spec #13（给对话回合一个 store 之外的归属）；实施工单 #14–#22；`docs/architecture-complexity-review.md` §1、§2、总体优先级；`docs/architecture-refactoring-plan.md` 目标原则、验收结果
+- 关联：spec #13（给对话回合一个 store 之外的归属）；实施工单 #14–#22；`docs/legacy/architecture-complexity-review.md` §1、§2、总体优先级；`docs/legacy/architecture-refactoring-plan.md` 目标原则、验收结果
 
 ## 决定
 
@@ -20,9 +20,9 @@
 
 界面消息列表（store 的 `messages`）不在投影里——它是展示层自有状态，决定见 #14。但它的每条 id 必须与会话事实一致：语音回填按 id 修订，回档按 id 寻址。因此 `ConversationSession` 另开一条**只讲事实**的订阅 `subscribeMessages`，发出「哪条消息以什么内容落库了」（用户消息已接收、助手消息已提交 / 已修订）。
 
-这是投影之外唯一的增补，且不违反上面两条：**它不是第三种接触方式**——订阅者只读事实、不回写，回合状态的所有权没有转移。术语表已收录该出口（`AGENTS.md` 的「消息事实出口」）。
+这是投影之外唯一的增补，且不违反上面两条：**它不是第三种接触方式**——订阅者只读事实、不回写，回合状态的所有权没有转移。术语表已收录该出口（`CONTEXT.md` 的「消息事实出口」）。
 
-这不是一条新原则。`docs/architecture-refactoring-plan.md` 的「目标原则」第一条就是它，阶段 1–5 已经按它改造了会话聚合、角色运行时、工具执行与 TTS 管道。**对话回合是目前唯一尚未遵守它的部分**，本 ADR 记录的就是收口这一步。
+这不是一条新原则。`docs/legacy/architecture-refactoring-plan.md` 的「目标原则」第一条就是它，阶段 1–5 已经按它改造了会话聚合、角色运行时、工具执行与 TTS 管道。**对话回合是目前唯一尚未遵守它的部分**，本 ADR 记录的就是收口这一步。
 
 ## 背景
 
@@ -39,7 +39,7 @@
 
 ### 为什么这不是「再拆小一点」的问题
 
-审查报告的结论是：最优先的动作不是继续拆小 ChatStore，而是先建立 Conversation Run 与 Session Aggregate，**否则其它局部重构仍会被 ChatStore 的总协调职责重新吸收**（`docs/architecture-complexity-review.md` 总体优先级）。只要 store 仍拥有全部协作者并负责把它们接起来，「总协调」这一职责就还在它身上；抽取出来的东西最终会重新长回它那里。
+审查报告的结论是：最优先的动作不是继续拆小 ChatStore，而是先建立 Conversation Run 与 Session Aggregate，**否则其它局部重构仍会被 ChatStore 的总协调职责重新吸收**（`docs/legacy/architecture-complexity-review.md` 总体优先级）。只要 store 仍拥有全部协作者并负责把它们接起来，「总协调」这一职责就还在它身上；抽取出来的东西最终会重新长回它那里。
 
 ## 被否的替代方案
 
@@ -54,7 +54,7 @@
 
 ### (b) 只抽纯的部分，不抽编排（上一轮重构方案的做法）
 
-上一轮重构（`docs/architecture-refactoring-plan.md` 阶段 4）把回合里所有**纯**的部分抽走了：流协议解码移入 `ModelStreamDecoder`、单轮模型返回解释移入 `ModelTurnInterpreter`、原生与文本工具调用统一为 `ToolCallBatch`、回合迭代与上限移入 `ConversationCoordinator` 的显式状态机。这些模块都建成了，也都被复用了，组件质量没有问题。
+上一轮重构（`docs/legacy/architecture-refactoring-plan.md` 阶段 4）把回合里所有**纯**的部分抽走了：流协议解码移入 `ModelStreamDecoder`、单轮模型返回解释移入 `ModelTurnInterpreter`、原生与文本工具调用统一为 `ToolCallBatch`、回合迭代与上限移入 `ConversationCoordinator` 的显式状态机。这些模块都建成了，也都被复用了，组件质量没有问题。
 
 **它失败的地方在于编排没有跟着走。** 协作者仍由 store 自行组装、在订阅回调里互相接线，于是：
 
@@ -101,5 +101,5 @@
 
 - spec #13：给对话回合一个 store 之外的归属（ConversationSession 深模块 + 组合根装配），user story 30 要求本决定有记录。
 - 实施工单 #14 契约、#15 本 ADR、#16 编排实现、#17–#18 端口适配器、#19 行为测试、#20 组合根装配、#21 store 退化、#22 收口删除。
-- `docs/architecture-complexity-review.md` §1 候选 1（对话执行被实现成 ChatStore 内的隐式状态机）、§2 候选 2（会话聚合被 ChatStore 与 SessionStore 双重持有）、总体优先级。
-- `docs/architecture-refactoring-plan.md` 目标原则（一个业务概念只有一个可变状态 Owner；Pinia Store 只做 UI 投影，不承担业务编排和持久化）、验收结果（「对话运行状态 Owner」一行）。
+- `docs/legacy/architecture-complexity-review.md` §1 候选 1（对话执行被实现成 ChatStore 内的隐式状态机）、§2 候选 2（会话聚合被 ChatStore 与 SessionStore 双重持有）、总体优先级。
+- `docs/legacy/architecture-refactoring-plan.md` 目标原则（一个业务概念只有一个可变状态 Owner；Pinia Store 只做 UI 投影，不承担业务编排和持久化）、验收结果（「对话运行状态 Owner」一行）。

@@ -36,5 +36,7 @@ live2d-example
 # live2d 开发用模型（不入库；模型授权见 README）
 /characters/hiyori/
 /public/models/
-
+# experiment
 /exp
+# diagrams
+/docs/diagrams

@@ -28,6 +28,6 @@
 ## 与其它文档的分工
 
 - **ADR**（本目录）—— 为什么这样定，一个决定一份，接受后不再改内容。
-- `docs/architecture-complexity-review.md` —— 一次只读审视的盘点结果，问题是「哪里复杂度高」。
-- `docs/architecture-refactoring-plan.md` —— 分阶段实施方案与推进状态，问题是「怎么改、改到哪一步了」。
-- `AGENTS.md` 的术语表 —— 领域词的唯一定义处；ADR 里用到词表外的概念，先补表再落笔。
+- `docs/legacy/architecture-complexity-review.md` —— 一次只读审视的盘点结果，问题是「哪里复杂度高」。
+- `docs/legacy/architecture-refactoring-plan.md` —— 分阶段实施方案与推进状态，问题是「怎么改、改到哪一步了」。
+- `CONTEXT.md` —— 领域词的唯一定义处；ADR 里用到词表外的概念，先补表再落笔。

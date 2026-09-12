@@ -144,7 +144,7 @@ TtsOrchestrator 负责选择 Provider/Sink 和管理 PlaybackSession；批处理
 | 指标 | 重构前 | 目标 | 结果 |
 |---|---:|---|---|
 | 对话事实表示 | 约 4 份 | 1 个 timeline + 纯投影 | ✅ v2 timeline + UI/模型双投影 |
-| 对话运行状态（即「回合计」，见 `AGENTS.md` 术语表）Owner | 多模块 | 1 个 ConversationRun | ✅ ConversationCoordinator |
+| 对话运行状态（即「回合计」，见 `CONTEXT.md`）Owner | 多模块 | 1 个 ConversationRun | ✅ ConversationCoordinator |
 | 工具确认机制 | 3 套 | 1 个 ApprovalGateway | ✅ |
 | 工具执行循环 | 2 套 | 1 套 | ✅ ToolCallBatch 统一原生/文本调用 |
 | 角色视觉状态源 | 多份 | 1 个 CharacterRuntime | ✅ |
