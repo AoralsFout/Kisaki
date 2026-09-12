@@ -1,13 +1,64 @@
 //! Rust 应用状态的唯一组合根：准备完整状态后再交给 Tauri 与迁移期兼容入口。
 
 use std::error::Error;
-use std::path::Path;
-use std::sync::Arc;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use tauri::Manager;
 
 use crate::app_paths::{AppPaths, AppPathsError};
-use crate::{command, path, tts};
+use crate::workspace_grants::WorkspaceGrants;
+use crate::{command, tts};
+
+// ─── 迁移期目录兼容入口 ───────────────────────────────
+// 尚未迁移的业务只引用组合根的同一份 AppPaths，不再保存独立目录配置。
+static APP_PATHS: OnceLock<Arc<AppPaths>> = OnceLock::new();
+
+fn install_legacy_paths(paths: Arc<AppPaths>) -> Result<(), &'static str> {
+    APP_PATHS
+        .set(paths)
+        .map_err(|_| "AppPaths 兼容入口已装配")?;
+    Ok(())
+}
+
+fn app_paths() -> &'static AppPaths {
+    APP_PATHS.get().expect("AppPaths 未装配")
+}
+
+pub(crate) fn characters_dir() -> PathBuf {
+    app_paths().characters_dir().to_path_buf()
+}
+
+pub(crate) fn log_dir() -> PathBuf {
+    let dir = app_paths().logs_dir().to_path_buf();
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// 日志系统初始化前返回 None，供 panic hook 和测试期的尽力而为日志使用。
+pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
+    let dir = APP_PATHS.get()?.logs_dir().to_path_buf();
+    let _ = fs::create_dir_all(&dir);
+    Some(dir)
+}
+
+/// AI 文件改动备份根目录（app_cache_dir/backups）。
+pub(crate) fn backups_dir() -> PathBuf {
+    let dir = app_paths().backups_dir().to_path_buf();
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// v2 会话领域模型的数据文件。
+pub(crate) fn sessions_v2_file() -> PathBuf {
+    app_paths().sessions_v2_file()
+}
+
+/// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
+pub(crate) fn legacy_sessions_file() -> PathBuf {
+    app_paths().legacy_sessions_file()
+}
 
 /// dev 使用项目目录存放角色、日志和会话；生产使用 app data，不复制预置角色。
 /// 检查点备份与执行输出始终使用 app cache，授权表始终使用 app data。
@@ -54,10 +105,14 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<Arc<AppPaths>, Box<dyn Error
     let paths = Arc::new(assemble_paths(&app_data, &app_cache, dev_project_root)?);
 
     // 兼容入口只共享这一份已准备好的不可变配置，不再各自解析或创建目录状态。
-    path::init_dirs(Arc::clone(&paths))?;
+    let grants = Arc::new(WorkspaceGrants::new(Arc::clone(&paths)));
+    install_legacy_paths(Arc::clone(&paths))?;
     command::init_output_dir(Arc::clone(&paths))?;
     if !app.manage(Arc::clone(&paths)) {
         return Err("AppPaths 已装配，拒绝重复托管".into());
+    }
+    if !app.manage(grants) {
+        return Err("WorkspaceGrants 已装配，拒绝重复托管".into());
     }
     if !app.manage(tts::TtsConnectionPool::new()) {
         return Err("TTS 连接池已装配，拒绝重复托管".into());

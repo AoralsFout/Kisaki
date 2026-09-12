@@ -21,7 +21,8 @@ use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
 use crate::app_paths::AppPaths;
-use crate::path::{resolve_workspace, safe_join_rel};
+use crate::path::safe_join_rel;
+use crate::workspace_grants::WorkspaceGrants;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 300;
@@ -265,10 +266,10 @@ fn resolve_program(root: &Path, program: &str) -> Result<String, String> {
         .and_then(|name| name.to_str())
         .unwrap_or(trimmed)
         .to_ascii_lowercase();
-    if ["cmd", "powershell", "pwsh", "sh", "bash", "zsh", "fish"]
-        .contains(&basename.as_str())
-    {
-        return Err("run_process 不允许启动 Shell 解释器；需要 Shell 语法时请使用 run_shell".to_string());
+    if ["cmd", "powershell", "pwsh", "sh", "bash", "zsh", "fish"].contains(&basename.as_str()) {
+        return Err(
+            "run_process 不允许启动 Shell 解释器；需要 Shell 语法时请使用 run_shell".to_string(),
+        );
     }
     if trimmed.contains('/') || trimmed.contains('\\') {
         let resolved = safe_join_rel(root, trimmed)?;
@@ -293,11 +294,19 @@ fn prune_expired_plans(plans: &mut HashMap<String, StoredPlan>) {
 
 #[tauri::command]
 pub(crate) fn agent_prepare_execution(
+    grants: tauri::State<'_, Arc<WorkspaceGrants>>,
+    request: PrepareExecutionRequest,
+) -> Result<ExecutionPlan, String> {
+    prepare_execution(&grants, request)
+}
+
+pub(crate) fn prepare_execution(
+    grants: &WorkspaceGrants,
     request: PrepareExecutionRequest,
 ) -> Result<ExecutionPlan, String> {
     command_available()?;
     validate_env(&request.env)?;
-    let root = resolve_workspace(&request.workspace_id)?;
+    let root = grants.resolve(&request.workspace_id)?;
     let (cwd, cwd_relative) = resolve_cwd(&root, request.cwd.as_deref())?;
     let timeout_secs = request
         .timeout_secs
@@ -653,18 +662,23 @@ pub(crate) fn agent_cancel_execution(job_id: String) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn agent_execute_plan(
     app: tauri::AppHandle,
+    grants: tauri::State<'_, Arc<WorkspaceGrants>>,
     plan_id: String,
     approval_token: String,
 ) -> Result<ExecutionResult, String> {
     let emit: OutputEmitter = Arc::new(move |event| {
         let _ = app.emit("kisaki-execution-output", event);
     });
-    tauri::async_runtime::spawn_blocking(move || execute_plan_blocking(emit, plan_id, approval_token))
+    let grants = Arc::clone(grants.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        execute_plan_blocking(&grants, emit, plan_id, approval_token)
+    })
     .await
     .map_err(|e| format!("任务执行线程失败: {}", e))?
 }
 
 fn execute_plan_blocking(
+    grants: &WorkspaceGrants,
     emit: OutputEmitter,
     plan_id: String,
     approval_token: String,
@@ -686,7 +700,7 @@ fn execute_plan_blocking(
         plans.remove(&plan_id).expect("已校验的计划必须存在")
     };
 
-    let current_root = resolve_workspace(&plan.public.workspace_id)?;
+    let current_root = grants.resolve(&plan.public.workspace_id)?;
     if current_root != plan.root {
         return Err("工作目录能力在确认后发生变化".to_string());
     }
@@ -847,85 +861,20 @@ fn execute_plan_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fileio;
+    use crate::test_support::{TempAppPaths, TempDir};
 
-    fn temp_workspace(tag: &str) -> (PathBuf, String) {
-        let root = std::env::temp_dir().join(format!(
-            "kisaki-command-v2-{}-{}-{}",
-            tag,
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let grant = crate::path::grant_workspace(&root).unwrap();
-        (root, grant.id)
+    fn temp_workspace() -> (TempAppPaths, TempDir, WorkspaceGrants, String) {
+        let fixture = TempAppPaths::new();
+        let root = TempDir::new();
+        let grants = WorkspaceGrants::new(fixture.shared_paths());
+        let grant = grants.grant_from_selection(root.path()).unwrap();
+        (fixture, root, grants, grant.id)
     }
 
-    #[test]
-    fn prepare_rejects_absolute_program() {
-        let (root, workspace_id) = temp_workspace("absolute");
-        let request = PrepareExecutionRequest {
-            workspace_id,
-            kind: "process".to_string(),
-            program: Some(root.join("tool.exe").to_string_lossy().into_owned()),
-            args: vec![],
-            script: None,
-            cwd: None,
-            timeout_secs: None,
-            env: BTreeMap::new(),
-            intent: None,
-        };
-        assert!(agent_prepare_execution(request)
-            .unwrap_err()
-            .contains("绝对"));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn approval_is_bound_to_digest() {
-        let (root, workspace_id) = temp_workspace("approval");
-        let request = PrepareExecutionRequest {
-            workspace_id,
-            kind: "process".to_string(),
-            program: Some(if cfg!(windows) { "where" } else { "true" }.to_string()),
-            args: if cfg!(windows) {
-                vec!["cmd".into()]
-            } else {
-                vec![]
-            },
-            script: None,
-            cwd: None,
-            timeout_secs: Some(5),
-            env: BTreeMap::new(),
-            intent: Some("test".to_string()),
-        };
-        let plan = agent_prepare_execution(request).unwrap();
-        assert!(agent_approve_execution(plan.id.clone(), "bad".into()).is_err());
-        let token = agent_approve_execution(plan.id.clone(), plan.digest.clone()).unwrap();
-        assert!(token.starts_with("approve_"));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn sensitive_environment_is_rejected() {
-        let mut env = BTreeMap::new();
-        env.insert("API_TOKEN".to_string(), "secret".to_string());
-        assert!(validate_env(&env).unwrap_err().contains("敏感"));
-    }
-
-    #[test]
-    fn structured_process_cannot_disguise_shell() {
-        let root = std::env::temp_dir();
-        assert!(resolve_program(&root, "powershell.exe").unwrap_err().contains("run_shell"));
-        assert!(resolve_program(&root, "sh").unwrap_err().contains("run_shell"));
-    }
-
-    #[test]
-    fn approved_process_executes_and_returns_output_directly() {
-        let output_fixture = crate::test_support::TempAppPaths::new();
-        init_output_dir(output_fixture.shared_paths()).unwrap();
-        let (root, workspace_id) = temp_workspace("execute");
-        let request = PrepareExecutionRequest {
-            workspace_id,
+    fn process_request(workspace_id: &str) -> PrepareExecutionRequest {
+        PrepareExecutionRequest {
+            workspace_id: workspace_id.to_string(),
             kind: "process".to_string(),
             program: Some(if cfg!(windows) { "where" } else { "printf" }.to_string()),
             args: if cfg!(windows) {
@@ -937,20 +886,157 @@ mod tests {
             cwd: None,
             timeout_secs: Some(5),
             env: BTreeMap::new(),
-            intent: Some("execution test".to_string()),
-        };
-        let plan = agent_prepare_execution(request).unwrap();
+            intent: Some("执行行为测试".to_string()),
+        }
+    }
+
+    #[test]
+    fn prepare_rejects_absolute_program() {
+        let (_fixture, root, grants, workspace_id) = temp_workspace();
+        let mut request = process_request(&workspace_id);
+        request.program = Some(root.path().join("tool.exe").to_string_lossy().into_owned());
+        assert!(prepare_execution(&grants, request)
+            .unwrap_err()
+            .contains("绝对"));
+    }
+
+    #[test]
+    fn approval_is_bound_to_digest() {
+        let (_fixture, _root, grants, workspace_id) = temp_workspace();
+        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
+        assert!(agent_approve_execution(plan.id.clone(), "bad".into()).is_err());
+        let token = agent_approve_execution(plan.id.clone(), plan.digest.clone()).unwrap();
+        assert!(token.starts_with("approve_"));
+        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
+    }
+
+    #[test]
+    fn sensitive_environment_is_rejected() {
+        let mut env = BTreeMap::new();
+        env.insert("API_TOKEN".to_string(), "secret".to_string());
+        assert!(validate_env(&env).unwrap_err().contains("敏感"));
+    }
+
+    #[test]
+    fn structured_process_cannot_disguise_shell() {
+        let root = TempDir::new();
+        assert!(resolve_program(root.path(), "powershell.exe")
+            .unwrap_err()
+            .contains("run_shell"));
+        assert!(resolve_program(root.path(), "sh")
+            .unwrap_err()
+            .contains("run_shell"));
+    }
+
+    #[test]
+    fn prepare_and_execute_resolve_only_the_injected_authorization_state() {
+        let (_fixture, _root, grants, workspace_id) = temp_workspace();
+        let other_fixture = TempAppPaths::new();
+        let other_grants = WorkspaceGrants::new(other_fixture.shared_paths());
+        assert!(
+            prepare_execution(&other_grants, process_request(&workspace_id))
+                .unwrap_err()
+                .contains("授权不存在")
+        );
+        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
+        let token = agent_approve_execution(plan.id.clone(), plan.digest).unwrap();
+        let emit: OutputEmitter = Arc::new(|_| {});
+        assert!(execute_plan_blocking(&other_grants, emit, plan.id, token)
+            .unwrap_err()
+            .contains("授权不存在"));
+        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
+        assert!(prepare_execution(&grants, process_request(&workspace_id)).is_err());
+    }
+
+    #[test]
+    fn revocation_discards_only_plans_for_the_requested_capability() {
+        let (_fixture, root, grants, workspace_id) = temp_workspace();
+        let other_id = grants.grant_from_selection(root.path()).unwrap().id;
+        let first = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
+        let second = prepare_execution(&grants, process_request(&other_id)).unwrap();
+        fileio::revoke_workspace(&grants, &workspace_id).unwrap();
+        assert!(agent_approve_execution(first.id, first.digest)
+            .unwrap_err()
+            .contains("不存在"));
+        assert!(agent_approve_execution(second.id, second.digest).is_ok());
+        assert_eq!(grants.resolve(&other_id).unwrap(), root.path());
+        fileio::revoke_workspace(&grants, &other_id).unwrap();
+    }
+
+    #[test]
+    fn approved_process_executes_and_revocation_cancels_only_its_own_active_job() {
+        // 执行输出仍使用本票不迁移的兼容入口；所有真实执行共用本测试的独立 fixture。
+        let (fixture, root, grants, workspace_id) = temp_workspace();
+        init_output_dir(fixture.shared_paths()).unwrap();
+        let plan = prepare_execution(&grants, process_request(&workspace_id)).unwrap();
         let token = agent_approve_execution(plan.id.clone(), plan.digest.clone()).unwrap();
         let emit: OutputEmitter = Arc::new(|_| {});
-        let result = execute_plan_blocking(emit, plan.id, token).unwrap();
+        let result = execute_plan_blocking(&grants, emit, plan.id, token).unwrap();
         assert_eq!(result.status, "completed");
         assert_eq!(result.exit_code, Some(0));
         assert!(!result.stdout_tail.trim().is_empty());
-        assert!(output_fixture
+        assert!(fixture
             .paths()
             .execution_output_dir()
             .join(&result.output_ref)
             .is_file());
-        let _ = fs::remove_dir_all(root);
+
+        let other_id = grants.grant_from_selection(root.path()).unwrap().id;
+        let mut slow_request = process_request(&workspace_id);
+        slow_request.kind = "shell".to_string();
+        slow_request.program = None;
+        slow_request.args.clear();
+        slow_request.timeout_secs = Some(30);
+        slow_request.script = Some(
+            if cfg!(windows) {
+                "Write-Output 'kisaki-ready'; Start-Sleep -Seconds 30"
+            } else {
+                "printf 'kisaki-ready\n'; sleep 30"
+            }
+            .to_string(),
+        );
+        let first = prepare_execution(&grants, slow_request.clone()).unwrap();
+        slow_request.workspace_id = other_id.clone();
+        let second = prepare_execution(&grants, slow_request).unwrap();
+        let first_job = first.id.clone();
+        let second_job = second.id.clone();
+        std::thread::scope(|scope| {
+            let (ready_tx, ready_rx) = mpsc::channel();
+            let (done_tx, done_rx) = mpsc::channel();
+            let emit: OutputEmitter = Arc::new(move |event| {
+                if event.stream == "stdout" && !event.chunk.trim().is_empty() {
+                    let _ = ready_tx.send(event.job_id);
+                }
+            });
+            for plan in [first, second] {
+                let token = agent_approve_execution(plan.id.clone(), plan.digest).unwrap();
+                let emit = Arc::clone(&emit);
+                let done_tx = done_tx.clone();
+                let grants = &grants;
+                scope.spawn(move || {
+                    let result = execute_plan_blocking(grants, emit, plan.id.clone(), token);
+                    done_tx.send((plan.id, result)).unwrap();
+                });
+            }
+            drop(done_tx);
+            let mut ready = HashSet::new();
+            while ready.len() < 2 {
+                ready.insert(ready_rx.recv_timeout(Duration::from_secs(15)).unwrap());
+            }
+            assert!(ready.contains(&first_job) && ready.contains(&second_job));
+            fileio::revoke_workspace(&grants, &workspace_id).unwrap();
+            let (job_id, result) = done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(job_id, first_job);
+            let result = result.unwrap();
+            assert_eq!(result.status, "cancelled");
+            assert!(result.cancelled);
+            assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+            assert_eq!(grants.resolve(&other_id).unwrap(), root.path());
+            agent_cancel_execution(second_job.clone()).unwrap();
+            let (job_id, result) = done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(job_id, second_job);
+            assert_eq!(result.unwrap().status, "cancelled");
+        });
+        fileio::revoke_workspace(&grants, &other_id).unwrap();
     }
 }

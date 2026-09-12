@@ -15,6 +15,7 @@ mod sessions;
 mod tray;
 mod tts;
 mod websearch;
+mod workspace_grants;
 
 #[cfg(test)]
 mod test_support;
