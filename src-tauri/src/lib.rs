@@ -1,6 +1,8 @@
+mod app_paths;
 mod backup;
 mod character;
 mod command;
+mod composition_root;
 mod cursor;
 mod data;
 mod fileio;
@@ -14,7 +16,8 @@ mod tray;
 mod tts;
 mod websearch;
 
-use std::path::PathBuf;
+#[cfg(test)]
+mod test_support;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -22,7 +25,6 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(tts::TtsConnectionPool::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // 单实例：二次启动只唤回已存在的主窗口，避免多进程争抢同一份数据
@@ -48,49 +50,12 @@ pub fn run() {
         // 进程控制（更新安装完成后自动重启）
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // 区分 dev / 生产模式：
-            //   cfg!(debug_assertions) = true  → tauri dev（debug 编译）→ dev 路径，git 可追踪
-            //   cfg!(debug_assertions) = false → tauri build（release） → 生产路径（app_data_dir，首次为空）
-            // 注意：不能用 CARGO_MANIFEST_DIR 判断，因为生产 exe 仍包含开发机上的路径，只需在 debug 块内使用。
-            let (chars_dir, logs_dir, sessions_dir) = if cfg!(debug_assertions) {
-                // ── dev 模式 ──
-                // characters → <project>/characters/  （git 可追踪）
-                // logs       → <project>/logs/
-                // sessions   → <project>/logs/        （日志目录已 gitignore）
-                let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                let project_root = manifest_dir
-                    .parent()
-                    .unwrap_or(&PathBuf::from("."))
-                    .to_path_buf();
-                (
-                    project_root.join("characters"),
-                    project_root.join("logs"),
-                    project_root.join("logs"),
-                )
-            } else {
-                // ── 生产模式 ──
-                // characters → <app_data_dir>/characters/（首次为空，由用户导入角色包填充）
-                // logs       → <app_data_dir>/logs/
-                // sessions   → <app_data_dir>/
-                // 不再随程序分发预置角色，也不做首次拷贝。
-                let d = app.path().app_data_dir()?;
-                (d.join("characters"), d.join("logs"), d.clone())
-            };
-            let app_data = app.path().app_data_dir()?;
-            let app_cache = app.path().app_cache_dir()?;
-            path::init_dirs(
-                chars_dir.clone(),
-                logs_dir,
-                app_cache.join("backups"),
-                sessions_dir,
-                app_data.join("workspace-grants.json"),
-            )?;
+            let paths = composition_root::setup(app)?;
             log::install_panic_hook();
-            command::init_output_dir(app_cache.join("execution-output"))?;
             // asset:// 仅允许读取角色目录。静态配置保持空 scope，运行时加入实际目录，
             // 兼容 dev 的仓库 characters/ 与生产 app_data_dir，同时避免暴露全盘文件。
             app.asset_protocol_scope()
-                .allow_directory(&chars_dir, true)?;
+                .allow_directory(paths.characters_dir(), true)?;
 
             // ─── 全局光标轮询（主窗口鼠标穿透命中测试） ───
             // 主窗口透明，透明区域需让鼠标穿透到下方窗口。穿透开启后 WebView
@@ -106,13 +71,13 @@ pub fn run() {
             // 注册失败（被其它应用占用）仅告警，不阻断启动。
             {
                 let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyK);
-                if let Err(e) = app
-                    .global_shortcut()
-                    .on_shortcut(shortcut, |app, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            tray::toggle_main_window(app);
-                        }
-                    })
+                if let Err(e) =
+                    app.global_shortcut()
+                        .on_shortcut(shortcut, |app, _shortcut, event| {
+                            if event.state == ShortcutState::Pressed {
+                                tray::toggle_main_window(app);
+                            }
+                        })
                 {
                     log::write_native_log(
                         "warn",

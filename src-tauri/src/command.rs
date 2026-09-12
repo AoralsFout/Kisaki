@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
+use crate::app_paths::AppPaths;
 use crate::path::{resolve_workspace, safe_join_rel};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
@@ -36,7 +37,7 @@ const MAX_SNAPSHOT_FILES: usize = 20_000;
 const MAX_CHANGED_FILES: usize = 200;
 const MAX_EXECUTION_LOGS: usize = 50;
 
-static OUTPUT_DIR: OnceLock<PathBuf> = OnceLock::new();
+static OUTPUT_PATHS: OnceLock<Arc<AppPaths>> = OnceLock::new();
 static PLANS: LazyLock<Mutex<HashMap<String, StoredPlan>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static CANCELLED_JOBS: LazyLock<Mutex<HashSet<String>>> =
@@ -76,18 +77,19 @@ pub(crate) fn revoke_workspace_tasks(workspace_id: &str) {
     }
 }
 
-pub(crate) fn init_output_dir(dir: PathBuf) -> Result<(), String> {
-    fs::create_dir_all(&dir).map_err(|e| format!("创建命令日志目录失败: {}", e))?;
-    OUTPUT_DIR
-        .set(dir)
+/// 迁移期仅共享组合根已准备的 AppPaths，不再单独构造执行输出位置。
+pub(crate) fn init_output_dir(paths: Arc<AppPaths>) -> Result<(), String> {
+    OUTPUT_PATHS
+        .set(paths)
         .map_err(|_| "命令日志目录已初始化".to_string())
 }
 
 fn output_dir() -> PathBuf {
-    OUTPUT_DIR
+    OUTPUT_PATHS
         .get()
-        .cloned()
-        .unwrap_or_else(|| std::env::temp_dir().join("kisaki-execution-output"))
+        .expect("AppPaths 未装配")
+        .execution_output_dir()
+        .to_path_buf()
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -919,6 +921,8 @@ mod tests {
 
     #[test]
     fn approved_process_executes_and_returns_output_directly() {
+        let output_fixture = crate::test_support::TempAppPaths::new();
+        init_output_dir(output_fixture.shared_paths()).unwrap();
         let (root, workspace_id) = temp_workspace("execute");
         let request = PrepareExecutionRequest {
             workspace_id,
@@ -942,6 +946,11 @@ mod tests {
         assert_eq!(result.status, "completed");
         assert_eq!(result.exit_code, Some(0));
         assert!(!result.stdout_tail.trim().is_empty());
+        assert!(output_fixture
+            .paths()
+            .execution_output_dir()
+            .join(&result.output_ref)
+            .is_file());
         let _ = fs::remove_dir_all(root);
     }
 }

@@ -1,93 +1,58 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-// ─── 数据目录 ─────────────────────────────────────────
-// 双路径策略：
-//   dev  模式 → characters: <项目>/characters/（git 可追踪）, logs: 项目根/logs/
-//   生产模式 → characters: app_data_dir/characters/,         logs: app_data_dir/logs/
-// 不内置预置角色：生产模式首次启动 characters 为空，由用户通过「导入角色包」填充。
-// run() 阶段通过 init_dirs 初始化两个 OnceLock。
+use crate::app_paths::AppPaths;
 
-static CHARACTERS_DIR: OnceLock<PathBuf> = OnceLock::new();
-static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
-static BACKUPS_DIR: OnceLock<PathBuf> = OnceLock::new();
-static SESSIONS_DIR: OnceLock<PathBuf> = OnceLock::new();
-static WORKSPACE_GRANTS_FILE: OnceLock<PathBuf> = OnceLock::new();
+// ─── 迁移期目录兼容入口 ───────────────────────────────
+// 尚未迁移的业务只引用组合根的同一份 AppPaths，不再保存独立目录配置。
+static APP_PATHS: OnceLock<Arc<AppPaths>> = OnceLock::new();
 
-/// 初始化数据目录（在 tauri setup 阶段调用）
-pub(crate) fn init_dirs(
-    chars: PathBuf,
-    logs: PathBuf,
-    backups: PathBuf,
-    sessions: PathBuf,
-    workspace_grants_file: PathBuf,
-) -> Result<(), &'static str> {
-    fs::create_dir_all(&chars).map_err(|_| "创建 characters 目录失败")?;
-    fs::create_dir_all(&logs).map_err(|_| "创建 logs 目录失败")?;
-    fs::create_dir_all(&backups).map_err(|_| "创建 backups 目录失败")?;
-    fs::create_dir_all(&sessions).map_err(|_| "创建 sessions 目录失败")?;
-    CHARACTERS_DIR
-        .set(chars)
-        .map_err(|_| "CHARACTERS_DIR already set")?;
-    LOGS_DIR.set(logs).map_err(|_| "LOGS_DIR already set")?;
-    BACKUPS_DIR
-        .set(backups)
-        .map_err(|_| "BACKUPS_DIR already set")?;
-    SESSIONS_DIR
-        .set(sessions)
-        .map_err(|_| "SESSIONS_DIR already set")?;
-    WORKSPACE_GRANTS_FILE
-        .set(workspace_grants_file)
-        .map_err(|_| "WORKSPACE_GRANTS_FILE already set")?;
+pub(crate) fn init_dirs(paths: Arc<AppPaths>) -> Result<(), &'static str> {
+    APP_PATHS.set(paths).map_err(|_| "AppPaths 兼容入口已装配")?;
     load_workspace_grants();
     Ok(())
 }
 
+fn app_paths() -> &'static AppPaths {
+    APP_PATHS.get().expect("AppPaths 未装配")
+}
+
 pub(crate) fn characters_dir() -> PathBuf {
-    CHARACTERS_DIR
-        .get()
-        .expect("CHARACTERS_DIR 未初始化")
-        .clone()
+    app_paths().characters_dir().to_path_buf()
 }
 
 pub(crate) fn log_dir() -> PathBuf {
-    let dir = LOGS_DIR.get().expect("LOGS_DIR 未初始化").clone();
+    let dir = app_paths().logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
     dir
 }
 
 /// 日志系统初始化前返回 None，供 panic hook 和测试期的尽力而为日志使用。
 pub(crate) fn initialized_log_dir() -> Option<PathBuf> {
-    let dir = LOGS_DIR.get()?.clone();
+    let dir = APP_PATHS.get()?.logs_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
     Some(dir)
 }
 
 /// AI 文件改动备份根目录（app_cache_dir/backups）。
 pub(crate) fn backups_dir() -> PathBuf {
-    let dir = BACKUPS_DIR.get().expect("BACKUPS_DIR 未初始化").clone();
+    let dir = app_paths().backups_dir().to_path_buf();
     let _ = fs::create_dir_all(&dir);
     dir
 }
 
 /// v2 会话领域模型的数据文件。
 pub(crate) fn sessions_v2_file() -> PathBuf {
-    SESSIONS_DIR
-        .get()
-        .expect("SESSIONS_DIR 未初始化")
-        .join("sessions-v2.json")
+    app_paths().sessions_v2_file()
 }
 
 /// 已移除的 v1 存储位置。仅由显式的隐私删除使用。
 pub(crate) fn legacy_sessions_file() -> PathBuf {
-    SESSIONS_DIR
-        .get()
-        .expect("SESSIONS_DIR 未初始化")
-        .join("sessions.json")
+    app_paths().legacy_sessions_file()
 }
 
 /// 路径安全校验 — 防止 path traversal 攻击
@@ -207,9 +172,10 @@ static WORKSPACE_GRANTS: LazyLock<Mutex<HashMap<String, PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn load_workspace_grants() {
-    let Some(file) = WORKSPACE_GRANTS_FILE.get() else {
+    let Some(paths) = APP_PATHS.get() else {
         return;
     };
+    let file = paths.workspace_grants_file();
     let Ok(text) = fs::read_to_string(file) else {
         return;
     };
@@ -222,12 +188,13 @@ fn load_workspace_grants() {
 }
 
 fn persist_workspace_grants(grants: &HashMap<String, PathBuf>) -> Result<(), String> {
-    let Some(file) = WORKSPACE_GRANTS_FILE.get() else {
+    let Some(paths) = APP_PATHS.get() else {
         #[cfg(test)]
         return Ok(());
         #[cfg(not(test))]
         return Err("工作目录授权存储尚未初始化".to_string());
     };
+    let file = paths.workspace_grants_file();
     if let Some(parent) = file.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建授权目录失败: {}", e))?;
     }
