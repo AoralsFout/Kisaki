@@ -140,7 +140,7 @@ mod tests {
             fileio::read_file(&grants, &grant.id, "notes/test.txt").unwrap(),
             "真实文件"
         );
-        fileio::revoke_workspace(&grants, &grant.id).unwrap();
+        grants.revoke(&grant.id).unwrap();
         assert!(grants.resolve(&grant.id).unwrap_err().contains("已撤销"));
         assert!(fileio::read_file(&grants, &grant.id, "notes/test.txt").is_err());
         assert!(saved_grants(&fixture).is_empty());

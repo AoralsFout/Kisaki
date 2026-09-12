@@ -11,6 +11,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::command::ExecutionRegistry;
 use crate::path::safe_join_rel;
 use crate::workspace_grants::WorkspaceGrants;
 use base64::Engine;
@@ -66,17 +67,19 @@ pub(crate) fn agent_resolve_workspace(
 #[tauri::command]
 pub(crate) fn agent_revoke_workspace(
     grants: tauri::State<'_, Arc<WorkspaceGrants>>,
+    registry: tauri::State<'_, Arc<ExecutionRegistry>>,
     workspace_id: String,
 ) -> Result<(), String> {
-    revoke_workspace(&grants, &workspace_id)
+    revoke_workspace(&grants, &registry, &workspace_id)
 }
 
-pub(crate) fn revoke_workspace(grants: &WorkspaceGrants, workspace_id: &str) -> Result<(), String> {
-    // 保留既有执行任务联动；执行注册表由后续工单迁移，不在此引入另一份执行状态。
-    crate::command::revoke_workspace_tasks(workspace_id);
-    grants.revoke(workspace_id)
+pub(crate) fn revoke_workspace(
+    grants: &WorkspaceGrants,
+    registry: &ExecutionRegistry,
+    workspace_id: &str,
+) -> Result<(), String> {
+    registry.revoke_workspace(grants, workspace_id)
 }
-
 /// 读取工作目录内某文本文件的内容（UTF-8）。
 #[tauri::command]
 pub(crate) fn agent_read_file(
@@ -968,7 +971,9 @@ mod tests {
             "secret.txt",
         );
         write_file(&fixture.grants, &fixture.id, "owned.txt", "仍须保留").unwrap();
-        revoke_workspace(&fixture.grants, &fixture.id).unwrap();
+        let registry =
+            ExecutionRegistry::new(fixture._paths.shared_paths(), std::time::Instant::now);
+        revoke_workspace(&fixture.grants, &registry, &fixture.id).unwrap();
         assert_all_file_operations_reject(&fixture.grants, &fixture.id, "owned.txt");
         assert_eq!(
             fs::read_to_string(fixture.root.path().join("owned.txt")).unwrap(),
