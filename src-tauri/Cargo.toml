@@ -50,3 +50,8 @@ tauri-plugin-dialog = "2.7.1"
 zip = "2"
 keyring = "2"
 tauri-plugin-updater = "2.10.1"
+
+[dev-dependencies]
+# 架构测试解析 Rust AST；位置用于报告违规所在文件与行列。
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full", "visit"] }

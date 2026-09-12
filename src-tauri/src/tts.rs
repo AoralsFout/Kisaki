@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
@@ -11,6 +12,8 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
+
+use crate::app_paths::AppPaths;
 
 // ---- CosyVoice 语音合成 ----
 
@@ -267,6 +270,7 @@ async fn cosyvoice_send_text(
 /// 获取连接（优先从池中取，取不到则新建）
 /// 返回 (write, read, task_id, from_pool) — from_pool 表示完成后应归还
 async fn acquire_or_connect(
+    paths: &AppPaths,
     pool: &TtsConnectionPool,
     ws_url: &str,
     api_key: &str,
@@ -279,7 +283,8 @@ async fn acquire_or_connect(
         match run_task_on_connection(&mut write, model, voice).await {
             Ok(task_id) => return Ok((write, read, task_id, true)),
             Err(e) => {
-                crate::log::write_native_log(
+                let _ = crate::log::write_native_log(
+                    paths,
                     "warn",
                     "TTS",
                     format!("连接池中现有连接不可复用，创建新连接: {}", e),
@@ -349,6 +354,7 @@ async fn audio_receive_batch(
 /// 通过 CosyVoice WebSocket API 合成语音并返回音频数据（base64，批处理）
 #[tauri::command]
 pub(crate) async fn cosyvoice_tts(
+    paths: tauri::State<'_, Arc<AppPaths>>,
     app_handle: tauri::AppHandle,
     api_key: String,
     model: String,
@@ -362,7 +368,7 @@ pub(crate) async fn cosyvoice_tts(
 
     let pool = app_handle.state::<TtsConnectionPool>();
     let (mut write, mut read, task_id, from_pool) =
-        acquire_or_connect(&pool, &ws_url, &api_key, &model, &voice).await?;
+        acquire_or_connect(&paths, &pool, &ws_url, &api_key, &model, &voice).await?;
     let result = audio_receive_batch(&mut write, &mut read, &task_id, &text).await;
     match &result {
         // 仅在成功且来自连接池时归还连接；出错的连接可能已失效，丢弃而非污染连接池
@@ -373,8 +379,13 @@ pub(crate) async fn cosyvoice_tts(
 }
 
 /// 通过 CosyVoice WebSocket API 流式合成语音，逐帧经请求级 Channel 回传
+#[expect(
+    clippy::too_many_arguments,
+    reason = "保留既有 Tauri 命令参数契约，同时显式注入日志目录"
+)]
 #[tauri::command]
 pub(crate) async fn cosyvoice_tts_stream(
+    paths: tauri::State<'_, Arc<AppPaths>>,
     app_handle: tauri::AppHandle,
     on_chunk: Channel<TtsChunk>,
     api_key: String,
@@ -389,7 +400,7 @@ pub(crate) async fn cosyvoice_tts_stream(
 
     let pool = app_handle.state::<TtsConnectionPool>();
     let (mut write, mut read, task_id, from_pool) =
-        acquire_or_connect(&pool, &ws_url, &api_key, &model, &voice).await?;
+        acquire_or_connect(&paths, &pool, &ws_url, &api_key, &model, &voice).await?;
 
     // 等待 task-started 并发送文本
     cosyvoice_send_text(&mut write, &mut read, &task_id, &text).await?;
@@ -484,7 +495,10 @@ pub(crate) struct GptSoVitsResult {
 
 /// 通过 Rust 后端请求 GPT-SoVITS API（解决 webview CORS 限制）
 #[tauri::command]
-pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String> {
+pub(crate) async fn gptsovits_tts(
+    paths: tauri::State<'_, Arc<AppPaths>>,
+    url: String,
+) -> Result<GptSoVitsResult, String> {
     let response = gptsovits_client()?
         .get(&url)
         .send()
@@ -526,7 +540,8 @@ pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String
         "wav"
     }.to_string();
 
-    crate::log::write_native_log(
+    let _ = crate::log::write_native_log(
+        &paths,
         "info",
         "TTS",
         format!("GPT-SoVITS 合成完成: {} bytes ({})", bytes.len(), format),
@@ -538,10 +553,11 @@ pub(crate) async fn gptsovits_tts(url: String) -> Result<GptSoVitsResult, String
 /// GPT-SoVITS 流式合成 — 逐 chunk 经请求级 Channel 回传，前端边收边播
 #[tauri::command]
 pub(crate) async fn gptsovits_tts_stream(
+    paths: tauri::State<'_, Arc<AppPaths>>,
     on_chunk: Channel<TtsChunk>,
     url: String,
 ) -> Result<(), String> {
-    crate::log::write_native_log("debug", "TTS", "GPT-SoVITS 流式请求".to_string());
+    let _ = crate::log::write_native_log(&paths, "debug", "TTS", "GPT-SoVITS 流式请求".to_string());
 
     let response = gptsovits_client()?
         .get(&url)
@@ -582,7 +598,8 @@ pub(crate) async fn gptsovits_tts_stream(
         is_last: true,
     });
 
-    crate::log::write_native_log(
+    let _ = crate::log::write_native_log(
+        &paths,
         "info",
         "TTS",
         format!("GPT-SoVITS 流式完成: {} chunks", chunk_count),
