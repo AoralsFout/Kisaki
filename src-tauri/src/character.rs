@@ -122,8 +122,11 @@ pub(crate) fn list_characters(
 }
 
 pub(crate) fn list(paths: &AppPaths) -> Result<Vec<String>, String> {
-    let dir = paths.characters_dir();
-    let mut result: Vec<String> = Vec::new();
+    Ok(scan_character_ids(paths.characters_dir()))
+}
+
+fn scan_character_ids(dir: &Path) -> Vec<String> {
+    let mut result = Vec::new();
     if dir.exists() {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -138,7 +141,7 @@ pub(crate) fn list(paths: &AppPaths) -> Result<Vec<String>, String> {
         }
     }
     result.sort();
-    Ok(result)
+    result
 }
 
 /// 角色列表所需的轻量元数据。列表页不需要提示词、图片清单等完整配置。
@@ -221,24 +224,7 @@ pub(crate) fn list_data_dir_characters(
 }
 
 pub(crate) fn list_data_characters(paths: &AppPaths) -> Result<Vec<String>, String> {
-    let dir = paths.characters_dir();
-    if !dir.exists() {
-        return Ok(vec![]);
-    }
-    let mut result = vec![];
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                if let Some(name) = entry.file_name().to_str() {
-                    if entry.path().join("character.json").exists() {
-                        result.push(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-    result.sort();
-    Ok(result)
+    Ok(scan_character_ids(paths.characters_dir()))
 }
 
 /// 读取角色目录下的文件（character.json / prompt.txt 等）

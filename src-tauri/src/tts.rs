@@ -33,11 +33,11 @@ pub(crate) struct TtsChunk {
 }
 
 /// WebSocket 流类型别名（简化冗长的泛型签名）
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsWriteHalf = futures_util::stream::SplitSink<WsStream, Message>;
 type WsReadHalf = futures_util::stream::SplitStream<WsStream>;
+type TtsChunkSink = dyn Fn(TtsChunk) + Send + Sync;
 
 /// 解析 WebSocket JSON 消息，返回 (event_type, 可选错误消息)
 fn parse_ws_event(text: &str) -> Result<(String, Option<String>), String> {
@@ -66,7 +66,10 @@ async fn ws_graceful_close(write: &mut WsWriteHalf, read: &mut WsReadHalf) {
 }
 
 /// 带超时的 WebSocket 连接
-async fn connect_ws_with_timeout<R>(request: R, timeout_duration: Duration) -> Result<WsStream, String>
+async fn connect_ws_with_timeout<R>(
+    request: R,
+    timeout_duration: Duration,
+) -> Result<WsStream, String>
 where
     R: IntoClientRequest + Unpin,
 {
@@ -362,17 +365,32 @@ pub(crate) async fn cosyvoice_tts(
     text: String,
     ws_url: String,
 ) -> Result<TtsResult, String> {
+    let pool = app_handle.state::<TtsConnectionPool>();
+    cosyvoice_tts_business(&paths, &pool, &api_key, &model, &voice, &text, &ws_url).await
+}
+
+async fn cosyvoice_tts_business(
+    paths: &AppPaths,
+    pool: &TtsConnectionPool,
+    api_key: &str,
+    model: &str,
+    voice: &str,
+    text: &str,
+    ws_url: &str,
+) -> Result<TtsResult, String> {
     if text.trim().is_empty() {
         return Err("合成文本不能为空".to_string());
     }
 
-    let pool = app_handle.state::<TtsConnectionPool>();
     let (mut write, mut read, task_id, from_pool) =
-        acquire_or_connect(&paths, &pool, &ws_url, &api_key, &model, &voice).await?;
-    let result = audio_receive_batch(&mut write, &mut read, &task_id, &text).await;
+        acquire_or_connect(paths, pool, ws_url, api_key, model, voice).await?;
+    let result = audio_receive_batch(&mut write, &mut read, &task_id, text).await;
     match &result {
         // 仅在成功且来自连接池时归还连接；出错的连接可能已失效，丢弃而非污染连接池
-        Ok(_) if from_pool => pool.put_connection(write, read, ws_url, api_key).await,
+        Ok(_) if from_pool => {
+            pool.put_connection(write, read, ws_url.to_string(), api_key.to_string())
+                .await
+        }
         _ => ws_graceful_close(&mut write, &mut read).await,
     }
     result
@@ -394,16 +412,46 @@ pub(crate) async fn cosyvoice_tts_stream(
     text: String,
     ws_url: String,
 ) -> Result<(), String> {
+    let pool = app_handle.state::<TtsConnectionPool>();
+    let send_chunk: Box<TtsChunkSink> = Box::new(move |chunk| {
+        let _ = on_chunk.send(chunk);
+    });
+    cosyvoice_tts_stream_business(
+        &paths,
+        &pool,
+        send_chunk.as_ref(),
+        &api_key,
+        &model,
+        &voice,
+        &text,
+        &ws_url,
+    )
+    .await
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "业务函数显式接收组合根托管的依赖与 TTS 输入"
+)]
+async fn cosyvoice_tts_stream_business(
+    paths: &AppPaths,
+    pool: &TtsConnectionPool,
+    on_chunk: &TtsChunkSink,
+    api_key: &str,
+    model: &str,
+    voice: &str,
+    text: &str,
+    ws_url: &str,
+) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("合成文本不能为空".to_string());
     }
 
-    let pool = app_handle.state::<TtsConnectionPool>();
     let (mut write, mut read, task_id, from_pool) =
-        acquire_or_connect(&paths, &pool, &ws_url, &api_key, &model, &voice).await?;
+        acquire_or_connect(paths, pool, ws_url, api_key, model, voice).await?;
 
     // 等待 task-started 并发送文本
-    cosyvoice_send_text(&mut write, &mut read, &task_id, &text).await?;
+    cosyvoice_send_text(&mut write, &mut read, &task_id, text).await?;
 
     // 逐帧接收音频，即时推送给前端。所有退出路径都在循环外统一发送结束标记，
     // 确保流式 Sink 不会因缺少 is_last 而无限等待。
@@ -422,23 +470,21 @@ pub(crate) async fn cosyvoice_tts_stream(
                     format: "mp3".to_string(),
                     is_last: false,
                 };
-                let _ = on_chunk.send(chunk);
+                on_chunk(chunk);
             }
-            Some(Ok(Message::Text(text_msg))) => {
-                match parse_ws_event(&text_msg) {
-                    Ok((event, error)) => match event.as_str() {
-                        "task-finished" => break Ok(()),
-                        "task-failed" => {
-                            break Err(format!(
-                                "TTS 任务失败: {}",
-                                error.unwrap_or_else(|| "未知错误".to_string())
-                            ))
-                        }
-                        _ => {}
-                    },
-                    Err(e) => break Err(e),
-                }
-            }
+            Some(Ok(Message::Text(text_msg))) => match parse_ws_event(&text_msg) {
+                Ok((event, error)) => match event.as_str() {
+                    "task-finished" => break Ok(()),
+                    "task-failed" => {
+                        break Err(format!(
+                            "TTS 任务失败: {}",
+                            error.unwrap_or_else(|| "未知错误".to_string())
+                        ))
+                    }
+                    _ => {}
+                },
+                Err(e) => break Err(e),
+            },
             Some(Ok(Message::Close(_))) => break Ok(()),
             Some(Err(e)) => break Err(format!("WebSocket 接收错误: {}", e)),
             None => break Ok(()),
@@ -447,7 +493,7 @@ pub(crate) async fn cosyvoice_tts_stream(
     };
 
     // 无论成功或失败，都发送结束标记，通知前端结束本次流
-    let _ = on_chunk.send(TtsChunk {
+    on_chunk(TtsChunk {
         data: String::new(),
         format: "mp3".to_string(),
         is_last: true,
@@ -457,7 +503,8 @@ pub(crate) async fn cosyvoice_tts_stream(
     match recv_result {
         Ok(()) => {
             if from_pool {
-                pool.put_connection(write, read, ws_url, api_key).await;
+                pool.put_connection(write, read, ws_url.to_string(), api_key.to_string())
+                    .await;
             } else {
                 ws_graceful_close(&mut write, &mut read).await;
             }
@@ -499,8 +546,12 @@ pub(crate) async fn gptsovits_tts(
     paths: tauri::State<'_, Arc<AppPaths>>,
     url: String,
 ) -> Result<GptSoVitsResult, String> {
+    gptsovits_tts_business(&paths, &url).await
+}
+
+async fn gptsovits_tts_business(paths: &AppPaths, url: &str) -> Result<GptSoVitsResult, String> {
     let response = gptsovits_client()?
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("GPT-SoVITS 请求失败: {}", e))?;
@@ -538,16 +589,20 @@ pub(crate) async fn gptsovits_tts(
         "raw"
     } else {
         "wav"
-    }.to_string();
+    }
+    .to_string();
 
     let _ = crate::log::write_native_log(
-        &paths,
+        paths,
         "info",
         "TTS",
         format!("GPT-SoVITS 合成完成: {} bytes ({})", bytes.len(), format),
     );
 
-    Ok(GptSoVitsResult { audio_base64, format })
+    Ok(GptSoVitsResult {
+        audio_base64,
+        format,
+    })
 }
 
 /// GPT-SoVITS 流式合成 — 逐 chunk 经请求级 Channel 回传，前端边收边播
@@ -557,10 +612,21 @@ pub(crate) async fn gptsovits_tts_stream(
     on_chunk: Channel<TtsChunk>,
     url: String,
 ) -> Result<(), String> {
-    let _ = crate::log::write_native_log(&paths, "debug", "TTS", "GPT-SoVITS 流式请求".to_string());
+    let send_chunk: Box<TtsChunkSink> = Box::new(move |chunk| {
+        let _ = on_chunk.send(chunk);
+    });
+    gptsovits_tts_stream_business(&paths, send_chunk.as_ref(), &url).await
+}
+
+async fn gptsovits_tts_stream_business(
+    paths: &AppPaths,
+    on_chunk: &TtsChunkSink,
+    url: &str,
+) -> Result<(), String> {
+    let _ = crate::log::write_native_log(paths, "debug", "TTS", "GPT-SoVITS 流式请求".to_string());
 
     let response = gptsovits_client()?
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("GPT-SoVITS 请求失败: {}", e))?;
@@ -584,7 +650,7 @@ pub(crate) async fn gptsovits_tts_stream(
         chunk_count += 1;
         let data = engine.encode(&chunk);
         let is_last = false; // 还不知道是否最后，最后单独发结束信号
-        let _ = on_chunk.send(TtsChunk {
+        on_chunk(TtsChunk {
             data,
             format: "wav".to_string(),
             is_last,
@@ -592,14 +658,14 @@ pub(crate) async fn gptsovits_tts_stream(
     }
 
     // 发送结束标记
-    let _ = on_chunk.send(TtsChunk {
+    on_chunk(TtsChunk {
         data: String::new(),
         format: "wav".to_string(),
         is_last: true,
     });
 
     let _ = crate::log::write_native_log(
-        &paths,
+        paths,
         "info",
         "TTS",
         format!("GPT-SoVITS 流式完成: {} chunks", chunk_count),
