@@ -8,6 +8,15 @@
 //! 平台说明：Linux 托盘基于 StatusNotifierItem，需运行时存在
 //! libayatana-appindicator（或 libappindicator）及构建期 libxdo；缺少该环境的部分
 //! 精简桌面 / 合成器可能不显示托盘图标（菜单功能仍可经其他入口触发）。
+//!
+//! 启动日志里会有一条 `libayatana-appindicator-WARNING **: libayatana-appindicator is
+//! deprecated. Please use libayatana-appindicator-glib in newly written code.`，属预期噪声：
+//! 它是 libayatana-appindicator 在 `app_indicator_new()` 里对**库调用方**（此处即 tray-icon）
+//! 发的迁移提示，每次创建托盘打一次，与本项目代码无关。应用侧当前没有迁移路径——tray-icon
+//! 0.23 把 `libayatana-appindicator3.so.1` 写死在 dlopen 且依赖无条件启用；glib 新版虽然同名
+//! 导出了 `app_indicator_new`，却缺 `app_indicator_set_icon_full`，且其 `app_indicator_set_menu`
+//! 收 `GMenu` 而非 tray-icon 传入的 `GtkMenu`，直接替换会类型错配。待 tauri 用上 tray-icon 0.25
+//! 的 `ksni`（纯 Rust StatusNotifierItem，不经 appindicator）后该警告自然消失。
 
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},

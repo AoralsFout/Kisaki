@@ -33,6 +33,10 @@
 >   libpipewire-0.3-dev libwayland-dev libegl-dev
 > ```
 >
+> 启动时会打印一条 `libayatana-appindicator is deprecated` 警告。它来自托盘库对调用方
+> （tray-icon）的迁移提示，应用侧暂无可用迁移路径，属预期噪声，可忽略；成因见
+> `src-tauri/src/tray.rs` 的模块说明。
+>
 > 鼠标穿透依赖全局光标坐标，在 **X11** 下可用；**Wayland** 因协议限制无法获取全局光标，穿透不可用（已知限制）。
 
 ### 安装 & 运行
