@@ -37,6 +37,7 @@ const props = withDefaults(defineProps<{
   live2dPort?: CharacterAppearanceLive2DImportPort
   loadLive2dManifest?: (model: string) => Promise<Live2DManifest>
   createFilename?: (file: File, index: number) => string
+  previewTarget?: string | HTMLElement
 }>(), {
   manifest: null,
   manifestError: '',
@@ -47,6 +48,7 @@ const props = withDefaults(defineProps<{
   live2dPort: undefined,
   loadLive2dManifest: undefined,
   createFilename: undefined,
+  previewTarget: undefined,
 })
 
 const emit = defineEmits<{
@@ -314,13 +316,15 @@ async function reimportLive2dModel() {
         <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="handleFiles" />
       </section>
 
-      <CharacterPreview v-if="selectedImage" :image="selectedImage" :image-url="imageUrl(selectedImage.file)"
-        :poses="[...draft.poses]" :costumes="[...draft.costumes]"
-        @update-pose="(_, pose) => publish({ type: 'set-image-pose', file: selectedImage!.file, pose })"
-        @update-costume="(_, costume) => publish({ type: 'set-image-costume', file: selectedImage!.file, costume })"
-        @add-emotion="(_, emotion) => publish({ type: 'add-emotion', file: selectedImage!.file, emotion })"
-        @remove-emotion="(_, index) => publish({ type: 'remove-emotion', file: selectedImage!.file, index })"
-        @delete="deleteSelectedImage" @close="closePreview" />
+      <Teleport v-if="selectedImage" :to="previewTarget ?? 'body'" :disabled="!previewTarget">
+        <CharacterPreview :image="selectedImage" :image-url="imageUrl(selectedImage.file)"
+          :poses="[...draft.poses]" :costumes="[...draft.costumes]"
+          @update-pose="(_, pose) => publish({ type: 'set-image-pose', file: selectedImage!.file, pose })"
+          @update-costume="(_, costume) => publish({ type: 'set-image-costume', file: selectedImage!.file, costume })"
+          @add-emotion="(_, emotion) => publish({ type: 'add-emotion', file: selectedImage!.file, emotion })"
+          @remove-emotion="(_, index) => publish({ type: 'remove-emotion', file: selectedImage!.file, index })"
+          @delete="deleteSelectedImage" @close="closePreview" />
+      </Teleport>
     </template>
 
     <template v-else>

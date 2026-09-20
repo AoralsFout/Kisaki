@@ -30,6 +30,20 @@ function mountIllustration(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CharacterAppearanceEditor 静态立绘', () => {
+  it('选择立绘后把预览渲染到右侧宿主，而不是图片列表下方', async () => {
+    const previewHost = document.createElement('div')
+    previewHost.id = 'character-illustration-preview'
+    document.body.appendChild(previewHost)
+    const wrapper = mountIllustration({ previewTarget: '#character-illustration-preview' })
+
+    await wrapper.get('.appearance-image-card').trigger('click')
+
+    expect(previewHost.querySelector('.preview-panel')).not.toBeNull()
+    expect(wrapper.find('.preview-panel').exists()).toBe(false)
+    wrapper.unmount()
+    previewHost.remove()
+  })
+
   it('通过 edit 事件返回标签和图片元数据意图，不改写输入投影', async () => {
     const wrapper = mountIllustration()
     await wrapper.get('.tag-add').trigger('click')

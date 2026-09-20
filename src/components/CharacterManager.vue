@@ -209,10 +209,12 @@ async function exportPack() {
         <div class="editor-body">
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-id-badge"></i> {{ t('character.mgr.groupBasic') }}</h3><div class="form-group"><label class="lang-label">{{ t('character.mgr.descLabel') }}</label><input :value="draft?.description" class="form-input" :placeholder="t('character.mgr.descPlaceholder')" @input="handleDescriptionInput(($event.target as HTMLInputElement).value)" /></div><p class="mgr-desc"><i class="fas fa-fingerprint"></i> ID: {{ editingId }}</p></section>
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-pencil"></i> {{ t('character.mgr.groupPersona') }}</h3><textarea :value="draft?.prompt" class="mgr-textarea" rows="8" @input="handlePromptInput(($event.target as HTMLTextAreaElement).value)"></textarea></section>
-          <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-images"></i> {{ t('character.mgr.groupAppearance') }}</h3><CharacterAppearanceEditor v-if="draft" :character-id="editingId" :render="draft.render" :draft="appearanceDraft" :manifest="live2dManifest" :manifest-error="live2dManifestError" :file-port="ports.appearanceFiles" :bust-image-cache="ports.bustImageCache" :image-url="charStore.getImageUrl" :pick-live2d-model="pickModelFolder" :live2d-port="ports.live2d" :load-live2d-manifest="model => ports.loadLive2dManifest(editingId, { live2d: { ...(draft?.live2d ?? { model }), model } })" @edit="handleAppearanceEdit" @live2d-manifest-loaded="live2dManifest = $event; live2dManifestError = ''" @file-operation-error="saveError = $event" /></section>
+          <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-images"></i> {{ t('character.mgr.groupAppearance') }}</h3><CharacterAppearanceEditor v-if="draft" :character-id="editingId" :render="draft.render" :draft="appearanceDraft" :manifest="live2dManifest" :manifest-error="live2dManifestError" :file-port="ports.appearanceFiles" :bust-image-cache="ports.bustImageCache" :image-url="charStore.getImageUrl" :pick-live2d-model="pickModelFolder" :live2d-port="ports.live2d" :load-live2d-manifest="model => ports.loadLive2dManifest(editingId, { live2d: { ...(draft?.live2d ?? { model }), model } })" preview-target="#character-illustration-preview" @edit="handleAppearanceEdit" @live2d-manifest-loaded="live2dManifest = $event; live2dManifestError = ''" @file-operation-error="saveError = $event" /></section>
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.groupVoice') }}</h3><CharacterVoiceEditor v-if="draft" :draft="voiceDraft" :provider="ttsProvider" :character-id="editingId" :ports="defaultCharacterVoiceEditorPorts" @change="handleVoiceChange" @provider-change="ttsProvider = $event" /></section>
         </div>
       </div>
+      <div v-if="draft?.render === 'illustration'" id="character-illustration-preview"
+        class="illustration-preview-host" :class="{ collapsed: previewCollapsed }"></div>
       <div v-if="draft?.render === 'live2d' && !previewCollapsed" class="l2d-preview-panel"><Live2DPreview :id="editingId" :config="draft.live2d ? { ...draft.live2d } : undefined" /></div>
     </div>
   </div>
@@ -245,6 +247,8 @@ async function exportPack() {
 .editor-body::-webkit-scrollbar-track { background: transparent; }
 .editor-body::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 3px; }
 .editor-body::-webkit-scrollbar-thumb:hover { background: var(--c-border-strong); }
+.illustration-preview-host { display: flex; min-width: 0; flex-shrink: 0; }
+.illustration-preview-host.collapsed { display: none; }
 .l2d-preview-panel { width: clamp(240px, 30vw, 340px); min-width: 0; flex-shrink: 0; background: var(--c-bg); border-left: 1px solid var(--c-border); }
 .mgr-header-row { display: flex; align-items: center; justify-content: space-between; }
 @media (max-width: 760px) { .editor-left { padding: var(--space-2); } .editor-topbar { flex-wrap: wrap; gap: var(--space-2); } .editor-name-input { order: 3; flex-basis: 100%; } .editor-actions { margin-left: auto; } .l2d-preview-panel { width: min(38vw, 240px); } }
