@@ -13,6 +13,8 @@ import { findImages } from '../character/config'
 import { ALL_POSE_KEYS, DEFAULT_POSE } from '../character/poses'
 import type { PoseKey } from '../character/poses'
 import { createLogger } from '../utils/logger'
+import { getCharacterDisplayName, toCharacterDisplayList } from '../character/characterDisplayData'
+import type { CharacterDisplayData } from '../character/characterDisplayData'
 import {
   CharacterRuntime,
   type CharacterCapabilities,
@@ -34,11 +36,11 @@ export const useCharacterStore = defineStore('character', () => {
   const currentId = ref('kisaki')
   const data = ref<CharacterData | null>(null)
   const loading = ref(false)
-  const availableList = ref<string[]>([])
-  /** 角色 ID → 显示名称 缓存（供列表使用，避免逐个加载完整 JSON） */
-  const charNames = ref<Record<string, string>>({})
-  /** 角色 ID → 渲染类型 缓存（列表徽标用） */
-  const charRenders = ref<Record<string, string>>({})
+  /** 角色列表的唯一显示数据源；刷新时整体替换快照。 */
+  const displayData = ref<readonly CharacterDisplayData[]>([])
+  const characterDisplayList = computed<readonly CharacterDisplayData[]>(() => displayData.value)
+  /** 兼容旧调用方的 ID 投影；显示字段统一来自 characterDisplayList。 */
+  const availableList = computed(() => characterDisplayList.value.map(item => item.id))
 
   // ── 角色视觉状态（供 controller + session 共享） ──
   const currentEmotion = ref('')
@@ -70,12 +72,12 @@ export const useCharacterStore = defineStore('character', () => {
 
   /** 获取角色的显示名称（缓存不到时 fallback 为 id 首字母大写） */
   function getCharacterName(id: string): string {
-    return charNames.value[id] || id.charAt(0).toUpperCase() + id.slice(1)
+    return characterDisplayList.value.find(item => item.id === id)?.name ?? getCharacterDisplayName(id)
   }
 
   /** 获取角色渲染类型（列表徽标用；缺省 illustration） */
   function getCharacterRender(id: string): string {
-    return charRenders.value[id] || 'illustration'
+    return characterDisplayList.value.find(item => item.id === id)?.render ?? 'illustration'
   }
 
   /** 获取图片的完整 URL */
@@ -130,16 +132,7 @@ export const useCharacterStore = defineStore('character', () => {
   async function refreshList() {
     clearCache()
     const summaries = await listCharacterSummaries()
-    availableList.value = summaries.map(item => item.id)
-    const names: Record<string, string> = {}
-    const renders: Record<string, string> = {}
-    for (const summary of summaries) {
-      const id = summary.id
-      names[id] = summary.name || id.charAt(0).toUpperCase() + id.slice(1)
-      renders[id] = summary.render || 'illustration'
-    }
-    charNames.value = names
-    charRenders.value = renders
+    displayData.value = toCharacterDisplayList(summaries)
   }
 
   /**
@@ -257,7 +250,7 @@ export const useCharacterStore = defineStore('character', () => {
   }
 
   return {
-    currentId, data, loading, availableList,
+    currentId, data, loading, availableList, characterDisplayList,
     poses, emotions, costumes, name, prompt, render,
     currentEmotion, currentStance, currentCostume, currentScreenPose,
     getImageUrl, getCharacterName, getCharacterRender,

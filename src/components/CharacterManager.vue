@@ -729,10 +729,8 @@ async function importPack() {
 
       <CharacterList
         v-else
-        :available-list="displayList"
+        :characters="charStore.characterDisplayList"
         :current-id="charStore.currentId"
-        :get-character-name="charStore.getCharacterName"
-        :get-character-render="charStore.getCharacterRender"
         @select="enterEditor"
         @create="openCreateForm"
       />

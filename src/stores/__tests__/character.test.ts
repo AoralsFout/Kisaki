@@ -102,4 +102,27 @@ describe('useCharacterStore init', () => {
     expect(store.setVisualLook({ stance: 'wave', emotion: 'normal' })).toBe(false)
     expect(store.getRuntimeSnapshot()).toEqual(before)
   })
+
+  it('刷新时以同一显示数据快照更新 ID、名称和 render', async () => {
+    const store = useCharacterStore()
+    await store.refreshList()
+
+    expect(store.characterDisplayList).toEqual([
+      { id: 'chryso', name: 'Chryso', render: 'illustration' },
+      { id: 'kisaki', name: 'Kisaki', render: 'illustration' },
+    ])
+    expect(store.availableList).toEqual(['chryso', 'kisaki'])
+    expect(store.getCharacterName('chryso')).toBe('Chryso')
+
+    vi.mocked(listCharacterSummaries).mockResolvedValue([
+      { id: 'new-character', name: null, render: 'live2d' },
+    ])
+    await store.refreshList()
+
+    expect(store.characterDisplayList).toEqual([
+      { id: 'new-character', name: 'New-character', render: 'live2d' },
+    ])
+    expect(store.availableList).toEqual(['new-character'])
+    expect(store.getCharacterName('new-character')).toBe('New-character')
+  })
 })

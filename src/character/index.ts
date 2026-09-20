@@ -6,6 +6,14 @@ export {
   migrateCharacterData, characterFilePath, live2dFileUrl,
 } from './loader'
 export type { CharacterData, CharacterImageData, CharacterSummary, RenderKind, Live2DConfig } from './loader'
+export {
+  displayDataFromIds,
+  getCharacterDisplayName,
+  getCharacterDisplayRender,
+  toCharacterDisplayData,
+  toCharacterDisplayList,
+} from './characterDisplayData'
+export type { CharacterDisplayData } from './characterDisplayData'
 export { loadLive2DManifest, buildLive2DCatalog, live2dRedirect } from './live2d/manifest'
 export type { Live2DManifest, Live2DExpressionInfo, Live2DMotionInfo } from './live2d/manifest'
 export { useLive2DController } from './live2d/controller'
