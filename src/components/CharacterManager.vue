@@ -3,7 +3,6 @@
 import { computed, onMounted, onUnmounted, ref, watch, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
-import type { Live2DManifest } from '../character/live2d/manifest'
 import { getTtsProvider } from '../tts'
 import { STORAGE_TTS_PROVIDER } from '../constants'
 import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
@@ -39,7 +38,8 @@ const createFormRef = ref<InstanceType<typeof CharacterCreateForm> | null>(null)
 const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
 const isDeleting = ref(false)
 const ttsProvider = ref(getTtsProvider())
-const live2dManifest = ref<Live2DManifest | null>(null)
+type CharacterManagerManifest = Awaited<ReturnType<CharacterManagerPorts['loadLive2dManifest']>>
+const live2dManifest = ref<CharacterManagerManifest | null>(null)
 const live2dManifestError = ref('')
 const draftTick = ref(0)
 
