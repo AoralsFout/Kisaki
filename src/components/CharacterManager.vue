@@ -3,10 +3,7 @@
 import { computed, onMounted, onUnmounted, ref, watch, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharacterStore } from '../stores/character'
-import { bustImageCache, initCharacterDataDir } from '../character/loader'
-import { loadLive2DManifest, type Live2DManifest } from '../character/live2d/manifest'
-import { createLogger } from '../utils/logger'
-import { open } from '@tauri-apps/plugin-dialog'
+import type { Live2DManifest } from '../character/live2d/manifest'
 import { getTtsProvider } from '../tts'
 import { STORAGE_TTS_PROVIDER } from '../constants'
 import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
@@ -17,6 +14,7 @@ import { createCharacterDraftSync } from '../application/character/characterDraf
 import { saveCharacter } from '../application/character/characterSaveWorkflow'
 import { createTauriCharacterPackPort } from '../infrastructure/character/tauriCharacterPackPort'
 import { createTauriCharacterManagerPorts } from '../infrastructure/character/tauriCharacterManagerPorts'
+import type { CharacterManagerPorts } from '../application/character/characterManagerPorts'
 import { defaultCharacterVoiceEditorPorts } from '../application/character/characterVoiceEditor'
 import CharacterList from './CharacterList.vue'
 import CharacterCreateForm from './CharacterCreateForm.vue'
@@ -26,10 +24,9 @@ import Live2DPreview from './Live2DPreview.vue'
 import UnsavedDialog from './UnsavedDialog.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
-const log = createLogger('CharacterMgr')
 const { t } = useI18n()
 const charStore = useCharacterStore()
-const ports = createTauriCharacterManagerPorts()
+const ports: CharacterManagerPorts = createTauriCharacterManagerPorts()
 type ViewMode = 'list' | 'editor'
 const view = ref<ViewMode>('list')
 const editingId = ref('')
@@ -43,25 +40,29 @@ const leaveDialog = ref<InstanceType<typeof UnsavedDialog> | null>(null)
 const isDeleting = ref(false)
 const ttsProvider = ref(getTtsProvider())
 const live2dManifest = ref<Live2DManifest | null>(null)
+const live2dManifestError = ref('')
 const draftTick = ref(0)
 
 const draftSync = createCharacterDraftSync({
   save: request => saveCharacter(request, {
     files: ports.files,
-    refreshCache: bustImageCache,
+    refreshCache: ports.bustImageCache,
     broadcastCharactersChanged: ports.broadcastCharactersChanged,
   }),
 })
 const packWorkflow = createCharacterPackWorkflow({
   ...createTauriCharacterPackPort(),
   refreshDisplayData: () => charStore.refreshList(),
-  bustImageCache,
+  bustImageCache: ports.bustImageCache,
   emitCharactersChanged: ports.broadcastCharactersChanged,
 })
 const deletionWorkflow = createCharacterDeletionWorkflow({
   deleteCharacter: ports.deleteCharacter,
   refreshDisplayData: async () => { await charStore.refreshList(); return charStore.availableList },
-  loadReplacement: async id => { if (id) await charStore.loadCharacter(id, true) },
+  loadReplacement: async id => {
+    if (id) await charStore.loadCharacter(id, true)
+    else charStore.clearCurrentCharacter()
+  },
   emitCharactersChanged: ports.broadcastCharactersChanged,
 })
 
@@ -81,21 +82,22 @@ const createTitleId = useId()
 let unsubscribeSettings: (() => void) | null = null
 onMounted(async () => {
   unsubscribeSettings = subscribeSettingsChange(keys => { if (keys.includes(STORAGE_TTS_PROVIDER)) ttsProvider.value = getTtsProvider() })
-  await initCharacterDataDir().catch(() => undefined)
+  await ports.initializeDataDir().catch(() => undefined)
   if (charStore.availableList.length === 0) await charStore.refreshList()
 })
 onUnmounted(() => { unsubscribeSettings?.(); unsubscribeSettings = null })
 watch(() => draft.value?.render, render => {
   if (render === 'live2d' && draft.value?.live2d?.model) void refreshLive2dManifest(draft.value.live2d.model)
-  else live2dManifest.value = null
+  else { live2dManifest.value = null; live2dManifestError.value = '' }
 })
 
 async function refreshLive2dManifest(model: string) {
   try {
-    live2dManifest.value = await loadLive2DManifest(editingId.value, { live2d: { ...(draft.value?.live2d ?? { model }), model } })
+    live2dManifestError.value = ''
+    live2dManifest.value = await ports.loadLive2dManifest(editingId.value, { live2d: { ...(draft.value?.live2d ?? { model }), model } })
   } catch (error) {
     live2dManifest.value = null
-    log.warn('character_mgr.load_manifest.warn', `加载 Live2D 清单失败: ${String(error)}`, error)
+    live2dManifestError.value = error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -115,8 +117,7 @@ async function enterEditor(id: string) {
 
 function openCreateForm() { showCreateForm.value = true; createFormRef.value?.reset() }
 async function pickModelFolder() {
-  const selected = await open({ directory: true, multiple: false, title: t('character.mgr.live2d.pickModel') })
-  return typeof selected === 'string' ? selected : null
+  return ports.pickLive2dModel()
 }
 function creationPorts(): CharacterCreationPorts {
   return {
@@ -130,8 +131,13 @@ function creationPorts(): CharacterCreationPorts {
 }
 function onCreated(id: string) {
   showCreateForm.value = false
-  saveMsg.value = t('character.msg.createdCharacter', { name: id })
-  window.setTimeout(() => { saveMsg.value = '' }, 3000)
+  showSaveMessage(t('character.msg.createdCharacter', { name: id }))
+}
+function showSaveMessage(message: string, duration = 3000) {
+  saveMsg.value = message
+  window.setTimeout(() => {
+    if (saveMsg.value === message) saveMsg.value = ''
+  }, duration)
 }
 function closeCreateForm() { if (!saving.value) showCreateForm.value = false }
 
@@ -140,8 +146,7 @@ async function savePage(): Promise<boolean> {
   draftTick.value++
   if (ok) {
     saveError.value = ''
-    saveMsg.value = t('character.msg.saveSuccess')
-    window.setTimeout(() => { saveMsg.value = '' }, 3000)
+    showSaveMessage(t('character.msg.saveSuccess'))
     return true
   }
   saveError.value = draftSync.error?.message ?? t('safety.saveFailed')
@@ -151,7 +156,7 @@ defineExpose({ dirty, saving, save: savePage })
 
 async function backToList() {
   if (!await leaveDialog.value?.ask(editablePage)) return
-  view.value = 'list'; editingId.value = ''; live2dManifest.value = null
+  view.value = 'list'; editingId.value = ''; live2dManifest.value = null; live2dManifestError.value = ''
 }
 async function deleteCurrentCharacter() {
   if (!editingId.value) return
@@ -159,8 +164,8 @@ async function deleteCurrentCharacter() {
   try {
     const result = await deletionWorkflow.delete({ targetId: editingId.value, currentId: charStore.currentId, availableIds: charStore.availableList, confirmed: true })
     if (result.status === 'succeeded') {
-      showDeleteConfirm.value = false; view.value = 'list'; editingId.value = ''; live2dManifest.value = null
-      saveMsg.value = t('character.msg.deletedCharacter'); window.setTimeout(() => { saveMsg.value = '' }, 3000)
+      showDeleteConfirm.value = false; view.value = 'list'; editingId.value = ''; live2dManifest.value = null; live2dManifestError.value = ''
+      showSaveMessage(t('character.msg.deletedCharacter'))
     } else if (result.status === 'failed') saveError.value = result.reason
   } finally { isDeleting.value = false }
 }
@@ -171,18 +176,18 @@ function handleNameInput(value: string) { editDraft(() => draftSync.setName(valu
 function handleDescriptionInput(value: string) { editDraft(() => draftSync.setDescription(value)) }
 function handlePromptInput(value: string) { editDraft(() => draftSync.setPrompt(value)) }
 async function importPack() {
-  const result = await packWorkflow.importCharacterPack()
+    const result = await packWorkflow.importCharacterPack()
   if (result.status === 'succeeded') {
     const parts: string[] = []
     if (result.imported.length) parts.push(t('character.msg.imported', { n: result.imported.length }))
     if (result.skipped.length) parts.push(t('character.msg.skipped', { n: result.skipped.length }))
-    saveMsg.value = parts.length ? parts.join(' · ') : t('character.msg.nothingToImport'); window.setTimeout(() => { saveMsg.value = '' }, 4000)
+    showSaveMessage(parts.length ? parts.join(' · ') : t('character.msg.nothingToImport'), 4000)
   } else if (result.status === 'failed') saveError.value = result.reason
 }
 async function exportPack() {
   if (!editingId.value) return
   const result = await packWorkflow.exportCharacterPack(editingId.value)
-  if (result.status === 'succeeded') { saveMsg.value = t('character.msg.packExported'); window.setTimeout(() => { saveMsg.value = '' }, 3000) }
+  if (result.status === 'succeeded') showSaveMessage(t('character.msg.packExported'))
   else if (result.status === 'failed') saveError.value = result.reason
 }
 </script>
@@ -204,7 +209,7 @@ async function exportPack() {
         <div class="editor-body">
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-id-badge"></i> {{ t('character.mgr.groupBasic') }}</h3><div class="form-group"><label class="lang-label">{{ t('character.mgr.descLabel') }}</label><input :value="draft?.description" class="form-input" :placeholder="t('character.mgr.descPlaceholder')" @input="handleDescriptionInput(($event.target as HTMLInputElement).value)" /></div><p class="mgr-desc"><i class="fas fa-fingerprint"></i> ID: {{ editingId }}</p></section>
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-pencil"></i> {{ t('character.mgr.groupPersona') }}</h3><textarea :value="draft?.prompt" class="mgr-textarea" rows="8" @input="handlePromptInput(($event.target as HTMLTextAreaElement).value)"></textarea></section>
-          <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-images"></i> {{ t('character.mgr.groupAppearance') }}</h3><CharacterAppearanceEditor v-if="draft" :character-id="editingId" :render="draft.render" :draft="appearanceDraft" :manifest="live2dManifest" :file-port="ports.files" :bust-image-cache="bustImageCache" :image-url="charStore.getImageUrl" :pick-live2d-model="pickModelFolder" :live2d-port="ports.live2d" :load-live2d-manifest="model => loadLive2DManifest(editingId, { live2d: { ...(draft?.live2d ?? { model }), model } })" @edit="handleAppearanceEdit" @live2d-manifest-loaded="live2dManifest = $event" @file-operation-error="saveError = $event" /></section>
+          <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-images"></i> {{ t('character.mgr.groupAppearance') }}</h3><CharacterAppearanceEditor v-if="draft" :character-id="editingId" :render="draft.render" :draft="appearanceDraft" :manifest="live2dManifest" :manifest-error="live2dManifestError" :file-port="ports.appearanceFiles" :bust-image-cache="ports.bustImageCache" :image-url="charStore.getImageUrl" :pick-live2d-model="pickModelFolder" :live2d-port="ports.live2d" :load-live2d-manifest="model => ports.loadLive2dManifest(editingId, { live2d: { ...(draft?.live2d ?? { model }), model } })" @edit="handleAppearanceEdit" @live2d-manifest-loaded="live2dManifest = $event; live2dManifestError = ''" @file-operation-error="saveError = $event" /></section>
           <section class="mgr-section"><h3 class="mgr-label"><i class="fas fa-microphone"></i> {{ t('character.mgr.groupVoice') }}</h3><CharacterVoiceEditor v-if="draft" :draft="voiceDraft" :provider="ttsProvider" :character-id="editingId" :ports="defaultCharacterVoiceEditorPorts" @change="handleVoiceChange" @provider-change="ttsProvider = $event" /></section>
         </div>
       </div>

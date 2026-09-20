@@ -5,6 +5,7 @@
  * 缓存失效和跨窗口广播都通过端口注入。角色包的 zip 布局与安全校验仍由
  * Rust `pack` 模块负责，前端不复制那部分规则。
  */
+import { characterErrorReason } from './characterError'
 
 export type CharacterPackOperation = 'import' | 'export'
 export type CharacterPackFailureStep =
@@ -83,23 +84,10 @@ interface Failure extends Error {
 }
 
 function failure(step: CharacterPackFailureStep, cause: unknown): Failure {
-  const error = new Error(toReason(cause)) as Failure
+  const error = new Error(characterErrorReason(cause)) as Failure
   error.step = step
   error.cause = cause
   return error
-}
-
-/** 将 Tauri 的 String 错误、Error 及未知值归一成稳定诊断文本。 */
-export function toReason(cause: unknown): string {
-  if (cause instanceof Error && cause.message) return cause.message
-  if (typeof cause === 'string' && cause) return cause
-  try {
-    const serialized = JSON.stringify(cause)
-    if (serialized !== undefined) return serialized
-  } catch {
-    // 循环对象等不可序列化值继续走 String 兜底。
-  }
-  return String(cause)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -235,7 +223,7 @@ export class CharacterPackWorkflow {
       status: 'failed',
       operation,
       step,
-      reason: toReason(cause),
+      reason: characterErrorReason(cause),
       cause: error.cause,
     }
   }

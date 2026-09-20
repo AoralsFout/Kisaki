@@ -1,5 +1,6 @@
 import type { CharacterFilePort } from './characterFilePort'
 import type { CharacterImageData, Live2DConfig } from '../../character/loader'
+import { characterErrorReason } from './characterError'
 
 /** 外观编辑器可以发出的草稿编辑意图。草稿本身不由外观编辑器持有。 */
 export type CharacterAppearanceEditIntent =
@@ -52,17 +53,6 @@ export interface CharacterAppearanceImageOperationInput {
   bustImageCache: () => void | Promise<void>
 }
 
-function reasonFrom(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  try {
-    const serialized = JSON.stringify(error)
-    return serialized === undefined ? String(error) : serialized
-  } catch {
-    return String(error)
-  }
-}
-
 async function bustCache(
   bustImageCache: () => void | Promise<void>,
 ): Promise<{ cacheBusted: boolean; error?: AppearanceOperationError }> {
@@ -72,7 +62,7 @@ async function bustCache(
   } catch (error) {
     return {
       cacheBusted: false,
-      error: { step: 'cache', reason: reasonFrom(error) },
+      error: { step: 'cache', reason: characterErrorReason(error) },
     }
   }
 }
@@ -88,7 +78,7 @@ export async function saveCharacterAppearanceImage(
       ok: false,
       persisted: false,
       cacheBusted: false,
-      error: { step: 'save-image', reason: reasonFrom(error) },
+      error: { step: 'save-image', reason: characterErrorReason(error) },
     }
   }
 
@@ -97,7 +87,7 @@ export async function saveCharacterAppearanceImage(
     try {
       await input.port.deleteImage(input.characterId, input.previousFilename)
     } catch (error) {
-      postError = { step: 'delete-image', reason: reasonFrom(error) }
+      postError = { step: 'delete-image', reason: characterErrorReason(error) }
     }
   }
 
@@ -129,7 +119,7 @@ export async function deleteCharacterAppearanceImage(
       ok: false,
       persisted: false,
       cacheBusted: false,
-      error: { step: 'delete-image', reason: reasonFrom(error) },
+      error: { step: 'delete-image', reason: characterErrorReason(error) },
     }
   }
 
@@ -164,6 +154,6 @@ export async function importCharacterLive2DModel(
     if (!model) return { ok: false, error: '导入命令未返回模型路径' }
     return { ok: true, model }
   } catch (error) {
-    return { ok: false, error: reasonFrom(error) }
+    return { ok: false, error: characterErrorReason(error) }
   }
 }

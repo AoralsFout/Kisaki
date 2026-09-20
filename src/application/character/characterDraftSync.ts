@@ -3,6 +3,7 @@ import type { CharacterSaveRequest, CharacterSaveResult } from './characterSaveW
 import type { CharacterVoiceDraftField } from './characterVoiceEditor'
 import { buildCharacterJson, type CharacterEdits } from '../../character/characterJson'
 import type { CharacterData, CharacterImageData, Live2DConfig, RenderKind } from '../../character/loader'
+import { characterErrorReason } from './characterError'
 
 /** 草稿同步层对外暴露的完整只读投影。数组和 Live2D 配置均属于投影的一部分。 */
 export interface CharacterDraftProjection {
@@ -102,17 +103,6 @@ interface MutableDraft {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
-}
-
-function reasonFrom(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  try {
-    const serialized = JSON.stringify(error)
-    return serialized === undefined ? String(error) : serialized
-  } catch {
-    return String(error)
-  }
 }
 
 function serialize(value: unknown): string {
@@ -352,7 +342,7 @@ export function createCharacterDraftSync(options: CharacterDraftSyncOptions): Ch
       }
       return true
     } catch (cause) {
-      const message = reasonFrom(cause)
+      const message = characterErrorReason(cause)
       errorState = { type: 'save-threw', message }
       return false
     } finally {

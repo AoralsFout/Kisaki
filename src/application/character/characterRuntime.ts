@@ -101,6 +101,18 @@ export class CharacterRuntime {
     this.publish()
   }
 
+  /** 清除当前角色并通知渲染器进入空状态。 */
+  clearSelection(): void {
+    this.state = {
+      characterId: null,
+      render: null,
+      look: null,
+      capabilities: null,
+      revision: this.state.revision + 1,
+    }
+    this.publish()
+  }
+
   setLook(change: Partial<CharacterLook>): void {
     if (!this.state.look || !this.state.capabilities) throw new Error('No character is selected')
     const next = { ...this.state.look, ...change }

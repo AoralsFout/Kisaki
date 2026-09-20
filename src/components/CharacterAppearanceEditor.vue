@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<{
   render: RenderKind
   draft: CharacterAppearanceProjection
   manifest?: Live2DManifest | null
+  manifestError?: string
   filePort?: CharacterAppearanceImagePort
   bustImageCache?: () => void | Promise<void>
   imageUrl?: (filename: string) => string
@@ -38,6 +39,7 @@ const props = withDefaults(defineProps<{
   createFilename?: (file: File, index: number) => string
 }>(), {
   manifest: null,
+  manifestError: '',
   filePort: undefined,
   bustImageCache: () => undefined,
   imageUrl: (filename: string) => filename,
@@ -270,7 +272,7 @@ async function reimportLive2dModel() {
 
 <template>
   <div class="appearance-editor" :aria-busy="busy">
-    <p v-if="errorMessage" class="appearance-error" role="alert" data-selectable>{{ errorMessage }}</p>
+    <p v-if="errorMessage || manifestError" class="appearance-error" role="alert" data-selectable>{{ errorMessage || manifestError }}</p>
 
     <template v-if="render === 'illustration'">
       <section class="appearance-section">

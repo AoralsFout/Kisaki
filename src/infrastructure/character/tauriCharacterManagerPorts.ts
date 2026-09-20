@@ -1,18 +1,13 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
-import type { CharacterAppearanceLive2DImportPort } from '../../application/character/characterAppearance'
-import type { CharacterCreationPorts } from '../../application/character/characterCreation'
-import type { CharacterFilePort } from '../../application/character/characterFilePort'
+import { open as tauriOpen } from '@tauri-apps/plugin-dialog'
+import { bustImageCache, initCharacterDataDir } from '../../character/loader'
+import { loadLive2DManifest } from '../../character/live2d/manifest'
 import { createTauriCharacterFilePort, type CharacterInvoke } from './tauriCharacterFilePort'
+import type { CharacterManagerPorts } from '../../application/character/characterManagerPorts'
 
 /** 角色管理组合根所需的 Tauri 协议适配；业务编排不依赖 invoke。 */
-export interface TauriCharacterManagerPorts {
-  files: CharacterFilePort
-  live2d: CharacterAppearanceLive2DImportPort
-  creationFiles: CharacterCreationPorts['files']
-  deleteCharacter: (characterId: string) => Promise<void>
-  broadcastCharactersChanged: () => Promise<void>
-}
+export type TauriCharacterManagerPorts = CharacterManagerPorts
 
 export function createTauriCharacterManagerPorts(
   invokeCommand: CharacterInvoke = tauriInvoke as CharacterInvoke,
@@ -23,6 +18,14 @@ export function createTauriCharacterManagerPorts(
     creationFiles: {
       writePrompt: files.writePrompt,
       writeDefinition: files.writeDefinition,
+    },
+    appearanceFiles: files,
+    initializeDataDir: initCharacterDataDir,
+    bustImageCache,
+    loadLive2dManifest: loadLive2DManifest,
+    pickLive2dModel: async () => {
+      const selected = await tauriOpen({ directory: true, multiple: false })
+      return typeof selected === 'string' ? selected : null
     },
     live2d: {
       importLive2dModel(characterId, sourceDirectory) {

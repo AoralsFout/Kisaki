@@ -86,6 +86,17 @@ describe('useCharacterStore init', () => {
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ characterId: 'chryso' }))
   })
 
+  it('清空当前角色时不保留数据或 Runtime 活动角色', async () => {
+    const store = useCharacterStore()
+    await store.init('chryso')
+
+    store.clearCurrentCharacter()
+
+    expect(store.data).toBeNull()
+    expect(store.currentId).toBe('')
+    expect(store.getRuntimeSnapshot()).toMatchObject({ characterId: null, look: null })
+  })
+
   it('在 Store 边界把情绪意图解析为可渲染的立绘组合', async () => {
     const store = useCharacterStore()
     await store.init('chryso')

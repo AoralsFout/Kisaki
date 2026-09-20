@@ -1,5 +1,6 @@
 import type { CharacterFilePort } from './characterFilePort'
 import type { RenderKind } from '../../character/loader'
+import { characterErrorReason } from './characterError'
 
 /** 新建角色表单的渲染类型。 */
 export type CharacterCreationRender = RenderKind
@@ -16,9 +17,6 @@ export interface CharacterCreationInput {
   description: string
   render: CharacterCreationRender
   live2dModel?: Live2DModelSelection | string | null
-  /** 与旧创建表单字段同义，便于组合根逐步迁移。 */
-  modelDirectory?: string
-  live2dModelDirectory?: string
 }
 
 export type CharacterCreationField = 'id' | 'name' | 'description' | 'render' | 'live2dModel'
@@ -76,7 +74,7 @@ export function validateCreateCharacter(
   if (!input.render) errors.render = 'required'
 
   if (input.render === 'live2d') {
-    const model = normalizeSelection(input.live2dModel ?? input.modelDirectory ?? input.live2dModelDirectory)
+    const model = normalizeSelection(input.live2dModel)
     if (!model?.directory.trim()) {
       errors.live2dModel = 'model-required'
     } else if (
@@ -171,16 +169,6 @@ export interface CharacterCreationResult {
   }
 }
 
-function reasonFrom(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  try {
-    return JSON.stringify(error) ?? String(error)
-  } catch {
-    return String(error)
-  }
-}
-
 function failed(
   validation: CharacterCreationValidation,
   stage: CharacterCreationStage,
@@ -191,7 +179,7 @@ function failed(
     success: false,
     ok: false,
     validation,
-    error: { stage, reason: reasonFrom(cause), cause },
+    error: { stage, reason: characterErrorReason(cause), cause },
   }
 }
 
@@ -224,7 +212,7 @@ export async function createCharacter(
   let imported = false
 
   if (input.render === 'live2d') {
-    const source = normalizeSelection(input.live2dModel ?? input.modelDirectory ?? input.live2dModelDirectory)
+    const source = normalizeSelection(input.live2dModel)
     if (!ports.importLive2DModel) {
       return failed(validation, 'live2d-import', '未配置 Live2D 导入端口')
     }

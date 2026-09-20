@@ -53,7 +53,13 @@ export const useCharacterStore = defineStore('character', () => {
   let pendingVisualState: Partial<CharacterVisualState> | null = null
 
   runtime.subscribe(snapshot => {
-    if (!snapshot.characterId || !snapshot.look) return
+    if (!snapshot.characterId || !snapshot.look) {
+      currentId.value = ''
+      currentEmotion.value = ''
+      currentStance.value = ''
+      currentCostume.value = ''
+      return
+    }
     currentId.value = snapshot.characterId
     currentEmotion.value = snapshot.look.emotion
     currentStance.value = snapshot.look.stance
@@ -126,6 +132,18 @@ export const useCharacterStore = defineStore('character', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /** 删除最后一个角色后清空数据、当前 id 与运行时选择，避免继续持有已删除角色。 */
+  function clearCurrentCharacter() {
+    data.value = null
+    pendingVisualState = null
+    currentId.value = ''
+    currentEmotion.value = ''
+    currentStance.value = ''
+    currentCostume.value = ''
+    currentScreenPose.value = DEFAULT_POSE
+    runtime.clearSelection()
   }
 
   /** 刷新可用角色列表及轻量元数据（显示名称/渲染类型） */
@@ -256,6 +274,6 @@ export const useCharacterStore = defineStore('character', () => {
     getImageUrl, getCharacterName, getCharacterRender,
     applyVisualState, setVisualLook, setScreenPose, playMotion,
     getVisualStateSnapshot, attachRenderer, getRuntimeSnapshot, updateRuntimeCapabilities, hasActiveRenderer,
-    loadCharacter, refreshList, init,
+    loadCharacter, clearCurrentCharacter, refreshList, init,
   }
 })

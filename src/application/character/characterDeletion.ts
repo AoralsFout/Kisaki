@@ -1,4 +1,5 @@
 import { chooseCharacterAfterDelete } from '../../character/editorSafety'
+import { characterErrorReason } from './characterError'
 
 /** 删除流程中可能失败的阶段。 */
 export type CharacterDeletionFailureStep = 'delete' | 'refresh' | 'load-replacement' | 'broadcast'
@@ -16,8 +17,6 @@ export interface CharacterDeletionRequest {
   currentId: string | null
   /** 删除前的列表快照；刷新端口返回新列表时以新列表为准。 */
   availableIds?: readonly string[]
-  /** 与 availableIds 等价的兼容命名，便于组合根直接传入 store 列表。 */
-  availableList?: readonly string[]
   /** 确认弹窗只负责提供这个事实，工作流不会自行绕过确认。 */
   confirmed: boolean
 }
@@ -67,21 +66,8 @@ export type CharacterDeletionResult =
 
 type RefreshResult = readonly string[] | void
 
-/** 将 Tauri 的字符串、Error 和未知异常归一成稳定的界面诊断文本。 */
-export function characterDeletionReason(cause: unknown): string {
-  if (cause instanceof Error && cause.message) return cause.message
-  if (typeof cause === 'string' && cause) return cause
-  try {
-    const serialized = JSON.stringify(cause)
-    if (serialized !== undefined) return serialized
-  } catch {
-    // 循环对象等不可序列化值继续使用字符串兜底。
-  }
-  return String(cause)
-}
-
 function availableIdsOf(request: CharacterDeletionRequest): readonly string[] {
-  return request.availableIds ?? request.availableList ?? []
+  return request.availableIds ?? []
 }
 
 function failed(
@@ -89,7 +75,7 @@ function failed(
   step: CharacterDeletionFailureStep,
   cause: unknown,
 ): CharacterDeletionFailed {
-  const reason = characterDeletionReason(cause)
+  const reason = characterErrorReason(cause)
   return {
     status: 'failed',
     targetId,

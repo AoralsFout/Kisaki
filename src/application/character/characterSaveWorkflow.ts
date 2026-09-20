@@ -1,6 +1,7 @@
 import { buildCharacterJson, type CharacterEdits } from '../../character/characterJson'
 import type { CharacterData, RenderKind } from '../../character/loader'
 import type { CharacterFilePort } from './characterFilePort'
+import { characterErrorReason } from './characterError'
 
 /** 保存编排器的固定阶段；顺序是持久化协议的一部分。 */
 export type CharacterSaveStep = 'prompt' | 'definition' | 'orphan-images' | 'cache' | 'broadcast'
@@ -48,16 +49,6 @@ export interface CharacterSaveResult {
   orphanedFiles: string[]
 }
 
-function reasonFrom(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
-  try {
-    return JSON.stringify(error) ?? String(error)
-  } catch {
-    return String(error)
-  }
-}
-
 function diagnostic(
   step: CharacterSaveStep,
   error: unknown,
@@ -66,7 +57,7 @@ function diagnostic(
 ): CharacterSaveDiagnostic {
   return {
     step,
-    reason: reasonFrom(error),
+    reason: characterErrorReason(error),
     ignorable,
     ...(filename ? { filename } : {}),
     cause: error,

@@ -25,18 +25,20 @@ const store = reactive({
     }
   }),
   getImageUrl: (file: string) => file,
+  clearCurrentCharacter: vi.fn(),
 })
 vi.mock('../stores/character', () => ({ useCharacterStore: () => store }))
 
-vi.mock('./CharacterList.vue', () => ({ default: defineComponent({ emits: ['select', 'create'], template: '<button class="choose" @click="$emit(\'select\', \'alice\')">choose</button>' }) }))
-vi.mock('./CharacterCreateForm.vue', () => ({ default: defineComponent({ emits: ['created', 'close'], template: '<div data-testid="create-form" />' }) }))
-vi.mock('./CharacterAppearanceEditor.vue', () => ({ default: defineComponent({ emits: ['edit'], template: '<button class="appearance" @click="$emit(\'edit\', { type: \'add-pose\', value: \'happy\' })">appearance</button>' }) }))
+vi.mock('./CharacterList.vue', () => ({ default: defineComponent({ emits: ['select', 'create'], template: '<div><button class="choose" @click="$emit(\'select\', \'alice\')">choose</button><button class="create" @click="$emit(\'create\')">create</button></div>' }) }))
+vi.mock('./CharacterCreateForm.vue', () => ({ default: defineComponent({ emits: ['created', 'close'], template: '<button class="create-success" @click="$emit(\'created\', \'alice\')">created</button>' }) }))
+vi.mock('./CharacterAppearanceEditor.vue', () => ({ default: defineComponent({ props: ['manifestError'], emits: ['edit'], template: '<div><p v-if="manifestError" class="manifest-error">{{ manifestError }}</p><button class="appearance" @click="$emit(\'edit\', { type: \'add-pose\', value: \'happy\' })">appearance</button></div>' }) }))
 vi.mock('./CharacterVoiceEditor.vue', () => ({ default: defineComponent({ template: '<div data-testid="voice-editor" />' }) }))
 vi.mock('./Live2DPreview.vue', () => ({ default: defineComponent({ template: '<div data-testid="live2d-preview" />' }) }))
 vi.mock('./UnsavedDialog.vue', () => ({ default: defineComponent({ setup(_, { expose }) { expose({ ask: vi.fn().mockResolvedValue(false) }); return {} }, template: '<div />' }) }))
-vi.mock('./ConfirmDialog.vue', () => ({ default: defineComponent({ template: '<div />' }) }))
+vi.mock('./ConfirmDialog.vue', () => ({ default: defineComponent({ emits: ['confirm', 'cancel'], template: '<button class="confirm-delete" @click="$emit(\'confirm\')">confirm</button>' }) }))
 
 import CharacterManager from './CharacterManager.vue'
+import { loadLive2DManifest } from '../character/live2d/manifest'
 
 describe('CharacterManager 装配', () => {
   beforeEach(() => { store.data = null; vi.clearAllMocks() })
@@ -72,6 +74,49 @@ describe('CharacterManager 装配', () => {
     await wrapper.get('.editor-name-input').setValue('changed')
     await wrapper.get('.btn-back').trigger('click')
     await flushPromises()
+    expect(wrapper.find('.editor-view').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('页面提示统一展示创建结果并按时清理', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(CharacterManager)
+    await wrapper.get('.create').trigger('click')
+    await wrapper.get('.create-success').trigger('click')
+    expect(wrapper.find('.save-msg').text()).toContain('character.msg.createdCharacter')
+    vi.advanceTimersByTime(3000)
+    await flushPromises()
+    expect(wrapper.find('.save-msg').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('删除最后一个角色后清空 store 的活动角色状态', async () => {
+    const wrapper = mount(CharacterManager)
+    await wrapper.get('.choose').trigger('click')
+    await flushPromises()
+    await wrapper.get('.btn-delete').trigger('click')
+    await wrapper.get('.confirm-delete').trigger('click')
+    await flushPromises()
+    expect(store.clearCurrentCharacter).toHaveBeenCalledOnce()
+    expect(wrapper.find('.editor-view').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('已有 Live2D 角色清单加载失败时展示可诊断错误且仍保留编辑器', async () => {
+    vi.mocked(loadLive2DManifest).mockRejectedValueOnce(new Error('model3.json 不可读'))
+    store.loadCharacter.mockImplementationOnce(async () => {
+      store.data = {
+        id: 'alice', name: 'Alice', description: '', version: 2, prompt: 'hello',
+        render: 'live2d', poses: [], emotions: [], costumes: [], images: [],
+        live2d: { model: 'model/model3.json', scale: 1 }, voice: '', voiceModel: '',
+        voiceLanguage: 'ja-JP', textLanguage: 'zh-CN',
+      }
+    })
+    const wrapper = mount(CharacterManager)
+    await wrapper.get('.choose').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.manifest-error').text()).toContain('model3.json 不可读')
     expect(wrapper.find('.editor-view').exists()).toBe(true)
     wrapper.unmount()
   })

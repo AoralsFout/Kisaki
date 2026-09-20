@@ -108,6 +108,20 @@ describe('CharacterRuntime', () => {
     expect(runtime.snapshot()).toEqual(before)
   })
 
+  it('clears the selected character into an explicit empty state', () => {
+    const runtime = new CharacterRuntime()
+    runtime.selectCharacter(character())
+
+    runtime.clearSelection()
+
+    expect(runtime.snapshot()).toMatchObject({
+      characterId: null,
+      render: null,
+      look: null,
+      capabilities: null,
+    })
+  })
+
   it('serializes renderer applications and isolates renderer failures', async () => {
     const applied: number[] = []
     const errors: unknown[] = []
