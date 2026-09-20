@@ -35,11 +35,12 @@ import type { Live2DConfig } from '../character/loader'
 import {
   DEFAULT_VOICE_LANGUAGE,
   DEFAULT_TEXT_LANGUAGE,
-  EVENT_CHARACTERS_CHANGED,
   STORAGE_TTS_PROVIDER,
 } from '../constants'
 import { useModalFocus } from '../utils/modalFocus'
 import { subscribeSettingsChange } from '../application/settings/settingsChangeStream'
+import { emitCharactersChanged } from '../character/editorEvents'
+import { chooseCharacterAfterDelete } from '../character/editorSafety'
 
 const charStore = useCharacterStore()
 const ttsProvider = ref(getTtsProvider())
@@ -259,7 +260,7 @@ async function createCharacterFromForm() {
     })
 
     await charStore.refreshList()
-    emit(EVENT_CHARACTERS_CHANGED)
+    void emitCharactersChanged(emit)
     showCreateForm.value = false
     await enterEditor(id)
     saveMsg.value = t('character.msg.createdCharacter', { name })
@@ -408,13 +409,15 @@ async function deleteCharacter() {
   try {
     await invoke('delete_character', { id: editingId.value })
     await charStore.refreshList()
-    emit(EVENT_CHARACTERS_CHANGED)
+    void emitCharactersChanged(emit)
     // 如果删除的是当前正在使用的角色，刷新 store
-    if (charStore.currentId === editingId.value) {
-      const list = charStore.availableList
-      if (list.length > 0) {
-        await charStore.loadCharacter(list[0], true)
-      }
+    const replacement = chooseCharacterAfterDelete(
+      charStore.currentId,
+      editingId.value,
+      charStore.availableList,
+    )
+    if (replacement && replacement !== charStore.currentId) {
+      await charStore.loadCharacter(replacement, true)
     }
     showDeleteConfirm.value = false
     hasChanges.value = false
@@ -625,7 +628,7 @@ async function persistAll() {
   await charStore.loadCharacter(editingId.value, true)
   await loadData()
   bustImageCache()  // 递增缓存版本，下次图片请求使用新 URL
-  await emit(EVENT_CHARACTERS_CHANGED).catch(() => {}) // 通知主窗口刷新
+  await emitCharactersChanged(emit).catch(() => {}) // 通知主窗口刷新
   saveMsg.value = t('character.msg.saveSuccess')
   hasChanges.value = false
   setTimeout(() => { saveMsg.value = '' }, 3000)
@@ -674,7 +677,7 @@ async function importPack() {
     const result = await invoke('import_character_pack', { srcPath: selected }) as { imported: string[]; skipped: string[] }
     await charStore.refreshList()
     bustImageCache()
-    emit(EVENT_CHARACTERS_CHANGED)
+    void emitCharactersChanged(emit)
     const parts: string[] = []
     if (result.imported.length) parts.push(t('character.msg.imported', { n: result.imported.length }))
     if (result.skipped.length) parts.push(t('character.msg.skipped', { n: result.skipped.length }))
