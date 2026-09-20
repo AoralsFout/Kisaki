@@ -40,30 +40,30 @@ function handleSelect(id: string) {
         <div class="panel-header">
           <h2 :id="titleId" class="panel-title"><i class="fas fa-masks-theater"></i> {{ t('character.select.title') }}</h2>
           <div class="header-actions">
-            <span class="count">{{ t('character.select.count', { n: charStore.availableList.length }) }}</span>
+            <span class="count">{{ t('character.select.count', { n: charStore.characterDisplayList.length }) }}</span>
             <button class="btn-close" @click="emit('close')" :aria-label="t('character.select.aria')">✕</button>
           </div>
         </div>
 
         <div ref="listRef" class="char-list">
           <button
-            v-for="id in charStore.availableList"
-            :key="id"
-            :class="['char-item', { active: id === charStore.currentId }]"
-            :aria-current="id === charStore.currentId ? 'true' : undefined"
-            @click="handleSelect(id)"
+            v-for="character in charStore.characterDisplayList"
+            :key="character.id"
+            :class="['char-item', { active: character.id === charStore.currentId }]"
+            :aria-current="character.id === charStore.currentId ? 'true' : undefined"
+            @click="handleSelect(character.id)"
           >
             <div class="char-avatar">
-              <i v-if="id === charStore.currentId" class="fas fa-star"></i>
+              <i v-if="character.id === charStore.currentId" class="fas fa-star"></i>
               <i v-else class="fas fa-ribbon"></i>
             </div>
             <div class="char-info">
               <div class="char-name">
-                {{ id === charStore.currentId ? t('character.select.current', { name: charStore.name }) : charStore.getCharacterName(id) }}
+                {{ character.id === charStore.currentId ? t('character.select.current', { name: character.name }) : character.name }}
               </div>
-              <div class="char-id">{{ id }}</div>
+              <div class="char-id">{{ character.id }}</div>
             </div>
-            <div v-if="id === charStore.currentId" class="char-check"><i class="fas fa-check"></i></div>
+            <div v-if="character.id === charStore.currentId" class="char-check"><i class="fas fa-check"></i></div>
           </button>
 
           <div class="list-end"></div>

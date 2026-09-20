@@ -106,7 +106,9 @@ export interface CharacterData {
 /** 图片完整 URL。所有角色文件统一存放于 data_dir，走 asset:// 协议读取。 */
 export function imageUrl(charId: string, fileName: string): string {
   if (!_charactersPath) return ''  // data_dir 未就绪（非 Tauri 环境）
-  return convertFileSrc(`${_charactersPath}/${charId}/images/${fileName}`)
+  const url = convertFileSrc(`${_charactersPath}/${charId}/images/${fileName}`)
+  // 版本号必须进入 URL；仅递增内存计数不会让浏览器放弃旧图片缓存。
+  return _imgVer > 0 ? `${url}${url.includes('?') ? '&' : '?'}v=${_imgVer}` : url
 }
 
 /** 角色目录下任意文件的绝对路径（data_dir 根）。 */
