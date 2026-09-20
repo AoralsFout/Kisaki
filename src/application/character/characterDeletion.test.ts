@@ -117,4 +117,3 @@ describe('CharacterDeletionWorkflow', () => {
     expect(workflow.busy).toBe(false)
   })
 })
-

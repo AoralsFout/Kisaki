@@ -195,4 +195,3 @@ export async function runCharacterDeletion(
 ): Promise<CharacterDeletionResult> {
   return new CharacterDeletionWorkflow(ports).delete(request)
 }
-
