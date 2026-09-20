@@ -540,13 +540,14 @@ fn kill_process_tree(child: &mut std::process::Child) {
 fn kill_process_tree(child: &mut std::process::Child) {
     let pid = child.id();
     let _ = StdCommand::new("kill")
-        .args(["-TERM", &format!("-{}", pid)])
+        // 负 PID 表示进程组；`--` 防止 kill 把它再次解析成信号选项。
+        .args(["-TERM", "--", &format!("-{}", pid)])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
     std::thread::sleep(Duration::from_millis(150));
     let _ = StdCommand::new("kill")
-        .args(["-KILL", &format!("-{}", pid)])
+        .args(["-KILL", "--", &format!("-{}", pid)])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
