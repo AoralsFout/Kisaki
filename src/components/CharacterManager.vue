@@ -221,18 +221,27 @@ async function exportPack() {
 .editor-left { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px; overflow: hidden; height: 100%; box-sizing: border-box; scrollbar-width: none; }
 .editor-left::-webkit-scrollbar { display: none; }
 .editor-sticky { position: sticky; top: 0; z-index: 10; background: var(--c-panel); padding: 14px 0 12px; flex-shrink: 0; }
-.editor-name-input { flex: 1; min-width: 0; padding: 6px 10px; font-size: var(--fs-body); font-weight: 600; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--c-text); outline: none; }
-.editor-name-input:focus { border-color: var(--c-brand); background: var(--c-control); }
-.btn-icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--radius-control); background: var(--c-control); color: var(--c-text-secondary); cursor: pointer; }
-.btn-icon-btn.active { border-color: var(--c-brand); color: var(--c-brand); }
-.editor-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.editor-name-input { flex: 1; min-width: 0; padding: 6px 10px; font-size: var(--fs-body); font-weight: 600; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--c-text); outline: none; transition: border-color 0.15s, background 0.15s; }
+.editor-name-input:hover { background: var(--c-hover); }
+.editor-name-input:focus { border-color: var(--c-brand); background: var(--c-control); box-shadow: var(--focus-ring); }
+.btn-icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--radius-control); background: var(--c-control); color: var(--c-text-secondary); cursor: pointer; transition: all 0.15s; }
+.btn-icon-btn:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.btn-icon-btn.active { border-color: var(--c-brand); color: var(--c-brand); background: var(--c-brand-soft); }
+.editor-topbar { display: flex; align-items: center; justify-content: space-between; }
 .editor-actions { display: flex; align-items: center; gap: 8px; }
 .editor-status { min-height: 18px; margin-top: 2px; }
 .btn-back { padding: 5px 14px; font-size: 13px; border: 1px solid var(--c-border); background: var(--c-control); color: var(--c-text-secondary); border-radius: 8px; cursor: pointer; }
-.btn-save-top { padding: 6px 18px; font-size: 13px; border: none; background: var(--c-brand); color: white; border-radius: 20px; cursor: pointer; }
+.btn-back:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.btn-save-top { padding: 6px 18px; font-size: 13px; font-weight: 500; border: none; background: var(--c-brand); color: white; border-radius: 20px; cursor: pointer; transition: opacity 0.15s; }
+.btn-save-top:hover { opacity: 0.85; }
 .btn-save-top.dirty { background: var(--c-ok); }
 .editor-body { flex: 1; overflow-y: auto; padding-top: 12px; padding-bottom: 16px; }
+.editor-body::-webkit-scrollbar { width: 6px; }
+.editor-body::-webkit-scrollbar-track { background: transparent; }
+.editor-body::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 3px; }
+.editor-body::-webkit-scrollbar-thumb:hover { background: var(--c-border-strong); }
 .l2d-preview-panel { width: clamp(240px, 30vw, 340px); min-width: 0; flex-shrink: 0; background: var(--c-bg); border-left: 1px solid var(--c-border); }
 .mgr-header-row { display: flex; align-items: center; justify-content: space-between; }
-@media (max-width: 760px) { .editor-left { padding: var(--space-2); } .editor-topbar { flex-wrap: wrap; } .editor-name-input { order: 3; flex-basis: 100%; } .l2d-preview-panel { width: min(38vw, 240px); } }
+@media (max-width: 760px) { .editor-left { padding: var(--space-2); } .editor-topbar { flex-wrap: wrap; gap: var(--space-2); } .editor-name-input { order: 3; flex-basis: 100%; } .editor-actions { margin-left: auto; } .l2d-preview-panel { width: min(38vw, 240px); } }
+@media (max-height: 520px) { .modal-card { max-height: 96vh; } .editor-sticky { padding-block: var(--space-1) var(--space-2); } }
 </style>
