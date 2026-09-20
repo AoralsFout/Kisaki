@@ -13,6 +13,14 @@
 
 仓库从 `git remote -v` 推断；在 clone 内运行 `gh` 会自动识别。本仓库远端是 `AoralsFout/Kisaki`。
 
+## GitHub CLI 认证与权限
+
+`gh` 的登录凭据保存在用户级配置目录，不在仓库工作区内。受限环境可能允许 GitHub 完成设备授权，却在最后写入 `hosts.yml` 时失败，导致授权没有持久化。
+
+- 执行 `gh auth login`、`gh auth status`，或其它需要读写用户级 `gh` 配置的命令时，agent 应直接申请提权后运行，不要先在受限环境里走一遍登录流程。
+- 提权理由应明确说明需要读取或保存 GitHub CLI 的用户级认证配置。
+- 登录完成后先运行 `gh auth status` 验证，再进行 issue、PR 等 tracker 操作。
+
 ## PR 是否作为 triage 入口
 
 **PR 作为需求入口：否。**（若本仓库把外部 PR 当需求处理，改成 `yes`；`/triage` 会读这个开关。）
