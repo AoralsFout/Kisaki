@@ -56,6 +56,12 @@ describe('design tokens', () => {
 describe('shared ui stylesheet', () => {
   const css = read('../../styles/ui.css')
 
+  it('keeps character editor primitives in the shared layer', () => {
+    for (const selector of ['.mgr-section', '.mgr-field', '.mgr-label', '.tag-list', '.img-grid', '.modal-card', '.voice-select']) {
+      expect(css).toContain(selector)
+    }
+  })
+
   it('provides the three button variants', () => {
     expect(css).toContain('.btn-primary')
     expect(css).toContain('.btn-secondary')
