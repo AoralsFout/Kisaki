@@ -44,6 +44,20 @@ export interface ConversationContextCompaction {
   summarizedRounds: number
 }
 
+/**
+ * 会话时间线装载时需要带回的摘要统计。
+ *
+ * 目前只有 `summarizedRounds` 属于持久化会话事实；保留对象形状是为了让
+ * 装载调用明确表达「这是统计」，并兼容旧调用传入裸数字的写法。
+ */
+export interface ConversationModelHistoryStats {
+  summarizedRounds: number
+}
+
+export type ConversationModelHistoryStatsInput =
+  | number
+  | Pick<ConversationModelHistoryStats, 'summarizedRounds'>
+
 export type ConversationContextCompactionListener =
   (compaction: ConversationContextCompaction) => void
 
@@ -113,8 +127,9 @@ export class ChatContextModelContext implements ConversationModelContext {
   /** 直接装载会话时间线的模型协议投影，避免快照往返。 */
   loadModelProjection(
     projection: readonly ModelContextMessage[],
-    summarizedRounds = 0,
+    stats: ConversationModelHistoryStatsInput = 0,
   ): void {
+    const summarizedRounds = typeof stats === 'number' ? stats : stats.summarizedRounds
     const summary = projection.find(message => message.role === 'system')
     const history = projection
       .filter(message => message.role !== 'system')

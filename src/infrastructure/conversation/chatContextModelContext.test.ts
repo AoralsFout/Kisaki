@@ -166,7 +166,7 @@ describe('ChatContextModelContext', () => {
       { role: 'tool', content: '已说出', toolCallId: 'say-1' },
     ]
 
-    context.loadModelProjection(projection, 1)
+    context.loadModelProjection(projection, { summarizedRounds: 1 })
     const messages = context.messages([])
 
     expect(messages).toEqual(expect.arrayContaining([
