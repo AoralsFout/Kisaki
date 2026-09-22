@@ -22,7 +22,6 @@ import { ref } from 'vue'
 import { isConfigValid, loadConfig } from '../ai'
 import type { ChatContextInspection, ChatContextSnapshot, ChatInputPayload, ContextStats, ImageAttachment } from '../ai'
 import type { ToolDefinition } from '../agent'
-import { SAY_TOOL_NAME } from '../agent/tools/say'
 import { conversationAssembly, type ConversationAssembly } from '../compositionRoot'
 import { assembleRoundToolList } from '../application/conversation/roundToolList'
 import type { ApprovalDecision, ApprovalRequest } from '../application/tools/approvalGateway'
@@ -37,6 +36,7 @@ import type {
   ConversationToolActivity,
 } from '../application/conversation/conversationSession'
 import { createLogger } from '../utils/logger'
+import type { ModelContextMessage } from '../domain/conversation/events'
 
 const log = createLogger('ChatStore')
 
@@ -360,9 +360,13 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * 加载历史消息（会话切换、回档或恢复历史时使用）。
-   * 保留 system prompt，清除当前消息并用历史消息重建模型上下文。
+   * 界面消息来自 transcript 投影，模型历史直接来自时间线模型投影。
    */
-  function loadMessages(msgs: ChatMessage[], snapshot?: ChatContextSnapshot | null) {
+  function loadMessages(
+    msgs: ChatMessage[],
+    modelContext: readonly ModelContextMessage[] = [],
+    summarizedRounds = 0,
+  ) {
     const _fn = 'loadMessages'
     log.trace("chat_store.load_messages.trace", `[${_fn}] ▶ msgs.length=${msgs.length}`, { fn: _fn, msgs_length: msgs.length })
 
@@ -380,38 +384,8 @@ export const useChatStore = defineStore('chat', () => {
     rejectPendingApproval()
 
     context.reset()
-    if (snapshot && context.restore(snapshot)) {
-      context.restoreUserImages(msgs
-        .filter(msg => msg.role === 'user')
-        .map(msg => ({ text: msg.text, images: msg.images })))
-      log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已恢复持久化协议上下文（${snapshot.messages.length} 条）`, { fn: _fn, snapshot_messages: snapshot.messages.length })
-    } else {
-      // 旧会话兼容：重放界面消息到模型上下文。
-      // 关键：助手回合必须重建为 say 工具调用（而非纯文本）。否则恢复出的历史会呈现
-      // “助手只用纯文本回复、从不调用工具”的范式，模型会模仿它而忘记调用 say/动作工具
-      // （会话切走再切回后表现为“忘记使用工具”）。
-      for (let i = 0; i < msgs.length; i++) {
-        const msg = msgs[i]
-        if (msg.role === 'user') {
-          context.addUserMessage(msg.text, msg.images ?? [])
-          log.trace("chat_store.load_messages.trace", `[${_fn}]   [${i + 1}/${msgs.length}] user → context (${msg.text.length}字)`, { fn: _fn, i: i + 1, msgs_length: msgs.length, text_length: msg.text.length })
-        } else if (msg.role === 'assistant') {
-          // 重建为 say 调用：voice 取持久化的母语台词（旧会话缺失则回退显示文本）
-          const sayId = `say_replay_${i}`
-          context.addToolCalls([{
-            id: sayId,
-            type: 'function',
-            function: {
-              name: SAY_TOOL_NAME,
-              arguments: JSON.stringify({ voice: msg.voice || msg.text, display: msg.text }),
-            },
-          }])
-          context.addToolResult(sayId, '已说出')
-          log.trace("chat_store.load_messages.trace", `[${_fn}]   [${i + 1}/${msgs.length}] assistant → say 调用重建 (${msg.text.length}字)`, { fn: _fn, i: i + 1, msgs_length: msgs.length, text_length: msg.text.length })
-        }
-      }
-      log.debug("chat_store.load_messages.debug", `[${_fn}] ✓ 旧会话消息重放完成（助手回合已重建为 say 调用）`, { fn: _fn })
-    }
+    context.loadModelProjection(modelContext, summarizedRounds)
+    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已装载时间线模型投影（${modelContext.length} 条）`, { fn: _fn, model_context_length: modelContext.length })
 
     refreshProjection()
 

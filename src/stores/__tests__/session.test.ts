@@ -104,6 +104,10 @@ describe('SessionStore v2 projection facade', () => {
       expect.objectContaining({ role: 'assistant', tool_calls: [expect.objectContaining({ id: 'call-1' })] }),
       expect.objectContaining({ role: 'tool', tool_call_id: 'call-1', content: 'contents' }),
     ]))
+    expect(store.currentSession?.modelContext).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', toolCalls: [expect.objectContaining({ id: 'call-1' })] }),
+      expect.objectContaining({ role: 'tool', toolCallId: 'call-1', content: 'contents' }),
+    ]))
     expect(store.canChangeCharacter).toBe(false)
   })
 

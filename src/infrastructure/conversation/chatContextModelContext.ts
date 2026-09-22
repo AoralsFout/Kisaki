@@ -6,16 +6,15 @@
  * 而「什么时候换、换成什么预算」属于装配，不属于回合。
  *
  * 替换因此落在适配器里，作为端口之外的方法：`reset()` 按当前模型配置换一个空的底层上下文，
- * 等价于迁移前 store 里的 `chatContext = createChatContext()`；需要保留内容时由调用方
- * 先 `snapshot()`、换完之后 `restore()`。适配器比端口宽不违反契约 —— 端口是缝，
- * 适配器可以更宽。
+ * `loadModelProjection()` 直接装载会话时间线投影；`snapshot()` / `restore()` 仍只服务于
+ * 当前上下文检查与兼容接口。适配器比端口宽不违反契约 —— 端口是缝，适配器可以更宽。
  */
 import { ChatContext } from '../../ai/context'
 import type { ChatContextInspection, ChatContextSnapshot, ContextStats } from '../../ai/context'
 import { loadConfig } from '../../ai/client'
 import type { ChatMessage } from '../../ai/types'
 import type { ToolDefinition } from '../../agent/types'
-import type { ConversationImage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import type { ConversationModelContext } from '../../application/conversation/conversationSession'
 
@@ -111,6 +110,22 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context = this.createContext()
   }
 
+  /** 直接装载会话时间线的模型协议投影，避免快照往返。 */
+  loadModelProjection(
+    projection: readonly ModelContextMessage[],
+    summarizedRounds = 0,
+  ): void {
+    const summary = projection.find(message => message.role === 'system')
+    const history = projection
+      .filter(message => message.role !== 'system')
+      .map(toChatMessage)
+    this.context.replaceHistory(
+      history,
+      typeof summary?.content === 'string' ? summary.content : '',
+      summarizedRounds,
+    )
+  }
+
   /** 设置自定义 system prompt；换上下文之后由调用方按当前角色重新应用。 */
   setSystemPrompt(
     prompt: string,
@@ -139,5 +154,29 @@ export class ChatContextModelContext implements ConversationModelContext {
   /** 上下文检查器视图：不触发裁剪、不修改统计状态。 */
   inspect(tools: readonly ToolDefinition[]): ChatContextInspection {
     return this.context.inspect([...tools])
+  }
+}
+
+function toChatMessage(message: ModelContextMessage): ChatMessage {
+  return {
+    role: message.role,
+    content: typeof message.content === 'string'
+      ? message.content
+      : message.content.map(part => part.type === 'text'
+        ? { type: 'text', text: part.text }
+        : { type: 'image_url', image_url: { ...part.image_url } }),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.toolCalls
+      ? {
+        tool_calls: message.toolCalls.map(call => ({
+          id: call.id,
+          type: 'function' as const,
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+          },
+        })),
+      }
+      : {}),
   }
 }

@@ -3,6 +3,7 @@ import { ChatContext } from '../../ai/context'
 import type { ChatMessage } from '../../ai/types'
 import type { ToolDefinition } from '../../agent/types'
 import type { ConversationImage } from '../../domain/conversation/events'
+import type { ModelContextMessage } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import { ChatContextModelContext } from './chatContextModelContext'
 
@@ -143,6 +144,41 @@ describe('ChatContextModelContext', () => {
     expect(context.restore(snapshot)).toBe(true)
     expect(textsOf(context.messages([]))).toContain('你好')
     expect(textsOf(context.messages([])).some(text => text.includes('你是小崎'))).toBe(true)
+  })
+
+  it('直接装载时间线模型投影，保留图片、工具交换与滚动摘要', () => {
+    const context = new ChatContextModelContext(trackingFactory().create)
+    context.setSystemPrompt('你是小崎')
+    const projection: ModelContextMessage[] = [
+      { role: 'system', content: '较早回合摘要' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看这张' },
+          { type: 'image_url', image_url: { url: IMAGE.dataUrl, detail: 'auto' } },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'say-1', name: 'say', arguments: { voice: '你好', display: '你好' } }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-1' },
+    ]
+
+    context.loadModelProjection(projection, 1)
+    const messages = context.messages([])
+
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: projection[1].content }),
+      expect.objectContaining({ role: 'assistant', tool_calls: [expect.objectContaining({
+        id: 'say-1',
+        function: expect.objectContaining({ arguments: '{"voice":"你好","display":"你好"}' }),
+      })] }),
+      expect.objectContaining({ role: 'tool', tool_call_id: 'say-1', content: '已说出' }),
+    ]))
+    expect(messages[1].content).toContain('较早回合摘要')
+    expect(context.stats().summarizedRounds).toBe(1)
   })
 
   it('拒绝来路不明的快照时返回 false，不抛错', () => {

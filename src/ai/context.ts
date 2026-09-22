@@ -460,6 +460,25 @@ export class ChatContext {
   }
 
   /**
+   * 直接装载模型历史投影。
+   *
+   * 会话时间线已经是模型协议的权威投影，恢复时不应再经过脱敏快照往返；
+   * 这里保留当前 system prompt，仅替换其后的协议历史与滚动摘要。
+   */
+  replaceHistory(
+    history: readonly ChatMessage[],
+    rollingSummary = '',
+    summarizedRounds = 0,
+  ): void {
+    const system = this.messages[0] ?? getDefaultMessages()[0]
+    this.messages = [system, ...history.map(cloneMessage)]
+    this.rollingSummary = compactText(rollingSummary || '', MAX_ROLLING_SUMMARY_LENGTH)
+    this.summarizedRounds = Math.max(0, summarizedRounds || 0)
+    this.prunedMessages = 0
+    this.lastToolDefinitionTokens = 0
+  }
+
+  /**
    * 会话快照会去掉 base64；切换或重启会话后，从界面历史中恢复用户图片。
    * 以用户消息顺序配对，不影响中间的 assistant/tool 协议消息。
    */
