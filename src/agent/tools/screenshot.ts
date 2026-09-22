@@ -6,7 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import type { ToolOutput } from '../../domain/tools/contracts'
 import { createLogger } from '../../utils/logger'
 

@@ -15,6 +15,7 @@ import type {
   UserMessageAccepted,
 } from './events'
 import { normalizeToolResult } from '../../utils/toolResult'
+import { SAY_TOOL_NAME } from '../tools/say'
 
 export interface CreateSessionOptions {
   id: string
@@ -43,7 +44,6 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-const SAY_TOOL_NAME = 'say'
 const SAY_ACKNOWLEDGED = '已说出'
 
 type SayProjection = {

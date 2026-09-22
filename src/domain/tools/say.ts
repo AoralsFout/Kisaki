@@ -1,19 +1,13 @@
 /**
- * say —— 角色"说话"工具定义
+ * say 工具的模型协议定义。
  *
- * 角色与用户对话的唯一方式：把台词放进 say 的参数，而非写在普通正文里。
- * 这样"说话"成为一次函数调用，可与动作工具（情绪/姿势等）在同一条回复里并存，
- * 也不再依赖脆弱的双语文本格式或 response_format。
- *
- * 注意：say 是对话层（chat store）的职责——它的"执行"就是渲染气泡 + 触发 TTS，
- * 因此**不注册进 agent registry/executor**，仅由 chat store 拼进发给 LLM 的工具列表。
+ * say 是对话层消费的终止性工具，不注册进 Agent 的具体工具实现集合；
+ * 但它的名称和定义属于模型可见协议，因此与其它工具契约同层归属。
  */
-import type { ToolDefinition } from '../../domain/tools/contracts'
+import type { ToolDefinition } from './contracts'
 
-/** say 工具名（供 chat store 识别终止性调用） */
 export const SAY_TOOL_NAME = 'say'
 
-/** say 工具定义（发送给 LLM） */
 export const SAY_TOOL_DEF: ToolDefinition = {
   type: 'function',
   function: {

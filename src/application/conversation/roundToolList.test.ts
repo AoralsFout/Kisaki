@@ -5,7 +5,7 @@
  * 两个调用方都依赖的形状 —— 角色工具在前、say 在末位、授权状态原样透传。
  */
 import { describe, expect, it } from 'vitest'
-import { SAY_TOOL_DEF } from '../../agent/tools/say'
+import { SAY_TOOL_DEF } from '../../domain/tools/say'
 import { assembleRoundToolList } from './roundToolList'
 
 import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'

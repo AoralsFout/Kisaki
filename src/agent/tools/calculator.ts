@@ -3,7 +3,7 @@
  *
  * 使用递归下降解析器安全求值，不依赖 eval / new Function。
  */
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolCalculator')

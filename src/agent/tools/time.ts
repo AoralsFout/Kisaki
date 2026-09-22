@@ -1,7 +1,7 @@
 /**
  * 时间工具 - 获取当前日期和时间
  */
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolTime')

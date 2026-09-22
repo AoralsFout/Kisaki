@@ -32,7 +32,7 @@ import {
   deleteLinesTool as rawDeleteLinesTool, findFilesTool as rawFindFilesTool,
   searchInFilesTool as rawSearchInFilesTool,
 } from '../files'
-import type { Tool } from '../../types'
+import type { Tool } from '../../tool'
 import type { ToolOutput } from '../../../domain/tools/contracts'
 
 const WORKSPACE_ID = 'ws_test'

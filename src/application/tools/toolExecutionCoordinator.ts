@@ -1,6 +1,5 @@
 import type { ToolCall, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
 import type { ApprovalGateway, ApprovalRequest } from './approvalGateway'
-export type { ToolExecutionContext } from '../../domain/tools/contracts'
 
 export interface PreparedToolExecution {
   call: ToolCall

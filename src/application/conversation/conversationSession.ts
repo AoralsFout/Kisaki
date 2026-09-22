@@ -10,7 +10,7 @@
  */
 import { MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES } from '../../ai/images'
 import { MAX_TOOL_TURNS } from '../../ai/modelCapabilities'
-import { SAY_TOOL_NAME } from '../../agent/tools/say'
+import { SAY_TOOL_NAME } from '../../domain/tools/say'
 import { createLogger } from '../../utils/logger'
 import { AssistantMessageCoordinator } from './assistantMessageCoordinator'
 import { ConversationCoordinator, isConversationRunActive, type ConversationRun } from './conversationRun'

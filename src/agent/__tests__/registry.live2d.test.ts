@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { register, getDefinitions } from '../registry'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import type { CharacterCapabilities } from '../../application/character/characterRuntime'
 import { setScreenCaptureEnabled } from '../toolPolicy'
 

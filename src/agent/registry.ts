@@ -4,12 +4,8 @@
  * 管理所有可用工具，提供注册、查找、列出等功能。
  * getDefinitions() 会动态注入当前角色可用值到工具参数定义中。
  */
-import type { Tool, ToolOutput } from './types'
-import type { ToolCatalogContext, ToolDefinition } from '../domain/tools/contracts'
-export type { ToolCatalogContext } from '../domain/tools/contracts'
-
-/** 兼容旧消费者；新代码应从 domain/tools/contracts 引用工具清单上下文。 */
-export type CharacterToolContext = ToolCatalogContext
+import type { Tool } from './tool'
+import type { ToolCatalogContext, ToolDefinition, ToolOutput } from '../domain/tools/contracts'
 import { getCommandEnabled, getScreenCaptureEnabled } from './toolPolicy'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../constants'
 import { createLogger } from '../utils/logger'

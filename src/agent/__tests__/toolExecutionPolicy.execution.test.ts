@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { register } from '../registry'
 import { toolExecutionPolicy } from '../toolExecutionPolicy'
 import { setAutoExecFiles, setScreenCaptureEnabled } from '../toolPolicy'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 
 function registerPolicyTool(name: string, policy: Tool['policy']): void {
   register({

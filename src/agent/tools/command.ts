@@ -5,7 +5,7 @@
  * 再把一次性批准令牌注入 handler。模型无法自行构造或复用批准令牌。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import type { ToolExecutionContext } from '../../domain/tools/contracts'
 import { createLogger } from '../../utils/logger'
 import { beginExecutionTracking, finishExecutionTracking } from '../executionState'

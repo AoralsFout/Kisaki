@@ -2,10 +2,10 @@ import type { ToolCall } from '../domain/tools/contracts'
 import { getAutoExecFiles, getScreenCaptureEnabled } from './toolPolicy'
 import { getTool } from './registry'
 import { approveCommandExecution, prepareCommandExecution } from './tools/command'
+import type { ToolExecutionContext } from '../domain/tools/contracts'
 import {
   ToolExecutionFailure,
   type PreparedToolExecution,
-  type ToolExecutionContext,
   type ToolExecutionPolicy,
 } from '../application/tools/toolExecutionCoordinator'
 

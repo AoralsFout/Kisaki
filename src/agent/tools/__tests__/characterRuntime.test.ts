@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CharacterToolRuntimePort, CharacterToolRuntimeState } from '../../../application/character/characterToolRuntime'
 import type { CharacterData } from '../../../character/loader'
-import type { ToolExecutionContext } from '../../../application/tools/toolExecutionCoordinator'
+import type { ToolExecutionContext } from '../../../domain/tools/contracts'
 import {
   getStateTool,
   setCostumeTool,

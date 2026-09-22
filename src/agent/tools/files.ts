@@ -5,7 +5,7 @@
  * Rust 只接受该不透明能力与相对路径，前端路径仅用于展示。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import type { ToolOutput, ToolExecutionContext } from '../../domain/tools/contracts'
 import { createLogger } from '../../utils/logger'
 

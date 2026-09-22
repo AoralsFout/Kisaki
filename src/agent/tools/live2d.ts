@@ -3,7 +3,7 @@
  *
  * 表情/动作的可用枚举由 registry.getDefinitions 从 CharacterRuntime 能力快照注入。
  */
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolLive2D')

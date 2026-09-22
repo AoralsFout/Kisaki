@@ -8,7 +8,7 @@
  * 它是一个独立的无框架小模块，而不是长在 `conversationSession.ts` 里：展示层要
  * import 它，而回合模块本身是按需动态加载的，不该被静态拽进启动路径。
  */
-import { SAY_TOOL_DEF } from '../../agent/tools/say'
+import { SAY_TOOL_DEF } from '../../domain/tools/say'
 
 import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 
