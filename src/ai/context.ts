@@ -13,6 +13,9 @@ import { getDefaultMessages } from './prompts'
 import { getContextLimit, getMaxRounds } from './modelCapabilities'
 import { langName } from './langNames'
 import { createLogger } from '../utils/logger'
+import { normalizeToolResult } from '../utils/toolResult'
+import { redactEmbeddedImageDataUrl } from './imageInspection'
+import type { ModelHistoryCompaction } from '../domain/conversation/events'
 
 const log = createLogger('ChatContext')
 
@@ -24,7 +27,6 @@ const FALLBACK_MAX_ROUNDS = 10
 const FALLBACK_MAX_CONTEXT_TOKENS = 6000
 
 /** 单条工具结果的软上限；保留头尾，避免错误根因只出现在末尾。 */
-const MAX_TOOL_RESULT_LENGTH = 1600
 const MIN_TOOL_RESULT_LENGTH = 320
 /** 滚动摘要最大字符数；达到上限后继续保留最近部分。 */
 const MAX_ROLLING_SUMMARY_LENGTH = 6000
@@ -94,7 +96,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(tokens) + 4 // 消息结构 overhead
 }
 
-function compactText(text: string, limit: number): string {
+export function compactText(text: string, limit: number): string {
   if (text.length <= limit) return text
   const marker = `\n…（省略 ${text.length - limit} 字符）…\n`
   const available = Math.max(0, limit - marker.length)
@@ -201,15 +203,11 @@ function cloneMessageForInspection(message: ChatMessage): ChatMessage {
     if (part.type === 'text') return part
     const url = part.image_url.url
     if (!url.startsWith('data:')) return part
-    const match = url.match(/^data:([^;,]+)(?:;base64)?,(.*)$/s)
-    const mime = match?.[1] || 'application/octet-stream'
-    const encodedLength = match?.[2]?.length ?? 0
-    const approximateBytes = Math.max(0, Math.floor(encodedLength * 0.75))
     return {
       type: 'image_url',
       image_url: {
         detail: part.image_url.detail,
-        url: `[embedded image: ${mime}, approximately ${approximateBytes} bytes]`,
+        url: redactEmbeddedImageDataUrl(url),
       },
     }
   })
@@ -321,6 +319,7 @@ function buildToolInstructions(render: 'illustration' | 'live2d' = 'illustration
 /** 对话上下文管理器 */
 export class ChatContext {
   private messages: ChatMessage[] = []
+  private readonly assistantMessageCallIds = new Map<string, string>()
   private maxRounds: number
   private customPrompt: string | null = null
   private voiceLang: string = ''
@@ -454,6 +453,7 @@ export class ChatContext {
   ): void {
     const system = this.messages[0] ?? getDefaultMessages()[0]
     this.messages = [system, ...history.map(cloneMessage)]
+    this.assistantMessageCallIds.clear()
     this.rollingSummary = compactText(rollingSummary || '', MAX_ROLLING_SUMMARY_LENGTH)
     this.summarizedRounds = Math.max(0, summarizedRounds || 0)
     this.prunedMessages = 0
@@ -482,13 +482,47 @@ export class ChatContext {
 
   /** 添加工具执行结果（自动截断过长内容） */
   addToolResult(toolCallId: string, content: string) {
-    const truncated = compactText(content, MAX_TOOL_RESULT_LENGTH)
+    const truncated = normalizeToolResult(content)
     this.messages.push({
       role: 'tool',
       content: truncated,
       tool_call_id: toolCallId,
     })
     log.debug("chat_context.add_tool_result.debug", `工具结果已添加: ${toolCallId} (长度: ${content.length} → ${truncated.length})`, { tool_call_id: toolCallId, content_length: content.length, truncated_length: truncated.length })
+  }
+
+  /** 绑定刚提交的 assistant 消息与其 say 工具调用，供后台修订同步使用。 */
+  bindAssistantMessage(messageId: string): void {
+    for (let index = this.messages.length - 1; index >= 0; index--) {
+      const message = this.messages[index]
+      if (message.role !== 'assistant' || !message.tool_calls) continue
+      for (let callIndex = message.tool_calls.length - 1; callIndex >= 0; callIndex--) {
+        const call = message.tool_calls[callIndex]
+        if (call.function.name !== 'say' || [...this.assistantMessageCallIds.values()].includes(call.id)) continue
+        this.assistantMessageCallIds.set(messageId, call.id)
+        return
+      }
+    }
+  }
+
+  /** 把已持久化的 assistant 修订同步到当前实时模型上下文。 */
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
+    const callId = this.assistantMessageCallIds.get(messageId)
+    if (!callId) return
+    for (const message of this.messages) {
+      const call = message.role === 'assistant'
+        ? message.tool_calls?.find(item => item.id === callId)
+        : undefined
+      if (!call) continue
+      let args: Record<string, unknown> = {}
+      try { args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown> } catch { /* 归一化为对象 */ }
+      call.function.arguments = JSON.stringify({
+        ...args,
+        ...(revision.display !== undefined ? { display: revision.display } : {}),
+        ...(revision.voice !== undefined ? { voice: revision.voice } : {}),
+      })
+      return
+    }
   }
 
   /**
@@ -549,7 +583,7 @@ export class ChatContext {
   }
 
   /** 实时上下文压缩状态；用于把新摘要写回会话事实，不承担持久化或恢复。 */
-  getCompactionState(): { summary: string; summarizedRounds: number } {
+  getCompactionState(): ModelHistoryCompaction {
     return {
       summary: this.rollingSummary,
       summarizedRounds: this.summarizedRounds,

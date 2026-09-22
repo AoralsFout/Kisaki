@@ -13,7 +13,7 @@ import type { ChatContextInspection, ContextStats } from '../../ai/context'
 import { loadConfig } from '../../ai/client'
 import type { ChatMessage } from '../../ai/types'
 import type { ToolDefinition } from '../../agent/types'
-import type { ConversationImage, ModelContextMessage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import type { ConversationModelContext } from '../../application/conversation/conversationSession'
 
@@ -32,27 +32,7 @@ export function createConfiguredChatContext(): ChatContext {
 }
 
 /** ChatContext 裁剪后交给会话事实端口的摘要结果。 */
-export interface ConversationContextCompaction {
-  summary: string
-  summarizedRounds: number
-}
-
-/**
- * 会话时间线装载时需要带回的摘要统计。
- *
- * 目前只有 `summarizedRounds` 属于持久化会话事实；保留对象形状是为了让
- * 装载调用明确表达「这是统计」，并兼容旧调用传入裸数字的写法。
- */
-export interface ConversationModelHistoryStats {
-  summarizedRounds: number
-}
-
-export type ConversationModelHistoryStatsInput =
-  | number
-  | Pick<ConversationModelHistoryStats, 'summarizedRounds'>
-
-export type ConversationContextCompactionListener =
-  (compaction: ConversationContextCompaction) => void
+export type ConversationContextCompactionListener = (compaction: ModelHistoryCompaction) => void
 
 export class ChatContextModelContext implements ConversationModelContext {
   private context: ChatContext
@@ -103,6 +83,16 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context.addToolImages(toolCallIds, images)
   }
 
+  /** 消息事实提交后把 say 调用绑定到持久化 message id。 */
+  bindAssistantMessage(messageId: string): void {
+    this.context.bindAssistantMessage(messageId)
+  }
+
+  /** 消息事实修订成功后同步实时模型上下文。 */
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
+    this.context.reviseAssistantMessage(messageId, revision)
+  }
+
   stats(): ContextStats {
     return this.context.getStats()
   }
@@ -120,9 +110,8 @@ export class ChatContextModelContext implements ConversationModelContext {
   /** 直接装载会话时间线的模型协议投影，避免快照往返。 */
   loadModelProjection(
     projection: readonly ModelContextMessage[],
-    stats: ConversationModelHistoryStatsInput = 0,
+    stats: ModelHistoryStats = { summarizedRounds: 0 },
   ): void {
-    const summarizedRounds = typeof stats === 'number' ? stats : stats.summarizedRounds
     const summary = projection.find(message => message.role === 'system')
     const history = projection
       .filter(message => message.role !== 'system')
@@ -130,7 +119,7 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context.replaceHistory(
       history,
       typeof summary?.content === 'string' ? summary.content : '',
-      summarizedRounds,
+      stats.summarizedRounds,
     )
   }
 

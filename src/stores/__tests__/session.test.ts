@@ -100,7 +100,7 @@ describe('SessionStore v2 projection facade', () => {
 
     expect(store.currentSession?.messages.map(message => message.text)).toEqual(['read it', 'done'])
     expect(useChatStore().messages.map(message => message.id)).toEqual(['user-1', 'assistant-1'])
-    expect(store.currentSession?.modelContext).toEqual(expect.arrayContaining([
+    expect(store.currentSession?.modelHistory).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant', toolCalls: [expect.objectContaining({ id: 'call-1' })] }),
       expect.objectContaining({ role: 'tool', toolCallId: 'call-1', content: 'contents' }),
     ]))

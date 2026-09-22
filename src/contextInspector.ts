@@ -9,6 +9,7 @@ import type { ContextInspectionMessage, ContextStats } from './ai'
 import type { ToolDefinition } from './agent'
 import type { ChatMessage, CurrentContextInspection } from './stores/chat'
 import type { ModelContextMessage } from './domain/conversation/events'
+import { redactEmbeddedImageDataUrl } from './ai/imageInspection'
 
 export type ContextDataSource = 'current' | 'saved'
 
@@ -34,7 +35,7 @@ export interface SavedSessionInput {
   name: string
   messages: ChatMessage[]
   /** 必须来自会话时间线的模型投影；UI transcript 与协议快照都不是历史来源。 */
-  modelContext: readonly ModelContextMessage[]
+  modelHistory: readonly ModelContextMessage[]
   summarizedRounds?: number
   characterId?: string
   workspaceRoot?: string | null
@@ -67,15 +68,11 @@ function inspectionContent(content: ModelContextMessage['content']): ModelContex
     if (part.type === 'text') return part
     const url = part.image_url.url
     if (!url.startsWith('data:')) return { type: 'image_url', image_url: { ...part.image_url } }
-    const match = url.match(/^data:([^;,]+)(?:;base64)?,(.*)$/s)
-    const mime = match?.[1] || 'application/octet-stream'
-    const encodedLength = match?.[2]?.length ?? 0
-    const approximateBytes = Math.max(0, Math.floor(encodedLength * 0.75))
     return {
       type: 'image_url' as const,
       image_url: {
         detail: part.image_url.detail,
-        url: `[embedded image: ${mime}, approximately ${approximateBytes} bytes]`,
+        url: redactEmbeddedImageDataUrl(url),
       },
     }
   })
@@ -124,7 +121,7 @@ export function inspectSavedSession(
   session: SavedSessionInput,
   template?: Pick<CurrentContextInspection, 'model' | 'endpoint' | 'stats' | 'maxRounds'>,
 ): ContextSessionInspection {
-  const messages = fromModelProjection(session.modelContext)
+  const messages = fromModelProjection(session.modelHistory)
   const estimatedTokens = messages.reduce((sum, message) => sum + message.estimatedTokens, 0)
   const maxContextTokens = template?.stats.maxContextTokens ?? 0
   const stats: ContextStats = {
@@ -150,7 +147,7 @@ export function inspectSavedSession(
     endpoint: template?.endpoint || '',
     messages,
     stats,
-    rollingSummary: session.modelContext.find(message => message.role === 'system' && typeof message.content === 'string')?.content as string || '',
+    rollingSummary: session.modelHistory.find(message => message.role === 'system' && typeof message.content === 'string')?.content as string || '',
     maxRounds: template?.maxRounds ?? 0,
     hasTurnReminder: false,
     toolDefinitions: [] as ToolDefinition[],

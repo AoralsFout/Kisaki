@@ -144,3 +144,14 @@ export interface ModelContextMessage {
   toolCalls?: RecordedToolCall[]
   toolCallId?: string
 }
+
+/** 实时模型上下文整理后写回模型历史的共享数据形状。 */
+export interface ModelHistoryCompaction {
+  summary: string
+  summarizedRounds: number
+}
+
+/** 装载模型历史时伴随的持久化统计。 */
+export interface ModelHistoryStats {
+  summarizedRounds: number
+}

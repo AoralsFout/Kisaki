@@ -8,7 +8,7 @@ describe('contextInspector saved session', () => {
       id: 'session-1',
       name: '已保存会话',
       messages: [],
-      modelContext: [
+      modelHistory: [
         { role: 'system', content: '用户：旧问题' },
         { role: 'user', content: '当前问题' },
       ],
@@ -26,7 +26,7 @@ describe('contextInspector saved session', () => {
   })
 
   it('保存会话的模型图片投影在检查器中只显示元数据', () => {
-    const modelContext: ModelContextMessage[] = [{
+    const modelHistory: ModelContextMessage[] = [{
       role: 'user',
       content: [
         { type: 'text', text: '看这张图' },
@@ -38,7 +38,7 @@ describe('contextInspector saved session', () => {
       id: 'session-2',
       name: '含图片会话',
       messages: [],
-      modelContext,
+      modelHistory,
       updatedAt: 123,
     })
 
@@ -46,7 +46,7 @@ describe('contextInspector saved session', () => {
     expect(Array.isArray(content)).toBe(true)
     expect(JSON.stringify(content)).not.toContain('QUJD')
     expect(JSON.stringify(content)).toContain('embedded image: image/png')
-    expect(modelContext[0].content).toEqual([
+    expect(modelHistory[0].content).toEqual([
       { type: 'text', text: '看这张图' },
       { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD', detail: 'auto' } },
     ])
@@ -57,7 +57,7 @@ describe('contextInspector saved session', () => {
       id: 'session-3',
       name: '仅有界面投影',
       messages: [{ id: 'ui-1', role: 'user', text: '不应被使用', timestamp: 1 }],
-      modelContext: [],
+      modelHistory: [],
       updatedAt: 123,
     })
 

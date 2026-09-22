@@ -19,6 +19,7 @@ import type {
   ModelContextMessage,
   RecordedToolCall,
   SessionCheckpoint,
+  ModelHistoryCompaction,
 } from '../domain/conversation/events'
 import { SessionAggregate } from '../domain/conversation/sessionAggregate'
 import { createLogger } from '../utils/logger'
@@ -31,7 +32,7 @@ export interface Session {
   name: string
   messages: ChatMessage[]
   /** 时间线直接投影出的模型协议历史；恢复时不经过快照往返。 */
-  modelContext: ModelContextMessage[]
+  modelHistory: ModelContextMessage[]
   summarizedRounds: number
   characterId?: string
   characterLocked: boolean
@@ -83,7 +84,7 @@ function toView(snapshot: ConversationSessionSnapshot, workspaceRoot: string | n
     id: snapshot.id,
     name: snapshot.title,
     messages,
-    modelContext: aggregate.projectModelContext(),
+    modelHistory: aggregate.projectModelContext(),
     summarizedRounds: summarizedRounds(snapshot),
     characterId: snapshot.characterId ?? undefined,
     characterLocked: snapshot.characterLocked,
@@ -265,7 +266,7 @@ export const useSessionStore = defineStore('session', () => {
     const session = currentSession.value
     useChatStore().loadMessages(
       session?.messages ?? [],
-      session?.modelContext ?? [],
+      session?.modelHistory ?? [],
       session?.summarizedRounds ?? 0,
     )
   }
@@ -316,7 +317,7 @@ export const useSessionStore = defineStore('session', () => {
     // 先把当前外观落回原会话，再切：切换过程中 currentSession 已指向目标会话。
     await persistCharacterState(previousId)
     currentSessionId.value = sessionId
-    useChatStore().loadMessages(target.messages, target.modelContext, target.summarizedRounds)
+    useChatStore().loadMessages(target.messages, target.modelHistory, target.summarizedRounds)
     try {
       await runCommand(() => requireService().switchTo(sessionId))
       if (currentSession.value) await restoreCharacter(currentSession.value)
@@ -512,7 +513,7 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  async function compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+  async function compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
     if (compaction.sessionId !== currentSessionId.value || !compaction.summary.trim()) return false
     try {
       await runCommand(() => requireService().compactContext(compaction.sessionId, {
@@ -571,7 +572,7 @@ export const useSessionStore = defineStore('session', () => {
       currentSessionId: () => currentSessionId.value,
       workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
       modelHistory: () => ({
-        projection: currentSession.value?.modelContext ?? [],
+        projection: currentSession.value?.modelHistory ?? [],
         summarizedRounds: currentSession.value?.summarizedRounds ?? 0,
       }),
       acceptUserMessage,

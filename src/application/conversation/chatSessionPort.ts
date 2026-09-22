@@ -1,4 +1,4 @@
-import type { ConversationImage, ModelContextMessage, RecordedToolCall } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, RecordedToolCall } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 
 /**
@@ -35,7 +35,7 @@ export interface ChatSessionPort {
   commitAssistantMessage(message: CommitAssistantMessage): Promise<string | null>
   reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean>
   /** 把实时模型上下文刚生成的滚动摘要写入当前会话事实。 */
-  compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean>
+  compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean>
   beginCheckpoint(sessionId: string, messageId: string): Promise<string>
   backupFile(sessionId: string, checkpointId: string, relativePath: string): Promise<void>
   markCheckpointFiles(sessionId: string, checkpointId: string): Promise<void>

@@ -42,6 +42,26 @@ describe('SessionAggregate', () => {
     ])
   })
 
+  it('normalizes long tool results before both persistence and model-history projection', () => {
+    const session = createSession()
+    const longResult = '头'.repeat(1200) + '中'.repeat(1200) + '尾'.repeat(1200)
+    session.recordToolCalls(
+      { eventId: 'event-calls-long', occurredAt: 11 },
+      { stepId: 'step-long', calls: [{ id: 'call-long', name: 'read_file', arguments: {} }] },
+    )
+    session.recordToolResult(
+      { eventId: 'event-result-long', occurredAt: 12 },
+      { callId: 'call-long', content: longResult, status: 'succeeded' },
+    )
+
+    const projected = session.projectModelContext()
+    const content = projected.find(message => message.role === 'tool')?.content as string
+    expect(content.length).toBeLessThanOrEqual(1600)
+    expect(content).toContain('头')
+    expect(content).toContain('尾')
+    expect(content).toContain('省略')
+  })
+
   it('projects user images as multimodal model content', () => {
     const session = createSession()
     session.acceptUserMessage(

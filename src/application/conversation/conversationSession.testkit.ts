@@ -18,7 +18,7 @@ import type { ContextStats } from '../../ai/context'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
-import type { ConversationImage, ModelContextMessage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
   ConversationApprovalListener,
@@ -206,6 +206,7 @@ export class FakeModelContext implements ConversationModelContext {
   readonly toolResultLog: { callId: string; content: string }[] = []
   readonly toolImageLog: { toolCallIds: string; images: readonly ConversationImage[] }[] = []
   readonly requestedTools: ToolDefinition[][] = []
+  private readonly assistantMessageCallIds = new Map<string, string>()
   statsValue: ContextStats = {
     estimatedTokens: 42,
     maxContextTokens: 1000,
@@ -242,6 +243,30 @@ export class FakeModelContext implements ConversationModelContext {
 
   addToolImages(toolCallIds: string, images: readonly ConversationImage[]): void {
     this.toolImageLog.push({ toolCallIds, images: [...images] })
+  }
+
+  bindAssistantMessage(messageId: string): void {
+    for (const message of [...this.conversation].reverse()) {
+      if (message.role !== 'assistant' || !message.tool_calls) continue
+      const call = [...message.tool_calls].reverse().find(item => item.function.name === 'say')
+      if (call) {
+        this.assistantMessageCallIds.set(messageId, call.id)
+        return
+      }
+    }
+  }
+
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
+    const callId = this.assistantMessageCallIds.get(messageId)
+    const message = this.conversation.find(item => item.role === 'assistant' && item.tool_calls?.some(call => call.id === callId))
+    const call = message?.tool_calls?.find(item => item.id === callId)
+    if (!call) return
+    const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>
+    call.function.arguments = JSON.stringify({
+      ...args,
+      ...(revision.display !== undefined ? { display: revision.display } : {}),
+      ...(revision.voice !== undefined ? { voice: revision.voice } : {}),
+    })
   }
 
   stats(): ContextStats { return { ...this.statsValue } }
@@ -351,7 +376,7 @@ export class FakeChatSessionPort {
     return this.reviseResult
   }
 
-  async compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+  async compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
     this.events.push(`compact:${compaction.summary}`)
     return compaction.sessionId === this.sessionId
   }

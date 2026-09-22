@@ -6,6 +6,7 @@ import type { ConversationImage } from '../../domain/conversation/events'
 import type { ModelContextMessage } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import { ChatContextModelContext } from './chatContextModelContext'
+import type { ModelHistoryCompaction } from '../../domain/conversation/events'
 
 const SAY_TOOL: ToolDefinition = {
   type: 'function',
@@ -47,7 +48,7 @@ function textsOf(messages: readonly ChatMessage[]): string[] {
 
 describe('ChatContextModelContext', () => {
   it('裁剪生成滚动摘要时通知会话事实，且重复读取不会重复通知', () => {
-    const compactions: { summary: string; summarizedRounds: number }[] = []
+    const compactions: ModelHistoryCompaction[] = []
     const context = new ChatContextModelContext(
       () => new ChatContext({ maxRounds: 1, maxContextTokens: 6000 }),
       compaction => compactions.push(compaction),

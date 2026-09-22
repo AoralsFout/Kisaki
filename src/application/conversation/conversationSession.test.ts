@@ -152,7 +152,7 @@ describe('ConversationSession', () => {
       // 合成 say：实时上下文里是 say 调用，会话事实里不是服务端工具调用。
       expect(h.context.toolCallLog).toHaveLength(1)
       expect(h.context.toolCallLog[0][0].function.name).toBe('say')
-      expect(h.context.toolResultLog).toEqual([{ callId: 'say-synthetic-1', content: '已说出' }])
+      expect(h.context.toolResultLog).toEqual([{ callId: 'say-assistant-message-1', content: '已说出' }])
       expect(h.facts.events).not.toContain('toolCalls:request-1:0')
     })
 
@@ -1163,6 +1163,43 @@ describe('ConversationSession', () => {
       await vi.waitFor(() => expect(h.voice.played).toHaveLength(1))
       expect(h.voice.played[0]).toMatchObject({ text: 'ja-JP:你好', voiceLanguage: 'ja-JP' })
       expect(h.facts.revisions[0]).toMatchObject({ messageId: 'assistant-message-1', playbackText: 'ja-JP:你好' })
+      const say = h.context.conversation.find(message => message.role === 'assistant')
+        ?.tool_calls?.find(call => call.function.name === 'say')
+      expect(JSON.parse(say?.function.arguments ?? '{}')).toMatchObject({ voice: 'ja-JP:你好', display: '你好' })
+    })
+
+    it('K5 修订同步 display 与 voice：下一轮实时上下文使用最终文本', async () => {
+      const h = createConversationHarness()
+      h.model.enqueue(sayTurn('say-1', { voice: 'hello_world', display: ' 你好 ' }))
+
+      await h.session.send({ text: 'hi', images: [] })
+      await vi.waitFor(() => expect(h.facts.revisions).toHaveLength(1))
+      expect(h.facts.revisions[0].voice).toBe('ja-JP:hello_world')
+      await flushPending()
+
+      const say = h.context.conversation.find(message => message.role === 'assistant')
+        ?.tool_calls?.find(call => call.function.name === 'say')
+      expect(JSON.parse(say?.function.arguments ?? '{}')).toMatchObject({
+        voice: 'ja-JP:hello_world',
+        display: ' 你好 ',
+      })
+    })
+
+    it('K5 异步修订写入失败时不修改实时上下文', async () => {
+      const h = createConversationHarness()
+      h.facts.reviseResult = false
+      h.model.enqueue(sayTurn('say-1', { voice: 'hello_world', display: ' 你好 ' }))
+
+      await h.session.send({ text: 'hi', images: [] })
+      await flushPending()
+
+      expect(h.facts.revisions).toHaveLength(1)
+      const say = h.context.conversation.find(message => message.role === 'assistant')
+        ?.tool_calls?.find(call => call.function.name === 'say')
+      expect(JSON.parse(say?.function.arguments ?? '{}')).toMatchObject({
+        voice: 'hello_world',
+        display: ' 你好 ',
+      })
     })
   })
 

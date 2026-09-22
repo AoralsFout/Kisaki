@@ -364,7 +364,7 @@ export const useChatStore = defineStore('chat', () => {
    */
   function loadMessages(
     msgs: ChatMessage[],
-    modelContext: readonly ModelContextMessage[] = [],
+    modelHistory: readonly ModelContextMessage[] = [],
     summarizedRounds = 0,
   ) {
     const _fn = 'loadMessages'
@@ -384,8 +384,8 @@ export const useChatStore = defineStore('chat', () => {
     rejectPendingApproval()
 
     context.reset()
-    context.loadModelProjection(modelContext, summarizedRounds)
-    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已装载时间线模型投影（${modelContext.length} 条）`, { fn: _fn, model_context_length: modelContext.length })
+    context.loadModelProjection(modelHistory, { summarizedRounds })
+    log.info("chat_store.load_messages.info", `[${_fn}] ✓ 已装载时间线模型投影（${modelHistory.length} 条）`, { fn: _fn, model_history_length: modelHistory.length })
 
     refreshProjection()
 

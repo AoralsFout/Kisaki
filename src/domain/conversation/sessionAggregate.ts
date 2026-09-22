@@ -14,6 +14,7 @@ import type {
   UiTranscriptMessage,
   UserMessageAccepted,
 } from './events'
+import { normalizeToolResult } from '../../utils/toolResult'
 
 export interface CreateSessionOptions {
   id: string
@@ -327,7 +328,12 @@ export class SessionAggregate {
   ): void {
     if (!this.hasToolCall(input.callId)) throw new Error(`Unknown tool call id: ${input.callId}`)
     if (this.hasToolResult(input.callId)) throw new Error(`Tool result already recorded: ${input.callId}`)
-    this.append({ ...identity, type: 'tool-execution-completed', ...input })
+    this.append({
+      ...identity,
+      type: 'tool-execution-completed',
+      ...input,
+      content: normalizeToolResult(input.content),
+    })
   }
 
   commitAssistantMessage(
@@ -515,7 +521,7 @@ export class SessionAggregate {
         }
         case 'tool-execution-completed': {
           const toolResultIndex = context.length
-          context.push({ role: 'tool', content: event.content, toolCallId: event.callId })
+          context.push({ role: 'tool', content: normalizeToolResult(event.content), toolCallId: event.callId })
           const pending = [...pendingSayCalls].reverse().find(item => {
             const call = context[item.assistantIndex]?.toolCalls?.[item.callIndex]
             return call?.id === event.callId && item.toolResultIndex === null

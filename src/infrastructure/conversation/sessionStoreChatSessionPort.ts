@@ -10,7 +10,7 @@
  */
 import type { ChatSessionPort } from '../../application/conversation/chatSessionPort'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from '../../application/conversation/assistantMessageCoordinator'
-import type { ConversationImage, ModelContextMessage, RecordedToolCall } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, RecordedToolCall } from '../../domain/conversation/events'
 import { useSessionStore } from '../../stores/session'
 
 export class SessionStoreChatSessionPort implements ChatSessionPort {
@@ -68,7 +68,7 @@ export class SessionStoreChatSessionPort implements ChatSessionPort {
     return this.port().reviseAssistantMessage(message)
   }
 
-  compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+  compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
     return this.port().compactContext(compaction)
   }
 
