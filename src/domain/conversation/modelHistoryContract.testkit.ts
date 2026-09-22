@@ -6,7 +6,6 @@
  */
 import type { ChatMessage } from '../../ai/types'
 import { ChatContext } from '../../ai/context'
-import { ChatContextModelContext } from '../../infrastructure/conversation/chatContextModelContext'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import type {
   ConversationSessionSnapshot,
@@ -19,7 +18,7 @@ export const SAY_ACKNOWLEDGED = '已说出'
 
 export interface ModelHistoryFixture {
   readonly session: SessionAggregate
-  readonly realtime: ChatContextModelContext
+  readonly realtime: ChatContext
   acceptUser(text: string, messageId?: string): void
   recordToolExchange(call: ProtocolToolCall, result?: string): void
   commitAssistant(input: {
@@ -75,7 +74,7 @@ function parseArguments(raw: string): Record<string, unknown> {
 export function createModelHistoryFixture(): ModelHistoryFixture {
   const session = SessionAggregate.create({ id: 'session-1', title: '契约测试', now: 1 })
   // 测试夹具不读取应用配置，使用与领域投影相同的默认上下文。
-  const realtime = new ChatContextModelContext(() => new ChatContext())
+  const realtime = new ChatContext()
   let eventIndex = 0
   const identity = () => ({ eventId: `event-${++eventIndex}`, occurredAt: eventIndex })
 
@@ -91,7 +90,7 @@ export function createModelHistoryFixture(): ModelHistoryFixture {
         stepId: `step-${eventIndex + 1}`,
         calls: [recordedCall(call)],
       })
-      realtime.addToolCalls([call])
+      realtime.addAssistantToolCall([call])
       session.recordToolResult(identity(), {
         callId: call.id,
         content: result,
@@ -103,7 +102,7 @@ export function createModelHistoryFixture(): ModelHistoryFixture {
       session.commitAssistantMessage(identity(), input)
     },
     realtimeHistory() {
-      return realtime.messages([]).map(protocolMessage).filter((message): message is ModelContextMessage => message !== null)
+      return realtime.getMessages([]).map(protocolMessage).filter((message): message is ModelContextMessage => message !== null)
     },
     restoreHistory() {
       return SessionAggregate.restore(session.snapshot()).projectModelContext()

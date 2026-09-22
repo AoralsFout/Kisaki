@@ -42,6 +42,53 @@ describe('SessionAggregate', () => {
     ])
   })
 
+  it('projects user images as multimodal model content', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'event-user-image', occurredAt: 11 },
+      {
+        messageId: 'message-user-image',
+        text: '请看这张图',
+        images: [{
+          id: 'image-1',
+          name: 'cat.png',
+          mimeType: 'image/png',
+          size: 3,
+          dataUrl: 'data:image/png;base64,Y2F0',
+        }],
+      },
+    )
+
+    expect(session.projectModelContext()).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: '请看这张图' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,Y2F0', detail: 'auto' } },
+      ],
+    }])
+  })
+
+  it('为没有工具事件的纯文本兜底补出 say 交换', () => {
+    const session = createSession()
+    session.commitAssistantMessage(
+      { eventId: 'event-fallback', occurredAt: 11 },
+      { messageId: 'fallback-answer', display: '兜底回复', source: 'text-fallback' },
+    )
+
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-fallback-answer',
+          name: 'say',
+          arguments: { display: '兜底回复', voice: '兜底回复' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-fallback-answer' },
+    ])
+  })
+
   it('returns detached snapshots instead of exposing mutable aggregate state', () => {
     const session = createSession()
     const snapshot = session.snapshot()
@@ -111,16 +158,27 @@ describe('SessionAggregate', () => {
       { eventId: 'old-user', occurredAt: 11 },
       { messageId: 'old-message', text: 'old turn' },
     )
+    session.recordToolCalls(
+      { eventId: 'old-calls', occurredAt: 12 },
+      { stepId: 'old-step', calls: [{ id: 'old-call', name: 'read_file', arguments: { path: 'old.txt' } }] },
+    )
+    session.recordToolResult(
+      { eventId: 'old-result', occurredAt: 13 },
+      { callId: 'old-call', content: 'old content', status: 'succeeded' },
+    )
     session.commitAssistantMessage(
-      { eventId: 'old-assistant', occurredAt: 12 },
+      { eventId: 'old-assistant', occurredAt: 14 },
       { messageId: 'old-answer', display: 'old answer', source: 'text-fallback' },
     )
     session.compactContext(
-      { eventId: 'compaction', occurredAt: 13 },
-      { summary: 'The previous turn discussed an old topic.', summarizedEventIds: ['old-user', 'old-assistant'] },
+      { eventId: 'compaction', occurredAt: 15 },
+      {
+        summary: 'The previous turn discussed an old topic.',
+        summarizedEventIds: ['old-user', 'old-calls', 'old-result', 'old-assistant'],
+      },
     )
     session.acceptUserMessage(
-      { eventId: 'new-user', occurredAt: 14 },
+      { eventId: 'new-user', occurredAt: 16 },
       { messageId: 'new-message', text: 'new turn' },
     )
 
@@ -143,7 +201,18 @@ describe('SessionAggregate', () => {
     )
 
     expect(session.projectTranscript()[0]).toMatchObject({ text: 'final', voice: 'spoken final' })
-    expect(session.projectModelContext()).toEqual([{ role: 'assistant', content: 'final' }])
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-answer',
+          name: 'say',
+          arguments: { display: 'final', voice: 'spoken final' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-answer' },
+    ])
   })
 
   it('rejects a revision without an earlier committed assistant message', () => {
@@ -259,7 +328,16 @@ describe('SessionAggregate', () => {
     expect(session.projectTranscript().map(message => message.id)).toEqual(['user-1', 'assistant-1'])
     expect(session.projectModelContext()).toEqual([
       { role: 'user', content: 'first' },
-      { role: 'assistant', content: 'first answer' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-assistant-1',
+          name: 'say',
+          arguments: { display: 'first answer', voice: 'first answer' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-assistant-1' },
     ])
     expect(session.snapshot()).toMatchObject({
       checkpoints: [{ id: 'checkpoint-1' }],
