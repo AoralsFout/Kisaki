@@ -51,22 +51,26 @@ function localTarget(importer: string, specifier: string): string | null {
   return relative(SOURCE_ROOT, target).replace(/\\/g, '/')
 }
 
+function isPathWithinRoot(target: string | null, root: string): boolean {
+  return target === root || target?.startsWith(`${root}/`) === true
+}
+
 function boundaryViolation(layer: BoundaryLayer, importer: string, specifier: string): string | null {
   const target = localTarget(importer, specifier)
   const normalizedSpecifier = specifier.toLowerCase()
 
-  if (layer === 'tool' && target?.startsWith('stores/')) return '工具实现不得依赖界面 Store'
-  if ((layer === 'application' || layer === 'ai') && target?.startsWith('agent/')) {
+  if (layer === 'tool' && isPathWithinRoot(target, 'stores')) return '工具实现不得依赖界面 Store'
+  if ((layer === 'application' || layer === 'ai') && isPathWithinRoot(target, 'agent')) {
     return 'application/AI 不得依赖 Agent 具体实现'
   }
   if (layer === 'tool-contract') {
     if (
-      target?.startsWith('agent/') ||
-      target?.startsWith('application/') ||
-      target?.startsWith('ai/') ||
-      target?.startsWith('infrastructure/') ||
-      target?.startsWith('stores/') ||
-      target?.startsWith('components/') ||
+      isPathWithinRoot(target, 'agent') ||
+      isPathWithinRoot(target, 'application') ||
+      isPathWithinRoot(target, 'ai') ||
+      isPathWithinRoot(target, 'infrastructure') ||
+      isPathWithinRoot(target, 'stores') ||
+      isPathWithinRoot(target, 'components') ||
       normalizedSpecifier === 'vue' ||
       normalizedSpecifier === 'pinia' ||
       normalizedSpecifier.startsWith('@tauri-apps/')
@@ -176,22 +180,22 @@ describe('architecture boundaries', () => {
     expect(boundaryViolations(
       'tool',
       toolFile,
-      "import { useChatStore } from '../../stores/chat'",
+      "import { useChatStore } from '../../stores'",
     )).toHaveLength(1)
     expect(boundaryViolations(
       'application',
       applicationFile,
-      "import { readFileTool } from '../../agent/tools/files'",
+      "import { readFileTool } from '../../agent'",
     )).toHaveLength(1)
     expect(boundaryViolations(
       'ai',
       aiFile,
-      "import { executeToolCall } from '../agent/executor'",
+      "import { executeToolCall } from '../agent'",
     )).toHaveLength(1)
     expect(boundaryViolations(
       'tool-contract',
       contractFile,
-      "import { agentService } from '../../agent/service'",
+      "import { agentService } from '../../agent'",
     )).toHaveLength(1)
   })
 

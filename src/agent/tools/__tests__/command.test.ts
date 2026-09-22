@@ -47,6 +47,23 @@ describe('结构化任务执行工具', () => {
     })
   })
 
+  it('同一准备入口在工作区授权撤销后不复用旧能力且不调用 Rust', async () => {
+    const plan = { id: 'run_1', digest: 'abc' }
+    invokeMock.mockResolvedValue(plan)
+
+    await expect(prepareCommandExecution('run_process', { program: 'npm' }, 'grant-A'))
+      .resolves.toBe(plan)
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+
+    invokeMock.mockClear()
+    await expect(prepareCommandExecution('run_process', { program: 'npm' }, null))
+      .rejects.toMatchObject({
+        code: 'WORKSPACE_NOT_SET',
+        message: '当前会话尚未授权工作目录。请提示用户点击「工作区」并重新选择目录后再重试。',
+      })
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
   it('没有工作区能力时在准备计划前稳定拒绝', async () => {
     await expect(prepareCommandExecution('run_process', { program: 'npm' }, null))
       .rejects.toMatchObject({ code: 'WORKSPACE_NOT_SET' })
