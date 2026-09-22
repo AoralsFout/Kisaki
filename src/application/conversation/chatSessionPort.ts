@@ -32,6 +32,8 @@ export interface ChatSessionPort {
   }): Promise<boolean>
   commitAssistantMessage(message: CommitAssistantMessage): Promise<string | null>
   reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean>
+  /** 把实时模型上下文刚生成的滚动摘要写入当前会话事实。 */
+  compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean>
   beginCheckpoint(sessionId: string, messageId: string): Promise<string>
   backupFile(sessionId: string, checkpointId: string, relativePath: string): Promise<void>
   markCheckpointFiles(sessionId: string, checkpointId: string): Promise<void>

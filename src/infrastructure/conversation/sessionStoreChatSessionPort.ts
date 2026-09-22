@@ -64,6 +64,10 @@ export class SessionStoreChatSessionPort implements ChatSessionPort {
     return this.port().reviseAssistantMessage(message)
   }
 
+  compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+    return this.port().compactContext(compaction)
+  }
+
   beginCheckpoint(sessionId: string, messageId: string): Promise<string> {
     return this.port().beginCheckpoint(sessionId, messageId)
   }

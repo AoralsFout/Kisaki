@@ -114,6 +114,38 @@ describe('SessionApplicationService', () => {
     ])
   })
 
+  it('实时压缩只需提交摘要，服务按当前用户边界记录被吸收事件', async () => {
+    const { service } = setup()
+    await service.initialize('First')
+    await service.acceptUserMessage('session-1', { messageId: 'user-1', text: 'first' })
+    await service.recordToolCalls('session-1', {
+      stepId: 'step-1',
+      calls: [{ id: 'call-1', name: 'read_file', arguments: {} }],
+    })
+    await service.recordToolResult('session-1', {
+      callId: 'call-1', content: 'done', status: 'succeeded',
+    })
+    await service.commitAssistantMessage('session-1', {
+      messageId: 'assistant-1', display: 'answer', source: 'text-fallback',
+    })
+    await service.acceptUserMessage('session-1', { messageId: 'user-2', text: 'second' })
+
+    await service.compactContext('session-1', { summary: 'first turn summary', summarizedRounds: 1 })
+
+    const current = service.current()
+    const compaction = current.timeline.find(event => event.type === 'context-compacted')
+    const currentUserIndex = current.timeline.findIndex(event => (
+      event.type === 'user-message-accepted' && event.messageId === 'user-2'
+    ))
+    expect(compaction).toMatchObject({
+      summary: 'first turn summary',
+      summarizedEventIds: current.timeline
+        .slice(0, currentUserIndex)
+        .filter(event => event.type !== 'context-compacted')
+        .map(event => event.eventId),
+    })
+  })
+
   it('serializes overlapping commands so an older save cannot win the race', async () => {
     const { repository, service } = setup()
     await service.initialize('First')

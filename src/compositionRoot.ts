@@ -94,7 +94,17 @@ export async function composeConversationAssembly(
     import('./infrastructure/conversation/sessionStoreChatSessionPort'),
   ])
 
-  const context = overrides.context ?? new ChatContextModelContext()
+  const sessionPort = overrides.session ?? new SessionStoreChatSessionPort()
+  const context = overrides.context ?? new ChatContextModelContext(
+    undefined,
+    compaction => {
+      void sessionPort.compactContext({
+        sessionId: sessionPort.currentSessionId(),
+        summary: compaction.summary,
+        summarizedRounds: compaction.summarizedRounds,
+      })
+    },
+  )
   // 批准网关由组合根持有；回合只经工具执行端口的 subscribeApproval 拿到待决布尔量，
   // 待批准请求的值仍归网关自己的订阅。超时按既有语义自动拒绝。
   const approvalGateway = new ApprovalGateway(CONFIRM_TIMEOUT_MS, request => {
@@ -110,7 +120,7 @@ export async function composeConversationAssembly(
     translate: overrides.translate ?? new AiConversationTranslator(),
     character: overrides.character ?? new CharacterStoreSource(),
     context,
-    session: overrides.session ?? new SessionStoreChatSessionPort(),
+    session: sessionPort,
     tools: overrides.tools ?? new AgentServiceToolCatalog(),
     toolExecution: overrides.toolExecution ?? new ToolExecutionCoordinatorFactory(approvalGateway),
     voice: overrides.voice ?? new TtsOrchestratorVoicePort(ttsPlaybackOrchestrator),

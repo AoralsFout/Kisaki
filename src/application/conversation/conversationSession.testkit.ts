@@ -275,6 +275,7 @@ export class FakeChatSessionPort {
     recordToolResult: result => this.recordToolResult(result),
     commitAssistantMessage: message => this.commitAssistantMessage(message),
     reviseAssistantMessage: message => this.reviseAssistantMessage(message),
+    compactContext: compaction => this.compactContext(compaction),
     beginCheckpoint: (sessionId, messageId) => this.beginCheckpoint(sessionId, messageId),
     backupFile: (sessionId, checkpointId, path) => this.backupFile(sessionId, checkpointId, path),
     markCheckpointFiles: (sessionId, checkpointId) => this.markCheckpointFiles(sessionId, checkpointId),
@@ -338,6 +339,11 @@ export class FakeChatSessionPort {
     this.events.push(`revise:${message.messageId}`)
     this.revisions.push(message)
     return this.reviseResult
+  }
+
+  async compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+    this.events.push(`compact:${compaction.summary}`)
+    return compaction.sessionId === this.sessionId
   }
 
   async backupFile(_sessionId: string, _checkpointId: string, path: string): Promise<void> {

@@ -367,6 +367,21 @@ export class SessionAggregate {
     }
   }
 
+  /** 返回滚动摘要已经吸收的前 N 个完整用户回合中的事实事件。 */
+  contextEventIdsForSummarizedRounds(rounds: number): string[] {
+    if (!Number.isInteger(rounds) || rounds <= 0) return []
+    const ids: string[] = []
+    let summarizedRounds = 0
+    for (const event of this.state.timeline) {
+      if (event.type === 'user-message-accepted') {
+        if (summarizedRounds >= rounds) break
+        summarizedRounds += 1
+      }
+      if (event.type !== 'context-compacted' && summarizedRounds > 0) ids.push(event.eventId)
+    }
+    return ids
+  }
+
   addCheckpoint(checkpoint: SessionCheckpoint, now: number): void {
     if (this.state.checkpoints.some(item => item.id === checkpoint.id)) {
       throw new Error(`Duplicate checkpoint id: ${checkpoint.id}`)

@@ -524,6 +524,19 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function compactContext(compaction: { sessionId: string; summary: string; summarizedRounds: number }): Promise<boolean> {
+    if (compaction.sessionId !== currentSessionId.value || !compaction.summary.trim()) return false
+    try {
+      await runCommand(() => requireService().compactContext(compaction.sessionId, {
+        summary: compaction.summary,
+        summarizedRounds: compaction.summarizedRounds,
+      }))
+      return compaction.sessionId === currentSessionId.value
+    } catch {
+      return false
+    }
+  }
+
   async function clearConversation(sessionId: string): Promise<void> {
     if (sessionId !== currentSessionId.value) return
     try {
@@ -574,6 +587,7 @@ export const useSessionStore = defineStore('session', () => {
       recordToolResult,
       commitAssistantMessage,
       reviseAssistantMessage,
+      compactContext,
       beginCheckpoint,
       backupFile,
       markCheckpointFiles,

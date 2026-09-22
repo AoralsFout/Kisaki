@@ -420,4 +420,31 @@ describe('SessionAggregate', () => {
     })
     expect(() => session.bindCharacter('another-character', 14)).toThrow('Cannot change character')
   })
+
+  it('回档到摘要之后的用户位置时保留最近有效摘要', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'user-event-1', occurredAt: 11 },
+      { messageId: 'user-1', text: 'first' },
+    )
+    session.commitAssistantMessage(
+      { eventId: 'assistant-event-1', occurredAt: 12 },
+      { messageId: 'assistant-1', display: 'first answer', source: 'text-fallback' },
+    )
+    session.compactContext(
+      { eventId: 'compaction-1', occurredAt: 13 },
+      { summary: 'first summary', summarizedEventIds: ['user-event-1', 'assistant-event-1'] },
+    )
+    session.acceptUserMessage(
+      { eventId: 'user-event-2', occurredAt: 14 },
+      { messageId: 'user-2', text: 'second' },
+    )
+
+    session.rollbackToUserMessage('user-2', 20)
+
+    expect(session.snapshot().contextState).toEqual({
+      summary: 'first summary',
+      summarizedEventIds: ['user-event-1', 'assistant-event-1'],
+    })
+  })
 })

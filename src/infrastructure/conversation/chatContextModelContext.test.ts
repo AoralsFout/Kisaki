@@ -45,6 +45,26 @@ function textsOf(messages: readonly ChatMessage[]): string[] {
 }
 
 describe('ChatContextModelContext', () => {
+  it('裁剪生成滚动摘要时通知会话事实，且重复读取不会重复通知', () => {
+    const compactions: { summary: string; summarizedRounds: number }[] = []
+    const context = new ChatContextModelContext(
+      () => new ChatContext({ maxRounds: 1, maxContextTokens: 6000 }),
+      compaction => compactions.push(compaction),
+    )
+    context.addUserMessage('较早的问题', [])
+    context.addToolCalls([SAY_CALL])
+    context.addToolResult(SAY_CALL.id, '较早的结果')
+    context.addUserMessage('当前的问题', [])
+
+    context.messages([])
+    context.messages([])
+
+    expect(compactions).toHaveLength(1)
+    expect(compactions[0].summary).toBe(context.snapshot().rollingSummary)
+    expect(compactions[0].summarizedRounds).toBe(1)
+    expect(compactions[0].summary).toContain('较早的问题')
+  })
+
   it('构造时按工厂建出一个底层上下文', () => {
     const tracking = trackingFactory()
 

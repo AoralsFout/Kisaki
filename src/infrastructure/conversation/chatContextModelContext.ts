@@ -39,10 +39,22 @@ export interface ConversationUserTurn {
   images?: readonly ConversationImage[]
 }
 
+/** ChatContext 裁剪后交给会话事实端口的摘要结果。 */
+export interface ConversationContextCompaction {
+  summary: string
+  summarizedRounds: number
+}
+
+export type ConversationContextCompactionListener =
+  (compaction: ConversationContextCompaction) => void
+
 export class ChatContextModelContext implements ConversationModelContext {
   private context: ChatContext
 
-  constructor(private readonly createContext: () => ChatContext = createConfiguredChatContext) {
+  constructor(
+    private readonly createContext: () => ChatContext = createConfiguredChatContext,
+    private readonly onCompaction?: ConversationContextCompactionListener,
+  ) {
     this.context = this.createContext()
   }
 
@@ -50,7 +62,23 @@ export class ChatContextModelContext implements ConversationModelContext {
 
   /** 本次请求要发给模型的消息。返回的是请求副本，调用方按需在其上追加。 */
   messages(tools: readonly ToolDefinition[]): readonly ChatMessage[] {
-    return this.context.getMessages([...tools])
+    const before = this.context.exportSnapshot()
+    try {
+      return this.context.getMessages([...tools])
+    } finally {
+      // 即使当前请求最终因预算不足失败，ChatContext 也可能已经完成了裁剪；
+      // 这份摘要仍必须进入会话事实，避免下一次恢复丢掉实时状态。
+      const after = this.context.exportSnapshot()
+      if (after.rollingSummary && (
+        after.rollingSummary !== before.rollingSummary
+        || after.summarizedRounds !== before.summarizedRounds
+      )) {
+        this.onCompaction?.({
+          summary: after.rollingSummary,
+          summarizedRounds: after.summarizedRounds,
+        })
+      }
+    }
   }
 
   addUserMessage(text: string, images: readonly ConversationImage[]): void {
