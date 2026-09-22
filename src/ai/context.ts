@@ -588,7 +588,7 @@ export class ChatContext {
   }
 
   /**
-   * 生成上下文检查器视图，不触发裁剪、不修改统计状态。
+   * 在只读副本上预演下一次请求的预算裁剪，不修改真实上下文或统计状态。
    * 消息顺序与下一次请求一致：system（含每轮提醒）→ 滚动摘要 → 活跃历史。
    */
   inspect(tools: unknown[] = []): ChatContextInspection {

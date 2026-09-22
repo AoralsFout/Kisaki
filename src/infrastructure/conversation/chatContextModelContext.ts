@@ -166,7 +166,7 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context.restoreUserImages(turns)
   }
 
-  /** 上下文检查器视图：不触发裁剪、不修改统计状态。 */
+  /** 上下文检查器视图：在副本上预演裁剪，不修改真实上下文或统计状态。 */
   inspect(tools: readonly ToolDefinition[]): ChatContextInspection {
     return this.context.inspect([...tools])
   }
