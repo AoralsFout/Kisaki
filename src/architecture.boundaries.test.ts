@@ -104,6 +104,36 @@ describe('architecture boundaries', () => {
     expect(source).not.toMatch(/session\.context\s*=/)
   })
 
+  it('keeps model history out of protocol snapshot round trips', () => {
+    const forbidden = ['exportSnapshot', 'importSnapshot', 'ChatContextSnapshot']
+    const violations: string[] = []
+    for (const file of sourceFiles(SOURCE_ROOT)) {
+      const source = readFileSync(file, 'utf8')
+      for (const name of forbidden) {
+        if (source.includes(name)) violations.push(`${relative(SOURCE_ROOT, file)} -> ${name}`)
+      }
+    }
+    expect(violations).toEqual([])
+
+    const context = readFileSync(join(SOURCE_ROOT, 'infrastructure', 'conversation', 'chatContextModelContext.ts'), 'utf8')
+    expect(context).toContain('loadModelProjection(')
+    expect(context).not.toContain('importSnapshot')
+    expect(context).not.toContain('exportSnapshot')
+  })
+
+  it('keeps UI transcript separate from the timeline model-history projection', () => {
+    const chat = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
+    const session = readFileSync(join(SOURCE_ROOT, 'stores', 'session.ts'), 'utf8')
+    const adapter = readFileSync(join(SOURCE_ROOT, 'infrastructure', 'conversation', 'chatContextModelContext.ts'), 'utf8')
+
+    expect(chat).toContain('context.loadModelProjection(modelContext, summarizedRounds)')
+    expect(chat).toContain('context.loadModelProjection(history.projection, { summarizedRounds: history.summarizedRounds })')
+    expect(chat).not.toContain('restoreUserImages')
+    expect(session).toContain('modelContext: aggregate.projectModelContext()')
+    expect(adapter).not.toContain('ConversationUserTurn')
+    expect(adapter).not.toContain('restoreUserImages')
+  })
+
   it('assembles the v2 session persistence path only in the composition root', () => {
     // 「真机持久化还是内存兜底」这个选择只允许出现在组合根；它同时是服务与两个仓储适配器
     // 的唯一构造点，SessionStore 通过注入的装配工厂消费结果。

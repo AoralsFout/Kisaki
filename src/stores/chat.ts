@@ -20,7 +20,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { isConfigValid, loadConfig } from '../ai'
-import type { ChatContextInspection, ChatContextSnapshot, ChatInputPayload, ContextStats, ImageAttachment } from '../ai'
+import type { ChatContextInspection, ChatInputPayload, ContextStats, ImageAttachment } from '../ai'
 import type { ToolDefinition } from '../agent'
 import { conversationAssembly, type ConversationAssembly } from '../compositionRoot'
 import { assembleRoundToolList } from '../application/conversation/roundToolList'
@@ -443,10 +443,6 @@ export const useChatStore = defineStore('chat', () => {
     log.info("chat_store.refresh_model_context.info", `模型配置已刷新，上下文预算=${contextStats.value.maxContextTokens}`, { context_stats_value: contextStats.value.maxContextTokens })
   }
 
-  function exportContext(): ChatContextSnapshot {
-    return conversation().context.snapshot()
-  }
-
   /**
    * 返回下一次模型请求可见的完整上下文视图。
    * 不写入磁盘，不含 API Key；图片只保留 MIME 与体积说明。
@@ -558,7 +554,6 @@ export const useChatStore = defineStore('chat', () => {
     loadMessages,
     setSystemPrompt,
     refreshModelContext,
-    exportContext,
     inspectContext,
     showBubbleText,
     hideBubble,

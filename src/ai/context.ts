@@ -28,16 +28,7 @@ const MAX_TOOL_RESULT_LENGTH = 1600
 const MIN_TOOL_RESULT_LENGTH = 320
 /** 滚动摘要最大字符数；达到上限后继续保留最近部分。 */
 const MAX_ROLLING_SUMMARY_LENGTH = 6000
-const SNAPSHOT_VERSION = 1 as const
 const TOOL_IMAGE_MESSAGE_PREFIX = '[工具图片，仅供观察]'
-
-export interface ChatContextSnapshot {
-  version: typeof SNAPSHOT_VERSION
-  /** 不包含 system prompt；恢复时始终使用当前角色的人格与安全规则。 */
-  messages: ChatMessage[]
-  rollingSummary: string
-  summarizedRounds: number
-}
 
 export interface ContextStats {
   estimatedTokens: number
@@ -121,7 +112,7 @@ function redactSecrets(text: string): string {
 const SENSITIVE_KEY_RE = /api[_-]?key|authorization|password|passwd|secret|token|credential|cookie/i
 const LARGE_PAYLOAD_KEY_RE = /^(?:content|data|body|patch|text|input)$/i
 
-/** 持久化工具参数时删除凭据与大块正文，避免 sessions.json 变成敏感数据副本。 */
+/** 上下文预算不足时压缩工具参数，删除凭据与大块正文。 */
 function sanitizeJsonValue(value: unknown, key = '', depth = 0): unknown {
   if (SENSITIVE_KEY_RE.test(key)) return '[已脱敏]'
   if (depth > 6) return '[嵌套内容已省略]'
@@ -183,20 +174,6 @@ function multimodalContent(text: string, images: readonly ImageAttachment[]): Ch
       image_url: { url: image.dataUrl, detail: 'auto' as const },
     })),
   ]
-}
-
-function isToolImageMessage(message: ChatMessage): boolean {
-  if (message.role !== 'user' || !Array.isArray(message.content)) return false
-  const text = message.content.find(part => part.type === 'text')
-  return text?.type === 'text' && text.text.startsWith(TOOL_IMAGE_MESSAGE_PREFIX)
-}
-
-/** 快照不重复保存 base64；图片本体由界面消息持久化并在恢复时重新注入。 */
-function snapshotContent(content: ChatMessageContent): string {
-  const text = contentText(content)
-  const imageCount = contentImageCount(content)
-  if (imageCount === 0) return redactSecrets(compactText(text, MAX_TOOL_RESULT_LENGTH))
-  return redactSecrets(compactText(`${text}\n[本轮包含 ${imageCount} 张本地图片]`, MAX_TOOL_RESULT_LENGTH))
 }
 
 function cloneMessage(message: ChatMessage): ChatMessage {
@@ -483,22 +460,6 @@ export class ChatContext {
     this.lastToolDefinitionTokens = 0
   }
 
-  /**
-   * 会话快照会去掉 base64；切换或重启会话后，从界面历史中恢复用户图片。
-   * 以用户消息顺序配对，不影响中间的 assistant/tool 协议消息。
-   */
-  restoreUserImages(turns: readonly { text: string; images?: readonly ImageAttachment[] }[]) {
-    const userMessages = this.messages.filter(message => message.role === 'user')
-    // prune() 只会从最旧回合开始移除，因此用尾部对齐才能和完整 UI 历史正确配对。
-    const alignedTurns = turns.slice(-userMessages.length)
-    for (let index = 0; index < userMessages.length; index++) {
-      const message = userMessages[index]
-      const turn = alignedTurns[index]
-      if (!turn?.images?.length) continue
-      message.content = multimodalContent(turn.text, turn.images)
-    }
-  }
-
   /** 添加助手回复（纯文本） */
   addAssistantMessage(content: string) {
     this.messages.push({ role: 'assistant', content })
@@ -587,6 +548,14 @@ export class ChatContext {
     }
   }
 
+  /** 实时上下文压缩状态；用于把新摘要写回会话事实，不承担持久化或恢复。 */
+  getCompactionState(): { summary: string; summarizedRounds: number } {
+    return {
+      summary: this.rollingSummary,
+      summarizedRounds: this.summarizedRounds,
+    }
+  }
+
   /**
    * 在只读副本上预演下一次请求的预算裁剪，不修改真实上下文或统计状态。
    * 消息顺序与下一次请求一致：system（含每轮提醒）→ 滚动摘要 → 活跃历史。
@@ -654,66 +623,6 @@ export class ChatContext {
     copy.prunedMessages = this.prunedMessages
     copy.lastToolDefinitionTokens = this.lastToolDefinitionTokens
     return copy
-  }
-
-  /**
-   * 导出可持久化上下文。system prompt 不落盘，工具参数会脱敏，大块正文只留元数据。
-   */
-  exportSnapshot(): ChatContextSnapshot {
-    // 工具图片只服务于当前推理过程：base64 不落盘，内部注入消息也不写入快照。
-    const messages = this.messages.slice(1).filter(message => !isToolImageMessage(message)).map(message => ({
-      ...cloneMessage(message),
-      content: snapshotContent(message.content),
-      tool_calls: message.tool_calls?.map(tc => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: {
-          name: tc.function.name,
-          arguments: sanitizeToolArguments(tc.function.arguments),
-        },
-      })),
-    }))
-    return {
-      version: SNAPSHOT_VERSION,
-      messages,
-      rollingSummary: redactSecrets(compactText(this.rollingSummary, MAX_ROLLING_SUMMARY_LENGTH)),
-      summarizedRounds: this.summarizedRounds,
-    }
-  }
-
-  /** 恢复脱敏后的协议上下文；保留当前角色的 system prompt。 */
-  importSnapshot(snapshot: ChatContextSnapshot | null | undefined): boolean {
-    if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !Array.isArray(snapshot.messages)) return false
-    const restored: ChatMessage[] = []
-    let hasUser = false
-    let pendingToolIds = new Set<string>()
-    for (const raw of snapshot.messages) {
-      if (!raw || raw.role === 'system' || typeof raw.content !== 'string') continue
-      const message = cloneMessage(raw)
-      if (message.role === 'user') {
-        hasUser = true
-        pendingToolIds = new Set()
-        restored.push(message)
-        continue
-      }
-      if (!hasUser) continue
-      if (message.role === 'assistant') {
-        pendingToolIds = new Set((message.tool_calls ?? []).map(tc => tc.id))
-        restored.push(message)
-        continue
-      }
-      if (message.role === 'tool' && message.tool_call_id && pendingToolIds.has(message.tool_call_id)) {
-        restored.push(message)
-        pendingToolIds.delete(message.tool_call_id)
-      }
-    }
-    this.messages = [this.messages[0] ?? getDefaultMessages()[0], ...restored]
-    this.rollingSummary = compactText(snapshot.rollingSummary || '', MAX_ROLLING_SUMMARY_LENGTH)
-    this.summarizedRounds = Math.max(0, snapshot.summarizedRounds || 0)
-    this.prunedMessages = 0
-    this.lastToolDefinitionTokens = 0
-    log.info("chat_context.import_snapshot.info", `协议上下文已恢复: ${restored.length} 条, 摘要 ${this.summarizedRounds} 轮`, { restored_length: restored.length, this_summarized_rounds: this.summarizedRounds })
-    return true
   }
 
   /** 获取消息数量 */

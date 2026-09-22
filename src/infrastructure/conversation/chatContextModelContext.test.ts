@@ -61,9 +61,8 @@ describe('ChatContextModelContext', () => {
     context.messages([])
 
     expect(compactions).toHaveLength(1)
-    expect(compactions[0].summary).toBe(context.snapshot().rollingSummary)
-    expect(compactions[0].summarizedRounds).toBe(1)
     expect(compactions[0].summary).toContain('较早的问题')
+    expect(compactions[0].summarizedRounds).toBe(1)
   })
 
   it('构造时按工厂建出一个底层上下文', () => {
@@ -130,22 +129,6 @@ describe('ChatContextModelContext', () => {
     expect(textsOf(context.messages([]))).toContain('再见')
   })
 
-  it('快照往返在天生的上下文替换之后恢复内容', () => {
-    const tracking = trackingFactory()
-    const context = new ChatContextModelContext(tracking.create)
-    context.setSystemPrompt('你是小崎')
-    context.addUserMessage('你好', [])
-    const snapshot = context.snapshot()
-
-    context.reset()
-    expect(textsOf(context.messages([]))).not.toContain('你好')
-
-    context.setSystemPrompt('你是小崎')
-    expect(context.restore(snapshot)).toBe(true)
-    expect(textsOf(context.messages([]))).toContain('你好')
-    expect(textsOf(context.messages([])).some(text => text.includes('你是小崎'))).toBe(true)
-  })
-
   it('直接装载时间线模型投影，保留图片、工具交换与滚动摘要', () => {
     const context = new ChatContextModelContext(trackingFactory().create)
     context.setSystemPrompt('你是小崎')
@@ -179,25 +162,6 @@ describe('ChatContextModelContext', () => {
     ]))
     expect(messages[1].content).toContain('较早回合摘要')
     expect(context.stats().summarizedRounds).toBe(1)
-  })
-
-  it('拒绝来路不明的快照时返回 false，不抛错', () => {
-    const context = new ChatContextModelContext(trackingFactory().create)
-    // 版本号对不上时应当整份丢弃，而不是尽力而为地恢复一半。
-    const stale = JSON.parse('{"version":99,"messages":[],"rollingSummary":"","summarizedRounds":0}')
-
-    expect(context.restore(null)).toBe(false)
-    expect(context.restore(stale)).toBe(false)
-  })
-
-  it('restoreUserImages() 把界面历史里的图片配回用户消息', () => {
-    const context = new ChatContextModelContext(trackingFactory().create)
-    context.addUserMessage('看这张', [])
-
-    context.restoreUserImages([{ text: '看这张', images: [IMAGE] }])
-
-    const userMessage = context.messages([]).find(message => message.role === 'user' && Array.isArray(message.content))
-    expect(userMessage).toBeDefined()
   })
 
   it('inspect() 给出检查器视图且不改动统计状态', () => {

@@ -6,7 +6,6 @@ export { DEFAULT_SYSTEM_PROMPT, getDefaultMessages } from './prompts'
 export { ChatContext, ContextBudgetError, estimateChatMessageTokens } from './context'
 export type {
   ChatContextInspection,
-  ChatContextSnapshot,
   ContextInspectionMessage,
   ContextMessageOrigin,
   ContextStats,
