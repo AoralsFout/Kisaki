@@ -94,7 +94,25 @@ export async function composeConversationAssembly(
     import('./infrastructure/conversation/sessionStoreChatSessionPort'),
   ])
 
-  const context = overrides.context ?? new ChatContextModelContext()
+  const sessionPort = overrides.session ?? new SessionStoreChatSessionPort()
+  const context = overrides.context ?? new ChatContextModelContext(
+    undefined,
+    compaction => {
+      const sessionId = sessionPort.currentSessionId()
+      void sessionPort.compactContext({
+        sessionId,
+        summary: compaction.summary,
+        summarizedRounds: compaction.summarizedRounds,
+      }).catch(error => {
+        // 模型上下文端口是同步的，裁剪事实只能异步落库；失败不应反向打断当前模型请求，
+        // 但自定义端口的拒绝仍必须被消费，避免产生未处理的 Promise rejection。
+        log.error('composition.context_compaction_failed', '实时上下文摘要落库失败', error, {
+          session_id: sessionId,
+          summarized_rounds: compaction.summarizedRounds,
+        })
+      })
+    },
+  )
   // 批准网关由组合根持有；回合只经工具执行端口的 subscribeApproval 拿到待决布尔量，
   // 待批准请求的值仍归网关自己的订阅。超时按既有语义自动拒绝。
   const approvalGateway = new ApprovalGateway(CONFIRM_TIMEOUT_MS, request => {
@@ -110,7 +128,7 @@ export async function composeConversationAssembly(
     translate: overrides.translate ?? new AiConversationTranslator(),
     character: overrides.character ?? new CharacterStoreSource(),
     context,
-    session: overrides.session ?? new SessionStoreChatSessionPort(),
+    session: sessionPort,
     tools: overrides.tools ?? new AgentServiceToolCatalog(),
     toolExecution: overrides.toolExecution ?? new ToolExecutionCoordinatorFactory(approvalGateway),
     voice: overrides.voice ?? new TtsOrchestratorVoicePort(ttsPlaybackOrchestrator),

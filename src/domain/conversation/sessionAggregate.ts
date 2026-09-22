@@ -14,6 +14,7 @@ import type {
   UiTranscriptMessage,
   UserMessageAccepted,
 } from './events'
+import { normalizeToolResult } from '../../utils/toolResult'
 
 export interface CreateSessionOptions {
   id: string
@@ -40,6 +41,37 @@ export interface ClearedConversationResult {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+const SAY_TOOL_NAME = 'say'
+const SAY_ACKNOWLEDGED = '已说出'
+
+type SayProjection = {
+  assistantIndex: number
+  callIndex: number
+  toolResultIndex: number | null
+  messageId: string
+}
+
+function userModelContent(
+  text: string,
+  images: readonly ConversationImage[],
+): ModelContextMessage['content'] {
+  if (images.length === 0) return text
+  return [
+    { type: 'text', text },
+    ...images.map(image => ({
+      type: 'image_url' as const,
+      image_url: { url: image.dataUrl, detail: 'auto' as const },
+    })),
+  ]
+}
+
+function sayArguments(display: string, voice?: string): Record<string, unknown> {
+  return {
+    voice: voice ?? display,
+    display,
+  }
 }
 
 function assertNonEmpty(value: string, field: string): void {
@@ -296,7 +328,12 @@ export class SessionAggregate {
   ): void {
     if (!this.hasToolCall(input.callId)) throw new Error(`Unknown tool call id: ${input.callId}`)
     if (this.hasToolResult(input.callId)) throw new Error(`Tool result already recorded: ${input.callId}`)
-    this.append({ ...identity, type: 'tool-execution-completed', ...input })
+    this.append({
+      ...identity,
+      type: 'tool-execution-completed',
+      ...input,
+      content: normalizeToolResult(input.content),
+    })
   }
 
   commitAssistantMessage(
@@ -334,6 +371,21 @@ export class SessionAggregate {
       summary: input.summary,
       summarizedEventIds: [...input.summarizedEventIds],
     }
+  }
+
+  /** 返回滚动摘要已经吸收的前 N 个完整用户回合中的事实事件。 */
+  contextEventIdsForSummarizedRounds(rounds: number): string[] {
+    if (!Number.isInteger(rounds) || rounds <= 0) return []
+    const ids: string[] = []
+    let summarizedRounds = 0
+    for (const event of this.state.timeline) {
+      if (event.type === 'user-message-accepted') {
+        if (summarizedRounds >= rounds) break
+        summarizedRounds += 1
+      }
+      if (event.type !== 'context-compacted' && summarizedRounds > 0) ids.push(event.eventId)
+    }
+    return ids
   }
 
   addCheckpoint(checkpoint: SessionCheckpoint, now: number): void {
@@ -441,37 +493,87 @@ export class SessionAggregate {
 
   projectModelContext(): ModelContextMessage[] {
     const context: ModelContextMessage[] = []
-    const fallbackIndexes = new Map<string, number>()
+    const pendingSayCalls: SayProjection[] = []
+    const committedSayMessages = new Map<string, SayProjection>()
     if (this.state.contextState.summary) {
       context.push({ role: 'system', content: this.state.contextState.summary })
     }
     const summarized = new Set(this.state.contextState.summarizedEventIds)
     for (const event of this.state.timeline) {
-      if (summarized.has(event.eventId) || event.type === 'context-compacted') continue
+      if (summarized.has(event.eventId) || event.type === 'context-compacted') {
+        if (event.type === 'context-compacted') pendingSayCalls.length = 0
+        continue
+      }
       switch (event.type) {
         case 'user-message-accepted':
-          context.push({ role: 'user', content: event.text })
+          pendingSayCalls.length = 0
+          context.push({ role: 'user', content: userModelContent(event.text, event.images) })
           break
-        case 'assistant-tool-calls-produced':
-          context.push({ role: 'assistant', content: event.visibleText ?? '', toolCalls: clone(event.calls) })
+        case 'assistant-tool-calls-produced': {
+          const assistantIndex = context.length
+          const calls = clone(event.calls)
+          context.push({ role: 'assistant', content: event.visibleText ?? '', toolCalls: calls })
+          calls.forEach((call, callIndex) => {
+            if (call.name !== SAY_TOOL_NAME) return
+            pendingSayCalls.push({ assistantIndex, callIndex, toolResultIndex: null, messageId: '' })
+          })
           break
-        case 'tool-execution-completed':
-          context.push({ role: 'tool', content: event.content, toolCallId: event.callId })
+        }
+        case 'tool-execution-completed': {
+          const toolResultIndex = context.length
+          context.push({ role: 'tool', content: normalizeToolResult(event.content), toolCallId: event.callId })
+          const pending = [...pendingSayCalls].reverse().find(item => {
+            const call = context[item.assistantIndex]?.toolCalls?.[item.callIndex]
+            return call?.id === event.callId && item.toolResultIndex === null
+          })
+          if (pending) pending.toolResultIndex = toolResultIndex
           break
-        case 'assistant-message-committed':
-          if (event.source === 'text-fallback') {
-            fallbackIndexes.set(event.messageId, context.length)
-            context.push({ role: 'assistant', content: event.display })
+        }
+        case 'assistant-message-committed': {
+          // 原生 say 与实时路径的合成 say 都先产生工具交换；纯文本兜底若没有
+          // 落库的合成交换，则在投影中补出同一交换，避免普通正文污染模型历史。
+          const pending = pendingSayCalls.shift()
+          if (pending) {
+            pending.messageId = event.messageId
+            committedSayMessages.set(event.messageId, pending)
+          } else if (event.source === 'text-fallback') {
+            committedSayMessages.set(event.messageId, this.appendProjectedSay(context, event))
           }
           break
+        }
         case 'assistant-message-revised': {
-          const index = fallbackIndexes.get(event.messageId)
-          if (index !== undefined && event.display !== undefined) context[index].content = event.display
+          const projection = committedSayMessages.get(event.messageId)
+          if (!projection) break
+          const assistant = context[projection.assistantIndex]
+          const call = assistant?.toolCalls?.[projection.callIndex]
+          if (!call) break
+          call.arguments = {
+            ...call.arguments,
+            ...(event.display !== undefined ? { display: event.display } : {}),
+            ...(event.voice !== undefined ? { voice: event.voice } : {}),
+          }
           break
         }
       }
     }
     return context
+  }
+
+  /** 在模型协议投影中补出没有落库的合成 say 交换。 */
+  private appendProjectedSay(
+    context: ModelContextMessage[],
+    event: AssistantMessageCommitted,
+  ): SayProjection {
+    const assistantIndex = context.length
+    const callId = `say-${event.messageId}`
+    context.push({
+      role: 'assistant',
+      content: '',
+      toolCalls: [{ id: callId, name: SAY_TOOL_NAME, arguments: sayArguments(event.display, event.voice) }],
+    })
+    const toolResultIndex = context.length
+    context.push({ role: 'tool', content: SAY_ACKNOWLEDGED, toolCallId: callId })
+    return { assistantIndex, callIndex: 0, toolResultIndex, messageId: event.messageId }
   }
 
   private append(event: ConversationEvent): void {

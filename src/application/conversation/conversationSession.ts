@@ -254,6 +254,12 @@ export type ConversationModelContext = ConversationToolTurnPorts['modelContext']
   stats(): ContextStats
 }
 
+/** 不改变实时模型上下文端口形状的消息事实同步协作。 */
+type ConversationMessageContextSync = {
+  bindAssistantMessage(messageId: string): void
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void
+}
+
 /**
  * 工具清单端口：本次请求可用的工具定义，以及文本兜底调用的提取。
  * 与执行流水线分开：清单是纯数据，执行才是外部依赖。
@@ -316,7 +322,7 @@ export interface ConversationVoicePort {
  * id 用途：
  * - `request` —— 一次对话请求的 id（今日为 `crypto.randomUUID()`）。
  * - `user-message` —— 用户消息 id，同时用作本回合的检查点 id（今日为 `${Date.now()}-xxxxxx`）。
- * - `say-synthetic` —— 文本兜底路径合成的 say 调用 id（今日为 `say_fallback_${Date.now()}_xxxx`）。
+ * - `say-synthetic` —— 文本兜底路径保留的 id 用途标签；实际调用 id 与 assistant message id 一致（`say-${messageId}`）。
  */
 export type ConversationIdKind = 'request' | 'user-message' | 'say-synthetic'
 
@@ -562,6 +568,9 @@ export class ConversationSession {
     // 同一条订阅也把消息事实转给展示层：界面列表先于语音更新，与迁移前 store 的顺序一致。
     this.assistantMessages.subscribe(event => {
       this.publishMessages(event)
+      const sync = this.ports.context as ConversationModelContext & Partial<ConversationMessageContextSync>
+      if (event.type === 'assistant-committed') sync.bindAssistantMessage?.(event.messageId)
+      else sync.reviseAssistantMessage?.(event.messageId, event)
       if (!event.playbackText?.trim()) return
       const character = this.ports.character.state()
       log.sensitiveDebug('conversation_session.voice_text_sensitive.debug', '送入 TTS 的语音文本', {
@@ -1038,8 +1047,8 @@ export class ConversationSession {
       const { voiceLanguage } = this.ports.character.state()
       this.renderBubble(round, visibleText, true)
       const { voice, display } = await resolveContentFallback(visibleText, voiceLanguage, translate)
-      this.commitSyntheticSay(round, voice, display)
-      await this.deliver(round, 'text-fallback', voice, display)
+      const messageId = await this.deliver(round, 'text-fallback', voice, display)
+      if (messageId) this.commitSyntheticSay(round, messageId, voice, display)
       turnTimer.stop('text — break')
       return 'complete'
     }
@@ -1258,10 +1267,11 @@ export class ConversationSession {
     source: 'say' | 'text-fallback',
     voice: string,
     display: string,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const messageId = await this.commitAssistant(round, display, voice, source, voice)
-    if (!messageId) return
+    if (!messageId) return null
     round.ttsRequested = true
+    return messageId
   }
 
   /**
@@ -1269,14 +1279,16 @@ export class ConversationSession {
    * 用于兜底路径（模型没调 say）：使实时上下文与会话恢复重建的范式保持一致 ——
    * 助手回合始终表现为 say 调用，避免「纯文本回合」污染范式、诱导模型后续不再调工具。
    */
-  private commitSyntheticSay(round: Round, voice: string, display: string): void {
+  private commitSyntheticSay(round: Round, messageId: string, voice: string, display: string): void {
     if (!this.ownsRound(round)) return
     const call: ProtocolToolCall = {
-      id: this.ports.clock.nextId('say-synthetic'),
+      id: `say-${messageId}`,
       type: 'function',
       function: { name: SAY_TOOL_NAME, arguments: JSON.stringify({ voice, display }) },
     }
     this.coordinator.appendSyntheticToolExchange(round.requestId, call, SAY_ACKNOWLEDGED)
+    const sync = this.ports.context as ConversationModelContext & Partial<ConversationMessageContextSync>
+    sync.bindAssistantMessage?.(messageId)
   }
 
   /**
@@ -1472,6 +1484,7 @@ const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, read
   session: [
     'currentSessionId',
     'workspaceGrantId',
+    'modelHistory',
     'acceptUserMessage',
     'recordToolCalls',
     'recordToolResult',

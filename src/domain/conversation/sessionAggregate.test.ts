@@ -42,6 +42,73 @@ describe('SessionAggregate', () => {
     ])
   })
 
+  it('normalizes long tool results before both persistence and model-history projection', () => {
+    const session = createSession()
+    const longResult = '头'.repeat(1200) + '中'.repeat(1200) + '尾'.repeat(1200)
+    session.recordToolCalls(
+      { eventId: 'event-calls-long', occurredAt: 11 },
+      { stepId: 'step-long', calls: [{ id: 'call-long', name: 'read_file', arguments: {} }] },
+    )
+    session.recordToolResult(
+      { eventId: 'event-result-long', occurredAt: 12 },
+      { callId: 'call-long', content: longResult, status: 'succeeded' },
+    )
+
+    const projected = session.projectModelContext()
+    const content = projected.find(message => message.role === 'tool')?.content as string
+    expect(content.length).toBeLessThanOrEqual(1600)
+    expect(content).toContain('头')
+    expect(content).toContain('尾')
+    expect(content).toContain('省略')
+  })
+
+  it('projects user images as multimodal model content', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'event-user-image', occurredAt: 11 },
+      {
+        messageId: 'message-user-image',
+        text: '请看这张图',
+        images: [{
+          id: 'image-1',
+          name: 'cat.png',
+          mimeType: 'image/png',
+          size: 3,
+          dataUrl: 'data:image/png;base64,Y2F0',
+        }],
+      },
+    )
+
+    expect(session.projectModelContext()).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: '请看这张图' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,Y2F0', detail: 'auto' } },
+      ],
+    }])
+  })
+
+  it('为没有工具事件的纯文本兜底补出 say 交换', () => {
+    const session = createSession()
+    session.commitAssistantMessage(
+      { eventId: 'event-fallback', occurredAt: 11 },
+      { messageId: 'fallback-answer', display: '兜底回复', source: 'text-fallback' },
+    )
+
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-fallback-answer',
+          name: 'say',
+          arguments: { display: '兜底回复', voice: '兜底回复' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-fallback-answer' },
+    ])
+  })
+
   it('returns detached snapshots instead of exposing mutable aggregate state', () => {
     const session = createSession()
     const snapshot = session.snapshot()
@@ -111,16 +178,27 @@ describe('SessionAggregate', () => {
       { eventId: 'old-user', occurredAt: 11 },
       { messageId: 'old-message', text: 'old turn' },
     )
+    session.recordToolCalls(
+      { eventId: 'old-calls', occurredAt: 12 },
+      { stepId: 'old-step', calls: [{ id: 'old-call', name: 'read_file', arguments: { path: 'old.txt' } }] },
+    )
+    session.recordToolResult(
+      { eventId: 'old-result', occurredAt: 13 },
+      { callId: 'old-call', content: 'old content', status: 'succeeded' },
+    )
     session.commitAssistantMessage(
-      { eventId: 'old-assistant', occurredAt: 12 },
+      { eventId: 'old-assistant', occurredAt: 14 },
       { messageId: 'old-answer', display: 'old answer', source: 'text-fallback' },
     )
     session.compactContext(
-      { eventId: 'compaction', occurredAt: 13 },
-      { summary: 'The previous turn discussed an old topic.', summarizedEventIds: ['old-user', 'old-assistant'] },
+      { eventId: 'compaction', occurredAt: 15 },
+      {
+        summary: 'The previous turn discussed an old topic.',
+        summarizedEventIds: ['old-user', 'old-calls', 'old-result', 'old-assistant'],
+      },
     )
     session.acceptUserMessage(
-      { eventId: 'new-user', occurredAt: 14 },
+      { eventId: 'new-user', occurredAt: 16 },
       { messageId: 'new-message', text: 'new turn' },
     )
 
@@ -143,7 +221,54 @@ describe('SessionAggregate', () => {
     )
 
     expect(session.projectTranscript()[0]).toMatchObject({ text: 'final', voice: 'spoken final' })
-    expect(session.projectModelContext()).toEqual([{ role: 'assistant', content: 'final' }])
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-answer',
+          name: 'say',
+          arguments: { display: 'final', voice: 'spoken final' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-answer' },
+    ])
+  })
+
+  it('将原生 say 的后台修订写回工具参数而不追加正文消息', () => {
+    const session = createSession()
+    session.recordToolCalls(
+      { eventId: 'say-calls', occurredAt: 11 },
+      {
+        stepId: 'say-step',
+        calls: [{ id: 'say-call', name: 'say', arguments: { display: '预览', voice: '草稿' } }],
+      },
+    )
+    session.recordToolResult(
+      { eventId: 'say-result', occurredAt: 12 },
+      { callId: 'say-call', content: '已说出', status: 'succeeded' },
+    )
+    session.commitAssistantMessage(
+      { eventId: 'say-commit', occurredAt: 13 },
+      { messageId: 'say-answer', display: '预览', voice: '草稿', source: 'say' },
+    )
+    session.reviseAssistantMessage(
+      { eventId: 'say-revision', occurredAt: 14 },
+      { messageId: 'say-answer', display: '最终显示', voice: '最终台词' },
+    )
+
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-call',
+          name: 'say',
+          arguments: { display: '最终显示', voice: '最终台词' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-call' },
+    ])
   })
 
   it('rejects a revision without an earlier committed assistant message', () => {
@@ -259,7 +384,16 @@ describe('SessionAggregate', () => {
     expect(session.projectTranscript().map(message => message.id)).toEqual(['user-1', 'assistant-1'])
     expect(session.projectModelContext()).toEqual([
       { role: 'user', content: 'first' },
-      { role: 'assistant', content: 'first answer' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-assistant-1',
+          name: 'say',
+          arguments: { display: 'first answer', voice: 'first answer' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-assistant-1' },
     ])
     expect(session.snapshot()).toMatchObject({
       checkpoints: [{ id: 'checkpoint-1' }],
@@ -305,5 +439,32 @@ describe('SessionAggregate', () => {
       updatedAt: 13,
     })
     expect(() => session.bindCharacter('another-character', 14)).toThrow('Cannot change character')
+  })
+
+  it('回档到摘要之后的用户位置时保留最近有效摘要', () => {
+    const session = createSession()
+    session.acceptUserMessage(
+      { eventId: 'user-event-1', occurredAt: 11 },
+      { messageId: 'user-1', text: 'first' },
+    )
+    session.commitAssistantMessage(
+      { eventId: 'assistant-event-1', occurredAt: 12 },
+      { messageId: 'assistant-1', display: 'first answer', source: 'text-fallback' },
+    )
+    session.compactContext(
+      { eventId: 'compaction-1', occurredAt: 13 },
+      { summary: 'first summary', summarizedEventIds: ['user-event-1', 'assistant-event-1'] },
+    )
+    session.acceptUserMessage(
+      { eventId: 'user-event-2', occurredAt: 14 },
+      { messageId: 'user-2', text: 'second' },
+    )
+
+    session.rollbackToUserMessage('user-2', 20)
+
+    expect(session.snapshot().contextState).toEqual({
+      summary: 'first summary',
+      summarizedEventIds: ['user-event-1', 'assistant-event-1'],
+    })
   })
 })

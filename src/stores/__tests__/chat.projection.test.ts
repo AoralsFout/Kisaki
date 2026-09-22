@@ -141,6 +141,43 @@ describe('ChatStore 作为命令转发者', () => {
     expect(cancel).toHaveBeenLastCalledWith('model-context-refreshed')
   })
 
+  it('模型配置刷新从当前会话时间线模型投影重建上下文，而不是恢复旧快照', async () => {
+    h.facts.modelProjection = [
+      { role: 'user', content: '时间线里的历史' },
+      { role: 'assistant', content: '历史回复' },
+    ]
+    h.facts.modelSummarizedRounds = 3
+    const store = await chatStore()
+
+    store.refreshModelContext()
+
+    const messages = assemblyRef.current.context.messages([])
+    expect(messages.map(message => message.content)).toContain('时间线里的历史')
+    expect(messages.map(message => message.content)).toContain('历史回复')
+    expect(assemblyRef.current.context.stats().summarizedRounds).toBe(3)
+  })
+
+  it('模型配置刷新保留人格重设，同时取消进行中的回合并隐藏气泡', async () => {
+    const store = await chatStore()
+    const cancel = vi.spyOn(h.session, 'cancel')
+
+    store.setSystemPrompt('当前人格', 'ja-JP', 'zh-CN', 'illustration')
+    store.showBubbleText('旧回复')
+    store.refreshModelContext()
+
+    expect(cancel).toHaveBeenLastCalledWith('model-context-refreshed')
+    expect(store.showBubble).toBe(false)
+    expect(store.currentBubbleText).toBe('')
+    const system = assemblyRef.current.context.messages([])[0]
+    expect(system.role).toBe('system')
+    expect(system.content).toContain('当前人格')
+    expect(store.inspectContext().persona).toMatchObject({
+      voiceLang: 'ja-JP',
+      displayLang: 'zh-CN',
+      render: 'illustration',
+    })
+  })
+
   it('返回值映射：取消算已接受，触达轮次上限不算', async () => {
     const store = await chatStore()
     h.model.enqueue(sayTurn('say-1', { display: '你好' }))

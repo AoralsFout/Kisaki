@@ -174,10 +174,15 @@ export class SessionApplicationService {
 
   async compactContext(
     sessionId: string,
-    compaction: { summary: string; summarizedEventIds: string[] },
+    compaction: { summary: string; summarizedEventIds?: string[]; summarizedRounds?: number },
   ): Promise<void> {
     await this.commit(() => {
-      this.requireCollection().get(sessionId).compactContext(this.eventIdentity(), compaction)
+      const session = this.requireCollection().get(sessionId)
+      session.compactContext(this.eventIdentity(), {
+        summary: compaction.summary,
+        summarizedEventIds: compaction.summarizedEventIds
+          ?? session.contextEventIdsForSummarizedRounds(compaction.summarizedRounds ?? 0),
+      })
     })
   }
 

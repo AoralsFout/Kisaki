@@ -1,7 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
-import type { ChatContextSnapshot, ChatMessage as ProtocolMessage } from '../ai'
 import type { ChatMessage } from './chat'
 import { useChatStore } from './chat'
 import type { ChatSessionPort } from '../application/conversation/chatSessionPort'
@@ -17,8 +16,10 @@ import type {
 import type {
   CharacterLookSnapshot,
   ConversationSessionSnapshot,
+  ModelContextMessage,
   RecordedToolCall,
   SessionCheckpoint,
+  ModelHistoryCompaction,
 } from '../domain/conversation/events'
 import { SessionAggregate } from '../domain/conversation/sessionAggregate'
 import { createLogger } from '../utils/logger'
@@ -30,7 +31,9 @@ export interface Session {
   id: string
   name: string
   messages: ChatMessage[]
-  context: ChatContextSnapshot
+  /** 时间线直接投影出的模型协议历史；恢复时不经过快照往返。 */
+  modelHistory: ModelContextMessage[]
+  summarizedRounds: number
   characterId?: string
   characterLocked: boolean
   /** 会话记住的角色外观；加载该会话时恢复，null = 尚未记录 */
@@ -59,30 +62,11 @@ export function setSessionServiceFactory(factory: SessionServiceFactory | null):
   createSessionService = factory
 }
 
-function toProtocolSnapshot(snapshot: ConversationSessionSnapshot): ChatContextSnapshot {
-  const aggregate = SessionAggregate.restore(snapshot)
-  const messages: ProtocolMessage[] = aggregate.projectModelContext()
-    .filter(message => message.role !== 'system')
-    .map(message => ({
-      role: message.role,
-      content: message.content,
-      tool_call_id: message.toolCallId,
-      tool_calls: message.toolCalls?.map(call => ({
-        id: call.id,
-        type: 'function' as const,
-        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-      })),
-    }))
+function summarizedRounds(snapshot: ConversationSessionSnapshot): number {
   const summarized = new Set(snapshot.contextState.summarizedEventIds)
-  const summarizedRounds = snapshot.timeline.filter(event => (
+  return snapshot.timeline.filter(event => (
     event.type === 'user-message-accepted' && summarized.has(event.eventId)
   )).length
-  return {
-    version: 1,
-    messages,
-    rollingSummary: snapshot.contextState.summary ?? '',
-    summarizedRounds,
-  }
 }
 
 function toView(snapshot: ConversationSessionSnapshot, workspaceRoot: string | null): Session {
@@ -100,7 +84,8 @@ function toView(snapshot: ConversationSessionSnapshot, workspaceRoot: string | n
     id: snapshot.id,
     name: snapshot.title,
     messages,
-    context: toProtocolSnapshot(snapshot),
+    modelHistory: aggregate.projectModelContext(),
+    summarizedRounds: summarizedRounds(snapshot),
     characterId: snapshot.characterId ?? undefined,
     characterLocked: snapshot.characterLocked,
     character: snapshot.character,
@@ -279,7 +264,11 @@ export const useSessionStore = defineStore('session', () => {
 
   function loadCurrentChat(): void {
     const session = currentSession.value
-    useChatStore().loadMessages(session?.messages ?? [], session?.context ?? null)
+    useChatStore().loadMessages(
+      session?.messages ?? [],
+      session?.modelHistory ?? [],
+      session?.summarizedRounds ?? 0,
+    )
   }
 
   async function init(): Promise<void> {
@@ -328,7 +317,7 @@ export const useSessionStore = defineStore('session', () => {
     // 先把当前外观落回原会话，再切：切换过程中 currentSession 已指向目标会话。
     await persistCharacterState(previousId)
     currentSessionId.value = sessionId
-    useChatStore().loadMessages(target.messages, target.context)
+    useChatStore().loadMessages(target.messages, target.modelHistory, target.summarizedRounds)
     try {
       await runCommand(() => requireService().switchTo(sessionId))
       if (currentSession.value) await restoreCharacter(currentSession.value)
@@ -524,6 +513,19 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
+    if (compaction.sessionId !== currentSessionId.value || !compaction.summary.trim()) return false
+    try {
+      await runCommand(() => requireService().compactContext(compaction.sessionId, {
+        summary: compaction.summary,
+        summarizedRounds: compaction.summarizedRounds,
+      }))
+      return compaction.sessionId === currentSessionId.value
+    } catch {
+      return false
+    }
+  }
+
   async function clearConversation(sessionId: string): Promise<void> {
     if (sessionId !== currentSessionId.value) return
     try {
@@ -569,11 +571,16 @@ export const useSessionStore = defineStore('session', () => {
     return {
       currentSessionId: () => currentSessionId.value,
       workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
+      modelHistory: () => ({
+        projection: currentSession.value?.modelHistory ?? [],
+        summarizedRounds: currentSession.value?.summarizedRounds ?? 0,
+      }),
       acceptUserMessage,
       recordToolCalls,
       recordToolResult,
       commitAssistantMessage,
       reviseAssistantMessage,
+      compactContext,
       beginCheckpoint,
       backupFile,
       markCheckpointFiles,

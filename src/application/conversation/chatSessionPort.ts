@@ -1,4 +1,4 @@
-import type { ConversationImage, RecordedToolCall } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats, RecordedToolCall } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 
 /**
@@ -11,6 +11,8 @@ import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistant
 export interface ChatSessionPort {
   currentSessionId(): string
   workspaceGrantId(): string | null
+  /** 当前会话时间线的模型协议投影；模型配置刷新只能从这里重建历史。 */
+  modelHistory(): { projection: readonly ModelContextMessage[] } & ModelHistoryStats
   acceptUserMessage(message: {
     sessionId: string
     messageId: string
@@ -32,6 +34,8 @@ export interface ChatSessionPort {
   }): Promise<boolean>
   commitAssistantMessage(message: CommitAssistantMessage): Promise<string | null>
   reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean>
+  /** 把实时模型上下文刚生成的滚动摘要写入当前会话事实。 */
+  compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean>
   beginCheckpoint(sessionId: string, messageId: string): Promise<string>
   backupFile(sessionId: string, checkpointId: string, relativePath: string): Promise<void>
   markCheckpointFiles(sessionId: string, checkpointId: string): Promise<void>

@@ -18,7 +18,7 @@ import type { ContextStats } from '../../ai/context'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
-import type { ConversationImage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
   ConversationApprovalListener,
@@ -206,6 +206,7 @@ export class FakeModelContext implements ConversationModelContext {
   readonly toolResultLog: { callId: string; content: string }[] = []
   readonly toolImageLog: { toolCallIds: string; images: readonly ConversationImage[] }[] = []
   readonly requestedTools: ToolDefinition[][] = []
+  private readonly assistantMessageCallIds = new Map<string, string>()
   statsValue: ContextStats = {
     estimatedTokens: 42,
     maxContextTokens: 1000,
@@ -244,6 +245,37 @@ export class FakeModelContext implements ConversationModelContext {
     this.toolImageLog.push({ toolCallIds, images: [...images] })
   }
 
+  bindAssistantMessage(messageId: string): void {
+    let message: ConversationModelMessage | undefined
+    for (const item of [...this.conversation].reverse()) {
+      if (item.role === 'user') break
+      if (item.role === 'assistant') {
+        message = item
+        break
+      }
+    }
+    const call = message?.tool_calls
+      ? [...message.tool_calls].reverse().find(item => (
+        item.function.name === 'say'
+        && ![...this.assistantMessageCallIds.values()].includes(item.id)
+      ))
+      : undefined
+    if (call) this.assistantMessageCallIds.set(messageId, call.id)
+  }
+
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
+    const callId = this.assistantMessageCallIds.get(messageId)
+    const message = this.conversation.find(item => item.role === 'assistant' && item.tool_calls?.some(call => call.id === callId))
+    const call = message?.tool_calls?.find(item => item.id === callId)
+    if (!call) return
+    const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>
+    call.function.arguments = JSON.stringify({
+      ...args,
+      ...(revision.display !== undefined ? { display: revision.display } : {}),
+      ...(revision.voice !== undefined ? { voice: revision.voice } : {}),
+    })
+  }
+
   stats(): ContextStats { return { ...this.statsValue } }
 }
 
@@ -258,6 +290,8 @@ export class FakeChatSessionPort {
 
   sessionId = 'session-1'
   workspace: string | null = 'workspace-1'
+  modelProjection: ModelContextMessage[] = []
+  modelSummarizedRounds = 0
   acceptResult = true
   /** 工具调用 / 工具结果 / 修订的写入结果；false 用来测「写入失败」分支。 */
   toolCallsResult = true
@@ -270,11 +304,16 @@ export class FakeChatSessionPort {
   private readonly chatSessionPort: import('./chatSessionPort').ChatSessionPort = {
     currentSessionId: () => this.currentSessionId(),
     workspaceGrantId: () => this.workspaceGrantId(),
+    modelHistory: () => ({
+      projection: this.modelProjection,
+      summarizedRounds: this.modelSummarizedRounds,
+    }),
     acceptUserMessage: message => this.acceptUserMessage(message),
     recordToolCalls: step => this.recordToolCalls(step),
     recordToolResult: result => this.recordToolResult(result),
     commitAssistantMessage: message => this.commitAssistantMessage(message),
     reviseAssistantMessage: message => this.reviseAssistantMessage(message),
+    compactContext: compaction => this.compactContext(compaction),
     beginCheckpoint: (sessionId, messageId) => this.beginCheckpoint(sessionId, messageId),
     backupFile: (sessionId, checkpointId, path) => this.backupFile(sessionId, checkpointId, path),
     markCheckpointFiles: (sessionId, checkpointId) => this.markCheckpointFiles(sessionId, checkpointId),
@@ -286,6 +325,10 @@ export class FakeChatSessionPort {
 
   currentSessionId(): string { return this.sessionId }
   workspaceGrantId(): string | null { return this.workspace }
+
+  modelHistory(): { projection: readonly ModelContextMessage[] } & ModelHistoryStats {
+    return { projection: this.modelProjection, summarizedRounds: this.modelSummarizedRounds }
+  }
 
   async acceptUserMessage(message: {
     sessionId: string
@@ -338,6 +381,11 @@ export class FakeChatSessionPort {
     this.events.push(`revise:${message.messageId}`)
     this.revisions.push(message)
     return this.reviseResult
+  }
+
+  async compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
+    this.events.push(`compact:${compaction.summary}`)
+    return compaction.sessionId === this.sessionId
   }
 
   async backupFile(_sessionId: string, _checkpointId: string, path: string): Promise<void> {

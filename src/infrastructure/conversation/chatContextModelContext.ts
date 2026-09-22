@@ -6,16 +6,14 @@
  * 而「什么时候换、换成什么预算」属于装配，不属于回合。
  *
  * 替换因此落在适配器里，作为端口之外的方法：`reset()` 按当前模型配置换一个空的底层上下文，
- * 等价于迁移前 store 里的 `chatContext = createChatContext()`；需要保留内容时由调用方
- * 先 `snapshot()`、换完之后 `restore()`。适配器比端口宽不违反契约 —— 端口是缝，
- * 适配器可以更宽。
+ * `loadModelProjection()` 直接装载会话时间线投影。适配器比端口宽不违反契约 —— 端口是缝，适配器可以更宽。
  */
 import { ChatContext } from '../../ai/context'
-import type { ChatContextInspection, ChatContextSnapshot, ContextStats } from '../../ai/context'
+import type { ChatContextInspection, ContextStats } from '../../ai/context'
 import { loadConfig } from '../../ai/client'
 import type { ChatMessage } from '../../ai/types'
 import type { ToolDefinition } from '../../agent/types'
-import type { ConversationImage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import type { ConversationModelContext } from '../../application/conversation/conversationSession'
 
@@ -33,16 +31,16 @@ export function createConfiguredChatContext(): ChatContext {
   return new ChatContext()
 }
 
-/** 恢复用户图片所需的回合视图：文本与它带来的图片按用户消息顺序配对。 */
-export interface ConversationUserTurn {
-  text: string
-  images?: readonly ConversationImage[]
-}
+/** ChatContext 裁剪后交给会话事实端口的摘要结果。 */
+export type ConversationContextCompactionListener = (compaction: ModelHistoryCompaction) => void
 
 export class ChatContextModelContext implements ConversationModelContext {
   private context: ChatContext
 
-  constructor(private readonly createContext: () => ChatContext = createConfiguredChatContext) {
+  constructor(
+    private readonly createContext: () => ChatContext = createConfiguredChatContext,
+    private readonly onCompaction?: ConversationContextCompactionListener,
+  ) {
     this.context = this.createContext()
   }
 
@@ -50,7 +48,23 @@ export class ChatContextModelContext implements ConversationModelContext {
 
   /** 本次请求要发给模型的消息。返回的是请求副本，调用方按需在其上追加。 */
   messages(tools: readonly ToolDefinition[]): readonly ChatMessage[] {
-    return this.context.getMessages([...tools])
+    const before = this.context.getCompactionState()
+    try {
+      return this.context.getMessages([...tools])
+    } finally {
+      // 即使当前请求最终因预算不足失败，ChatContext 也可能已经完成了裁剪；
+      // 这份摘要仍必须进入会话事实，避免实时上下文与模型历史脱节。
+      const after = this.context.getCompactionState()
+      if (after.summary && (
+        after.summary !== before.summary
+        || after.summarizedRounds !== before.summarizedRounds
+      )) {
+        this.onCompaction?.({
+          summary: after.summary,
+          summarizedRounds: after.summarizedRounds,
+        })
+      }
+    }
   }
 
   addUserMessage(text: string, images: readonly ConversationImage[]): void {
@@ -69,6 +83,16 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context.addToolImages(toolCallIds, images)
   }
 
+  /** 消息事实提交后把 say 调用绑定到持久化 message id。 */
+  bindAssistantMessage(messageId: string): void {
+    this.context.bindAssistantMessage(messageId)
+  }
+
+  /** 消息事实修订成功后同步实时模型上下文。 */
+  reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
+    this.context.reviseAssistantMessage(messageId, revision)
+  }
+
   stats(): ContextStats {
     return this.context.getStats()
   }
@@ -83,6 +107,22 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context = this.createContext()
   }
 
+  /** 直接装载会话时间线的模型协议投影，避免快照往返。 */
+  loadModelProjection(
+    projection: readonly ModelContextMessage[],
+    stats: ModelHistoryStats = { summarizedRounds: 0 },
+  ): void {
+    const summary = projection.find(message => message.role === 'system')
+    const history = projection
+      .filter(message => message.role !== 'system')
+      .map(toChatMessage)
+    this.context.replaceHistory(
+      history,
+      typeof summary?.content === 'string' ? summary.content : '',
+      stats.summarizedRounds,
+    )
+  }
+
   /** 设置自定义 system prompt；换上下文之后由调用方按当前角色重新应用。 */
   setSystemPrompt(
     prompt: string,
@@ -93,23 +133,32 @@ export class ChatContextModelContext implements ConversationModelContext {
     this.context.setSystemPrompt(prompt, voiceLang, displayLang, render)
   }
 
-  /** 导出可持久化的脱敏快照（system prompt 不落盘）。 */
-  snapshot(): ChatContextSnapshot {
-    return this.context.exportSnapshot()
-  }
-
-  /** 恢复快照；版本不符或形状不对时返回 false，不抛错。 */
-  restore(snapshot: ChatContextSnapshot | null | undefined): boolean {
-    return this.context.importSnapshot(snapshot)
-  }
-
-  /** 从界面历史恢复用户图片（快照里不含 base64）。 */
-  restoreUserImages(turns: readonly ConversationUserTurn[]): void {
-    this.context.restoreUserImages(turns)
-  }
-
-  /** 上下文检查器视图：不触发裁剪、不修改统计状态。 */
+  /** 上下文检查器视图：在副本上预演裁剪，不修改真实上下文或统计状态。 */
   inspect(tools: readonly ToolDefinition[]): ChatContextInspection {
     return this.context.inspect([...tools])
+  }
+}
+
+function toChatMessage(message: ModelContextMessage): ChatMessage {
+  return {
+    role: message.role,
+    content: typeof message.content === 'string'
+      ? message.content
+      : message.content.map(part => part.type === 'text'
+        ? { type: 'text', text: part.text }
+        : { type: 'image_url', image_url: { ...part.image_url } }),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.toolCalls
+      ? {
+        tool_calls: message.toolCalls.map(call => ({
+          id: call.id,
+          type: 'function' as const,
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+          },
+        })),
+      }
+      : {}),
   }
 }

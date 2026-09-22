@@ -10,7 +10,7 @@
  */
 import type { ChatSessionPort } from '../../application/conversation/chatSessionPort'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from '../../application/conversation/assistantMessageCoordinator'
-import type { ConversationImage, RecordedToolCall } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats, RecordedToolCall } from '../../domain/conversation/events'
 import { useSessionStore } from '../../stores/session'
 
 export class SessionStoreChatSessionPort implements ChatSessionPort {
@@ -26,6 +26,10 @@ export class SessionStoreChatSessionPort implements ChatSessionPort {
 
   workspaceGrantId(): string | null {
     return this.port().workspaceGrantId()
+  }
+
+  modelHistory(): { projection: readonly ModelContextMessage[] } & ModelHistoryStats {
+    return this.port().modelHistory()
   }
 
   acceptUserMessage(message: {
@@ -62,6 +66,10 @@ export class SessionStoreChatSessionPort implements ChatSessionPort {
 
   reviseAssistantMessage(message: ReviseAssistantMessage): Promise<boolean> {
     return this.port().reviseAssistantMessage(message)
+  }
+
+  compactContext(compaction: { sessionId: string } & ModelHistoryCompaction): Promise<boolean> {
+    return this.port().compactContext(compaction)
   }
 
   beginCheckpoint(sessionId: string, messageId: string): Promise<string> {

@@ -3,10 +3,9 @@
  */
 export { chat, quickChat, MAX_TOOL_TURNS, getModelProfile, loadConfig, saveConfig, saveConfigSecure, loadConfigSecure, isConfigValid, testAIConnection, DEFAULT_CONFIG } from './client'
 export { DEFAULT_SYSTEM_PROMPT, getDefaultMessages } from './prompts'
-export { ChatContext, ContextBudgetError } from './context'
+export { ChatContext, ContextBudgetError, estimateChatMessageTokens } from './context'
 export type {
   ChatContextInspection,
-  ChatContextSnapshot,
   ContextInspectionMessage,
   ContextMessageOrigin,
   ContextStats,

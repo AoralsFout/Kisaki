@@ -3,8 +3,10 @@ import { ChatContext } from '../../ai/context'
 import type { ChatMessage } from '../../ai/types'
 import type { ToolDefinition } from '../../agent/types'
 import type { ConversationImage } from '../../domain/conversation/events'
+import type { ModelContextMessage } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'
 import { ChatContextModelContext } from './chatContextModelContext'
+import type { ModelHistoryCompaction } from '../../domain/conversation/events'
 
 const SAY_TOOL: ToolDefinition = {
   type: 'function',
@@ -45,6 +47,25 @@ function textsOf(messages: readonly ChatMessage[]): string[] {
 }
 
 describe('ChatContextModelContext', () => {
+  it('裁剪生成滚动摘要时通知会话事实，且重复读取不会重复通知', () => {
+    const compactions: ModelHistoryCompaction[] = []
+    const context = new ChatContextModelContext(
+      () => new ChatContext({ maxRounds: 1, maxContextTokens: 6000 }),
+      compaction => compactions.push(compaction),
+    )
+    context.addUserMessage('较早的问题', [])
+    context.addToolCalls([SAY_CALL])
+    context.addToolResult(SAY_CALL.id, '较早的结果')
+    context.addUserMessage('当前的问题', [])
+
+    context.messages([])
+    context.messages([])
+
+    expect(compactions).toHaveLength(1)
+    expect(compactions[0].summary).toContain('较早的问题')
+    expect(compactions[0].summarizedRounds).toBe(1)
+  })
+
   it('构造时按工厂建出一个底层上下文', () => {
     const tracking = trackingFactory()
 
@@ -109,39 +130,39 @@ describe('ChatContextModelContext', () => {
     expect(textsOf(context.messages([]))).toContain('再见')
   })
 
-  it('快照往返在天生的上下文替换之后恢复内容', () => {
-    const tracking = trackingFactory()
-    const context = new ChatContextModelContext(tracking.create)
-    context.setSystemPrompt('你是小崎')
-    context.addUserMessage('你好', [])
-    const snapshot = context.snapshot()
-
-    context.reset()
-    expect(textsOf(context.messages([]))).not.toContain('你好')
-
-    context.setSystemPrompt('你是小崎')
-    expect(context.restore(snapshot)).toBe(true)
-    expect(textsOf(context.messages([]))).toContain('你好')
-    expect(textsOf(context.messages([])).some(text => text.includes('你是小崎'))).toBe(true)
-  })
-
-  it('拒绝来路不明的快照时返回 false，不抛错', () => {
+  it('直接装载时间线模型投影，保留图片、工具交换与滚动摘要', () => {
     const context = new ChatContextModelContext(trackingFactory().create)
-    // 版本号对不上时应当整份丢弃，而不是尽力而为地恢复一半。
-    const stale = JSON.parse('{"version":99,"messages":[],"rollingSummary":"","summarizedRounds":0}')
+    context.setSystemPrompt('你是小崎')
+    const projection: ModelContextMessage[] = [
+      { role: 'system', content: '较早回合摘要' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看这张' },
+          { type: 'image_url', image_url: { url: IMAGE.dataUrl, detail: 'auto' } },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'say-1', name: 'say', arguments: { voice: '你好', display: '你好' } }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-1' },
+    ]
 
-    expect(context.restore(null)).toBe(false)
-    expect(context.restore(stale)).toBe(false)
-  })
+    context.loadModelProjection(projection, { summarizedRounds: 1 })
+    const messages = context.messages([])
 
-  it('restoreUserImages() 把界面历史里的图片配回用户消息', () => {
-    const context = new ChatContextModelContext(trackingFactory().create)
-    context.addUserMessage('看这张', [])
-
-    context.restoreUserImages([{ text: '看这张', images: [IMAGE] }])
-
-    const userMessage = context.messages([]).find(message => message.role === 'user' && Array.isArray(message.content))
-    expect(userMessage).toBeDefined()
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: projection[1].content }),
+      expect.objectContaining({ role: 'assistant', tool_calls: [expect.objectContaining({
+        id: 'say-1',
+        function: expect.objectContaining({ arguments: '{"voice":"你好","display":"你好"}' }),
+      })] }),
+      expect.objectContaining({ role: 'tool', tool_call_id: 'say-1', content: '已说出' }),
+    ]))
+    expect(messages[1].content).toContain('较早回合摘要')
+    expect(context.stats().summarizedRounds).toBe(1)
   })
 
   it('inspect() 给出检查器视图且不改动统计状态', () => {
