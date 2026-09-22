@@ -18,7 +18,7 @@ import type { ContextStats } from '../../ai/context'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
-import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
   ConversationApprovalListener,
@@ -246,14 +246,21 @@ export class FakeModelContext implements ConversationModelContext {
   }
 
   bindAssistantMessage(messageId: string): void {
-    for (const message of [...this.conversation].reverse()) {
-      if (message.role !== 'assistant' || !message.tool_calls) continue
-      const call = [...message.tool_calls].reverse().find(item => item.function.name === 'say')
-      if (call) {
-        this.assistantMessageCallIds.set(messageId, call.id)
-        return
+    let message: ConversationModelMessage | undefined
+    for (const item of [...this.conversation].reverse()) {
+      if (item.role === 'user') break
+      if (item.role === 'assistant') {
+        message = item
+        break
       }
     }
+    const call = message?.tool_calls
+      ? [...message.tool_calls].reverse().find(item => (
+        item.function.name === 'say'
+        && ![...this.assistantMessageCallIds.values()].includes(item.id)
+      ))
+      : undefined
+    if (call) this.assistantMessageCallIds.set(messageId, call.id)
   }
 
   reviseAssistantMessage(messageId: string, revision: { display?: string; voice?: string }): void {
@@ -319,7 +326,7 @@ export class FakeChatSessionPort {
   currentSessionId(): string { return this.sessionId }
   workspaceGrantId(): string | null { return this.workspace }
 
-  modelHistory(): { projection: readonly ModelContextMessage[]; summarizedRounds: number } {
+  modelHistory(): { projection: readonly ModelContextMessage[] } & ModelHistoryStats {
     return { projection: this.modelProjection, summarizedRounds: this.modelSummarizedRounds }
   }
 

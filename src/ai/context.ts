@@ -493,16 +493,25 @@ export class ChatContext {
 
   /** 绑定刚提交的 assistant 消息与其 say 工具调用，供后台修订同步使用。 */
   bindAssistantMessage(messageId: string): void {
-    for (let index = this.messages.length - 1; index >= 0; index--) {
-      const message = this.messages[index]
-      if (message.role !== 'assistant' || !message.tool_calls) continue
-      for (let callIndex = message.tool_calls.length - 1; callIndex >= 0; callIndex--) {
-        const call = message.tool_calls[callIndex]
-        if (call.function.name !== 'say' || [...this.assistantMessageCallIds.values()].includes(call.id)) continue
-        this.assistantMessageCallIds.set(messageId, call.id)
-        return
+    // 提交事件必须只认最近一条 assistant。文本兜底在提交事件之后才
+    // 追加合成 say；向历史回溯会把它误绑到上一条 say，迟到修订便可能
+    // 改错消息。合成 say 追加后会再次调用本方法完成正确绑定。
+    let message: ChatMessage | undefined
+    for (const item of [...this.messages].reverse()) {
+      // 新一条 user 已经开始下一回合；在它之前的 assistant 属于旧事实，
+      // 不能被当前提交事件认领。tool 回执则仍属于前面的 assistant。
+      if (item.role === 'user') break
+      if (item.role === 'assistant') {
+        message = item
+        break
       }
     }
+    if (!message?.tool_calls) return
+    const call = [...message.tool_calls].reverse().find(item => (
+      item.function.name === 'say'
+      && ![...this.assistantMessageCallIds.values()].includes(item.id)
+    ))
+    if (call) this.assistantMessageCallIds.set(messageId, call.id)
   }
 
   /** 把已持久化的 assistant 修订同步到当前实时模型上下文。 */

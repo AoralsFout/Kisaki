@@ -110,6 +110,26 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(tool?.content).toContain('省略')
   })
 
+  it('assistant 修订只绑定最近一条 assistant 的 say，不回溯到旧调用', () => {
+    const ctx = new ChatContext({ maxContextTokens: 100000 })
+    ctx.addUserMessage('第一轮')
+    ctx.addAssistantToolCall([{
+      id: 'say-old', type: 'function',
+      function: { name: 'say', arguments: JSON.stringify({ voice: '旧台词', display: '旧显示' }) },
+    }])
+    ctx.addToolResult('say-old', '已说出')
+
+    // 文本兜底的 assistant 提交先于合成 say 追加；此时不能把新消息
+    // 错绑到旧调用，合成 say 追加后再由调用方显式绑定。
+    ctx.addUserMessage('第二轮')
+    ctx.bindAssistantMessage('assistant-fallback')
+    ctx.reviseAssistantMessage('assistant-fallback', { voice: '不应写入旧调用' })
+
+    const oldSay = ctx.getMessages().find(message => message.role === 'assistant')
+      ?.tool_calls?.find(call => call.id === 'say-old')
+    expect(JSON.parse(oldSay?.function.arguments ?? '{}')).toEqual({ voice: '旧台词', display: '旧显示' })
+  })
+
   it('发送标准多模态图片内容并保留在实时上下文', () => {
     const image = {
       id: 'img-1',

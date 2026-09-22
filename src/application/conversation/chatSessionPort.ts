@@ -1,4 +1,4 @@
-import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, RecordedToolCall } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats, RecordedToolCall } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 
 /**
@@ -12,7 +12,7 @@ export interface ChatSessionPort {
   currentSessionId(): string
   workspaceGrantId(): string | null
   /** 当前会话时间线的模型协议投影；模型配置刷新只能从这里重建历史。 */
-  modelHistory(): { projection: readonly ModelContextMessage[]; summarizedRounds: number }
+  modelHistory(): { projection: readonly ModelContextMessage[] } & ModelHistoryStats
   acceptUserMessage(message: {
     sessionId: string
     messageId: string
