@@ -242,4 +242,18 @@ describe('ChatContext 上下文裁剪（回合感知）', () => {
     expect(inspectionJson).toContain('approximately 300 bytes')
     expect(inspectionJson).not.toContain('A'.repeat(100))
   })
+
+  it('检查视图预演下一次请求的裁剪，统计与请求后的上下文一致', () => {
+    const ctx = new ChatContext({ maxRounds: 1, maxContextTokens: 100000 })
+    ctx.addUserMessage('较早的问题')
+    ctx.addAssistantMessage('较早的回答')
+    ctx.addUserMessage('当前问题')
+
+    const inspection = ctx.inspect()
+    const request = ctx.getMessages()
+
+    expect(inspection.messages.map(message => message.role)).toEqual(request.map(message => message.role))
+    expect(inspection.stats).toEqual(ctx.getStats())
+    expect(inspection.stats.summarizedRounds).toBe(1)
+  })
 })

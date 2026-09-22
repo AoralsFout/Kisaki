@@ -18,7 +18,7 @@ import type { ContextStats } from '../../ai/context'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
 import type { CharacterToolContext } from '../../agent/registry'
-import type { ConversationImage } from '../../domain/conversation/events'
+import type { ConversationImage, ModelContextMessage } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
   ConversationApprovalListener,
@@ -258,6 +258,8 @@ export class FakeChatSessionPort {
 
   sessionId = 'session-1'
   workspace: string | null = 'workspace-1'
+  modelProjection: ModelContextMessage[] = []
+  modelSummarizedRounds = 0
   acceptResult = true
   /** 工具调用 / 工具结果 / 修订的写入结果；false 用来测「写入失败」分支。 */
   toolCallsResult = true
@@ -270,6 +272,10 @@ export class FakeChatSessionPort {
   private readonly chatSessionPort: import('./chatSessionPort').ChatSessionPort = {
     currentSessionId: () => this.currentSessionId(),
     workspaceGrantId: () => this.workspaceGrantId(),
+    modelHistory: () => ({
+      projection: this.modelProjection,
+      summarizedRounds: this.modelSummarizedRounds,
+    }),
     acceptUserMessage: message => this.acceptUserMessage(message),
     recordToolCalls: step => this.recordToolCalls(step),
     recordToolResult: result => this.recordToolResult(result),
@@ -287,6 +293,10 @@ export class FakeChatSessionPort {
 
   currentSessionId(): string { return this.sessionId }
   workspaceGrantId(): string | null { return this.workspace }
+
+  modelHistory(): { projection: readonly ModelContextMessage[]; summarizedRounds: number } {
+    return { projection: this.modelProjection, summarizedRounds: this.modelSummarizedRounds }
+  }
 
   async acceptUserMessage(message: {
     sessionId: string

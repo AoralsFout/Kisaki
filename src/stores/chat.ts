@@ -421,11 +421,13 @@ export const useChatStore = defineStore('chat', () => {
    * `resetContext`），两处均已获用户批准。
    */
   function refreshModelContext() {
-    const { session, context } = conversation()
+    const { session, context, ports } = conversation()
     session.cancel('model-context-refreshed')
     hideBubble()
 
-    const snapshot = context.snapshot()
+    // 模型配置变化后必须从当前会话时间线的模型投影重建，不能把旧模型裁剪过的
+    // 上下文快照当成历史来源；新建的 ChatContext 会按新模型能力重新预算与裁剪。
+    const history = ports.session.modelHistory()
     context.reset()
     if (currentPersona) {
       context.setSystemPrompt(
@@ -435,10 +437,7 @@ export const useChatStore = defineStore('chat', () => {
         currentPersona.render,
       )
     }
-    context.restore(snapshot)
-    context.restoreUserImages(messages.value
-      .filter(msg => msg.role === 'user')
-      .map(msg => ({ text: msg.text, images: msg.images })))
+    context.loadModelProjection(history.projection, { summarizedRounds: history.summarizedRounds })
     configReady.value = isConfigValid(loadConfig())
     refreshProjection()
     log.info("chat_store.refresh_model_context.info", `模型配置已刷新，上下文预算=${contextStats.value.maxContextTokens}`, { context_stats_value: contextStats.value.maxContextTokens })

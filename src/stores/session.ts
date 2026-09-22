@@ -570,6 +570,10 @@ export const useSessionStore = defineStore('session', () => {
     return {
       currentSessionId: () => currentSessionId.value,
       workspaceGrantId: () => currentSession.value?.workspaceId ?? null,
+      modelHistory: () => ({
+        projection: currentSession.value?.modelContext ?? [],
+        summarizedRounds: currentSession.value?.summarizedRounds ?? 0,
+      }),
       acceptUserMessage,
       recordToolCalls,
       recordToolResult,

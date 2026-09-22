@@ -1472,6 +1472,7 @@ const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, read
   session: [
     'currentSessionId',
     'workspaceGrantId',
+    'modelHistory',
     'acceptUserMessage',
     'recordToolCalls',
     'recordToolResult',

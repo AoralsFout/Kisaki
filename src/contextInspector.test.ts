@@ -8,13 +8,12 @@ describe('contextInspector saved session', () => {
       id: 'session-1',
       name: '已保存会话',
       messages: [],
+      modelContext: [
+        { role: 'system', content: '用户：旧问题' },
+        { role: 'user', content: '当前问题' },
+      ],
+      summarizedRounds: 2,
       updatedAt: 123,
-      context: {
-        version: 1,
-        rollingSummary: '- 用户：旧问题',
-        summarizedRounds: 2,
-        messages: [{ role: 'user', content: '当前问题' }],
-      },
     })
 
     expect(inspected.source).toBe('saved')
@@ -51,5 +50,18 @@ describe('contextInspector saved session', () => {
       { type: 'text', text: '看这张图' },
       { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD', detail: 'auto' } },
     ])
+  })
+
+  it('没有时间线模型投影时不从 UI transcript 猜测模型历史', () => {
+    const inspected = inspectSavedSession({
+      id: 'session-3',
+      name: '仅有界面投影',
+      messages: [{ id: 'ui-1', role: 'user', text: '不应被使用', timestamp: 1 }],
+      modelContext: [],
+      updatedAt: 123,
+    })
+
+    expect(inspected.messages).toEqual([])
+    expect(inspected.stats.messageCount).toBe(0)
   })
 })

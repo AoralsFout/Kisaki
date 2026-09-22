@@ -161,6 +161,19 @@ function contentImageCount(content: ChatMessageContent): number {
     : 0
 }
 
+/** 对外复用的模型消息 token 粗估；检查器必须与请求预算使用同一口径。 */
+export function estimateChatMessageTokens(message: Pick<ChatMessage, 'content' | 'tool_calls' | 'tool_call_id'>): number {
+  let text = contentText(message.content)
+  if (message.tool_calls) {
+    for (const toolCall of message.tool_calls) {
+      text += toolCall.function.name + toolCall.function.arguments
+    }
+  }
+  if (message.tool_call_id) text += message.tool_call_id
+  // 图像 token 数随分辨率和 provider 而异；auto detail 以保守常量参与裁剪。
+  return estimateTokens(text) + contentImageCount(message.content) * 1100
+}
+
 function multimodalContent(text: string, images: readonly ImageAttachment[]): ChatMessageContent {
   if (images.length === 0) return text
   return [
@@ -372,15 +385,7 @@ export class ChatContext {
 
   /** 估算单条消息的 token（含 tool_calls 参数体与 tool_call_id） */
   private estimateMessageTokens(m: ChatMessage): number {
-    let text = contentText(m.content)
-    if (m.tool_calls) {
-      for (const tc of m.tool_calls) {
-        text += tc.function.name + tc.function.arguments
-      }
-    }
-    if (m.tool_call_id) text += m.tool_call_id
-    // 图像 token 数随分辨率和 provider 而异；auto detail 以保守常量参与裁剪。
-    return estimateTokens(text) + contentImageCount(m.content) * 1100
+    return estimateChatMessageTokens(m)
   }
 
   /** 当前上下文估计 token 总数（用于裁剪决策） */
@@ -566,12 +571,16 @@ export class ChatContext {
   }
 
   getStats(): ContextStats {
-    const estimatedTokens = this.estimatedTokens + this.lastToolDefinitionTokens
+    // 统计口径与实际请求一致：摘要与每轮提醒都已经 materialize，消息数也按
+    // 实际发送序列计算，而不是按内部未展开的 messages 数组计算。
+    const materialized = this.materializeMessages(true)
+    const estimatedTokens = materialized.reduce((sum, message) => sum + this.estimateMessageTokens(message), 0)
+      + this.lastToolDefinitionTokens
     return {
       estimatedTokens,
       maxContextTokens: this.maxContextTokens,
       toolDefinitionTokens: this.lastToolDefinitionTokens,
-      messageCount: this.messages.length,
+      messageCount: materialized.length,
       summarizedRounds: this.summarizedRounds,
       prunedMessages: this.prunedMessages,
       utilization: Math.min(1, estimatedTokens / Math.max(1, this.maxContextTokens)),
@@ -583,6 +592,18 @@ export class ChatContext {
    * 消息顺序与下一次请求一致：system（含每轮提醒）→ 滚动摘要 → 活跃历史。
    */
   inspect(tools: unknown[] = []): ChatContextInspection {
+    // 检查器必须回答「下一次请求会看到什么」，包括下一次请求会触发的裁剪，
+    // 但不能为了展示而改写真实上下文。用同配置的副本执行一次请求预算整理。
+    const preview = this.copyForInspection()
+    try {
+      preview.getMessages(tools)
+    } catch {
+      // 与真实请求相同：预算错误仍保留整理后的视图，供检查器展示超限原因。
+    }
+    return preview.inspectCurrent(tools)
+  }
+
+  private inspectCurrent(tools: unknown[] = []): ChatContextInspection {
     const materialized = this.materializeMessages(true)
     const hasSummary = Boolean(this.rollingSummary)
     const toolDefinitionTokens = tools.length > 0 ? estimateTokens(JSON.stringify(tools)) : 0
@@ -616,6 +637,23 @@ export class ChatContext {
       maxRounds: this.maxRounds,
       hasTurnReminder: Boolean(this.voiceLang && this.displayLang),
     }
+  }
+
+  private copyForInspection(): ChatContext {
+    const copy = new ChatContext({
+      maxRounds: this.maxRounds,
+      maxContextTokens: this.maxContextTokens,
+    })
+    copy.messages = this.messages.map(cloneMessage)
+    copy.customPrompt = this.customPrompt
+    copy.voiceLang = this.voiceLang
+    copy.displayLang = this.displayLang
+    copy.render = this.render
+    copy.rollingSummary = this.rollingSummary
+    copy.summarizedRounds = this.summarizedRounds
+    copy.prunedMessages = this.prunedMessages
+    copy.lastToolDefinitionTokens = this.lastToolDefinitionTokens
+    return copy
   }
 
   /**
