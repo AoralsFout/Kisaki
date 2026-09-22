@@ -146,6 +146,56 @@ describe('SessionApplicationService', () => {
     })
   })
 
+  it('多次实时压缩按累计回合映射完整事实，且不会把旧摘要事件再次纳入', async () => {
+    const { service } = setup()
+    await service.initialize('First')
+    await service.acceptUserMessage('session-1', { messageId: 'user-1', text: 'first' })
+    await service.recordToolCalls('session-1', {
+      stepId: 'step-1', calls: [{ id: 'call-1', name: 'read_file', arguments: {} }],
+    })
+    await service.recordToolResult('session-1', {
+      callId: 'call-1', content: 'one', status: 'succeeded',
+    })
+    await service.commitAssistantMessage('session-1', {
+      messageId: 'assistant-1', display: 'answer one', source: 'text-fallback',
+    })
+    await service.acceptUserMessage('session-1', { messageId: 'user-2', text: 'second' })
+
+    await service.compactContext('session-1', { summary: 'summary one', summarizedRounds: 1 })
+    const firstCompaction = service.current().timeline.find(event => event.type === 'context-compacted')
+    expect(firstCompaction?.summarizedEventIds).toEqual(
+      service.current().timeline
+        .slice(0, 4)
+        .map(event => event.eventId),
+    )
+
+    await service.recordToolCalls('session-1', {
+      stepId: 'step-2', calls: [{ id: 'call-2', name: 'read_file', arguments: {} }],
+    })
+    await service.recordToolResult('session-1', {
+      callId: 'call-2', content: 'two', status: 'succeeded',
+    })
+    await service.commitAssistantMessage('session-1', {
+      messageId: 'assistant-2', display: 'answer two', source: 'text-fallback',
+    })
+    await service.acceptUserMessage('session-1', { messageId: 'user-3', text: 'third' })
+
+    await service.compactContext('session-1', { summary: 'summary one\nsummary two', summarizedRounds: 2 })
+    const timeline = service.current().timeline
+    const secondCompaction = [...timeline].reverse().find(event => event.type === 'context-compacted')
+    const secondUserIndex = timeline.findIndex(event => (
+      event.type === 'user-message-accepted' && event.messageId === 'user-3'
+    ))
+    const expected = timeline
+      .slice(0, secondUserIndex)
+      .filter(event => event.type !== 'context-compacted')
+      .map(event => event.eventId)
+
+    expect(secondCompaction?.summarizedEventIds).toEqual(expected)
+    expect(new Set(secondCompaction?.summarizedEventIds).size).toBe(expected.length)
+    expect(secondCompaction?.summarizedEventIds).not.toContain(firstCompaction?.eventId)
+  })
+
   it('serializes overlapping commands so an older save cannot win the race', async () => {
     const { repository, service } = setup()
     await service.initialize('First')

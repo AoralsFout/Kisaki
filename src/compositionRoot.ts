@@ -98,10 +98,18 @@ export async function composeConversationAssembly(
   const context = overrides.context ?? new ChatContextModelContext(
     undefined,
     compaction => {
+      const sessionId = sessionPort.currentSessionId()
       void sessionPort.compactContext({
-        sessionId: sessionPort.currentSessionId(),
+        sessionId,
         summary: compaction.summary,
         summarizedRounds: compaction.summarizedRounds,
+      }).catch(error => {
+        // 模型上下文端口是同步的，裁剪事实只能异步落库；失败不应反向打断当前模型请求，
+        // 但自定义端口的拒绝仍必须被消费，避免产生未处理的 Promise rejection。
+        log.error('composition.context_compaction_failed', '实时上下文摘要落库失败', error, {
+          session_id: sessionId,
+          summarized_rounds: compaction.summarizedRounds,
+        })
       })
     },
   )
