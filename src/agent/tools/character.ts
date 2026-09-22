@@ -191,7 +191,7 @@ export const setScreenPoseTool: Tool = {
       return `不支持 "${pose}"，可选: ${ALL_POSE_KEYS.join(', ')}`
     }
     const runtime = context?.character
-    if (!runtime || !runtime.setScreenPose(pose)) return '角色运行时未初始化'
+    if (!runtime?.state().data || !runtime.setScreenPose(pose)) return '角色运行时未初始化'
     const label = POSE_PRESETS[pose as keyof typeof POSE_PRESETS]?.label ?? pose
     log.info("tool_character.module.info", `屏幕位置切换: ${pose} (${label})`, { pose: pose, label: label })
     return `屏幕位置已切换为「${label}」`

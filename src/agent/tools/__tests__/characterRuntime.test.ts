@@ -61,14 +61,14 @@ function live2dState(): CharacterToolRuntimeState {
 
 class FakeCharacterRuntime implements CharacterToolRuntimePort {
   constructor(public current: CharacterToolRuntimeState) {}
-  readonly setLook = vi.fn(() => true)
-  readonly setScreenPose = vi.fn(() => true)
+  readonly setLook = vi.fn(() => Boolean(this.current.data))
+  readonly setScreenPose = vi.fn(() => Boolean(this.current.data))
   readonly playMotion = vi.fn(async () => true)
   state(): CharacterToolRuntimeState { return this.current }
 }
 
 function context(character: CharacterToolRuntimePort): ToolExecutionContext {
-  return { signal: new AbortController().signal, sessionApproval: false, hasWorkspace: false, character }
+  return { signal: new AbortController().signal, sessionApproval: false, workspaceGrantId: null, character }
 }
 
 describe('角色工具运行时端口', () => {
