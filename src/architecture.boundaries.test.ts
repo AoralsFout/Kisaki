@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
+import * as ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 const SOURCE_ROOT = join(process.cwd(), 'src')
@@ -32,6 +33,47 @@ function importsOf(source: string): string[] {
   // 少了这一遍，`await import('pinia')` 就能绕过全部规则。
   for (const match of source.matchAll(/\bimport\s*\(\s*['\"]([^'\"]+)['\"]/g)) specifiers.push(match[1])
   return specifiers
+}
+
+/**
+ * 架构守卫只检查语法树中的标识符和成员调用，不把注释或字符串里的说明文字当成生产路径。
+ * 这样新增日志、文档注释或错误文案时，不会误报为旧恢复 API 的重新引入。
+ */
+function syntaxTree(source: string): ts.SourceFile {
+  return ts.createSourceFile('architecture-guard.ts', source, ts.ScriptTarget.Latest, true)
+}
+
+function identifiersOf(source: string): Set<string> {
+  const identifiers = new Set<string>()
+  const tree = syntaxTree(source)
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) identifiers.add(node.text)
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  return identifiers
+}
+
+function accessPath(expression: ts.Expression): string | null {
+  if (expression.kind === ts.SyntaxKind.ThisKeyword) return 'this'
+  if (ts.isIdentifier(expression)) return expression.text
+  if (!ts.isPropertyAccessExpression(expression)) return null
+  const parent = accessPath(expression.expression)
+  return parent ? `${parent}.${expression.name.text}` : null
+}
+
+function memberCallsOf(source: string): string[] {
+  const calls: string[] = []
+  const tree = syntaxTree(source)
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const path = accessPath(node.expression)
+      if (path) calls.push(path)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  return calls
 }
 
 describe('architecture boundaries', () => {
@@ -108,30 +150,41 @@ describe('architecture boundaries', () => {
     const forbidden = ['exportSnapshot', 'importSnapshot', 'ChatContextSnapshot']
     const violations: string[] = []
     for (const file of sourceFiles(SOURCE_ROOT)) {
-      const source = readFileSync(file, 'utf8')
+      const identifiers = identifiersOf(readFileSync(file, 'utf8'))
       for (const name of forbidden) {
-        if (source.includes(name)) violations.push(`${relative(SOURCE_ROOT, file)} -> ${name}`)
+        if (identifiers.has(name)) violations.push(`${relative(SOURCE_ROOT, file)} -> ${name}`)
       }
     }
     expect(violations).toEqual([])
 
-    const context = readFileSync(join(SOURCE_ROOT, 'infrastructure', 'conversation', 'chatContextModelContext.ts'), 'utf8')
-    expect(context).toContain('loadModelProjection(')
-    expect(context).not.toContain('importSnapshot')
-    expect(context).not.toContain('exportSnapshot')
+    const contextPath = join(SOURCE_ROOT, 'infrastructure', 'conversation', 'chatContextModelContext.ts')
+    const context = readFileSync(contextPath, 'utf8')
+    const calls = memberCallsOf(context)
+    expect(calls).toContain('this.context.replaceHistory')
+    expect(calls).toContain('this.context.inspect')
+    for (const legacyCall of [
+      'this.context.exportSnapshot',
+      'this.context.importSnapshot',
+      'this.context.restoreUserImages',
+      'this.context.snapshot',
+      'this.context.restore',
+    ]) expect(calls).not.toContain(legacyCall)
   })
 
   it('keeps UI transcript separate from the timeline model-history projection', () => {
     const chat = readFileSync(join(SOURCE_ROOT, 'stores', 'chat.ts'), 'utf8')
     const session = readFileSync(join(SOURCE_ROOT, 'stores', 'session.ts'), 'utf8')
     const adapter = readFileSync(join(SOURCE_ROOT, 'infrastructure', 'conversation', 'chatContextModelContext.ts'), 'utf8')
+    const chatCalls = memberCallsOf(chat)
+    const sessionCalls = memberCallsOf(session)
+    const adapterIdentifiers = identifiersOf(adapter)
 
-    expect(chat).toContain('context.loadModelProjection(modelContext, summarizedRounds)')
-    expect(chat).toContain('context.loadModelProjection(history.projection, { summarizedRounds: history.summarizedRounds })')
-    expect(chat).not.toContain('restoreUserImages')
-    expect(session).toContain('modelContext: aggregate.projectModelContext()')
-    expect(adapter).not.toContain('ConversationUserTurn')
-    expect(adapter).not.toContain('restoreUserImages')
+    expect(chatCalls.filter(call => call === 'context.loadModelProjection')).toHaveLength(2)
+    expect(chatCalls).not.toContain('context.restoreUserImages')
+    expect(chatCalls).not.toContain('context.restore')
+    expect(sessionCalls).toContain('aggregate.projectModelContext')
+    expect(adapterIdentifiers).not.toContain('ConversationUserTurn')
+    expect(adapterIdentifiers).not.toContain('restoreUserImages')
   })
 
   it('assembles the v2 session persistence path only in the composition root', () => {

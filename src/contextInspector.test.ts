@@ -3,7 +3,7 @@ import { inspectSavedSession } from './contextInspector'
 import type { ModelContextMessage } from './domain/conversation/events'
 
 describe('contextInspector saved session', () => {
-  it('明确标记持久化快照，并把滚动摘要放在协议历史之前', () => {
+  it('明确标记保存会话，并把滚动摘要放在协议历史之前', () => {
     const inspected = inspectSavedSession({
       id: 'session-1',
       name: '已保存会话',
