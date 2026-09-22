@@ -162,7 +162,8 @@ describe('architecture boundaries', () => {
     expect(contracts).not.toMatch(/\b(?:setLook|setScreenPose|playMotion)\s*\(/)
 
     const ports = readFileSync(join(DOMAIN_ROOT, 'tools', 'ports.ts'), 'utf8')
-    expect(ports).not.toContain('CharacterRuntime')
+    expect(ports).not.toContain('CharacterToolRuntimePort')
+    expect(ports).toContain('ToolCharacterRuntimePort')
     expect(ports).not.toContain('/application/')
   })
 

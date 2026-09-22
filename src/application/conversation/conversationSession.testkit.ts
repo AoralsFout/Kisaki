@@ -98,7 +98,7 @@ export function approvalPolicyOnlyFirstTime(decisions: readonly ('allow' | 'allo
 }
 
 /** 一批不含 say 的动作工具调用。 */
-export function actionTurn(name: string, id = `action-${name}`): TurnScript {
+export function actionTurn(name: string, id = `action-${name}`): RawModelTurn {
   return {
     type: 'tools',
     calls: [{ id, type: 'function', function: { name, arguments: '{}' } }],
