@@ -123,6 +123,12 @@ export interface SessionDocument {
   sessions: ConversationSessionSnapshot[]
 }
 
+/** 发给模型的多模态正文。领域层只描述协议形状，不依赖 AI 适配器。 */
+export type ModelContextContent = string | Array<
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail: 'auto' } }
+>
+
 export interface UiTranscriptMessage {
   id: string
   role: 'user' | 'assistant'
@@ -134,7 +140,7 @@ export interface UiTranscriptMessage {
 
 export interface ModelContextMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string
+  content: ModelContextContent
   toolCalls?: RecordedToolCall[]
   toolCallId?: string
 }

@@ -17,8 +17,7 @@ function sayCall(id: string, display: string, voice = display): ProtocolToolCall
 }
 
 describe('模型历史等价契约', () => {
-  // TODO(#54)：纯文本兜底的实时路径补齐合成 say 交换后，移除 fails 标记。
-  it.fails('同一段事实的实时累积与时间线恢复逐条产出相同协议消息', () => {
+  it('同一段事实的实时累积与时间线恢复逐条产出相同协议消息', () => {
     const fixture = createModelHistoryFixture()
 
     fixture.acceptUser('先读取资料')
@@ -38,8 +37,7 @@ describe('模型历史等价契约', () => {
     expect(fixture.restoreHistory()).toEqual(fixture.realtimeHistory())
   })
 
-  // TODO(#54)：时间线投影统一纯文本兜底为合成 say 交换后，移除 fails 标记。
-  it.fails('普通 say 与纯文本兜底都锁定为 say 工具交换及固定回执', () => {
+  it('普通 say 与纯文本兜底都锁定为 say 工具交换及固定回执', () => {
     const fixture = createModelHistoryFixture()
 
     fixture.acceptUser('普通 say')
