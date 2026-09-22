@@ -8,6 +8,7 @@
 | --- | --- | --- | --- |
 | [0001](0001-conversation-round-owner.md) | 对话回合的 Owner 是 ConversationSession，不是 Pinia store | 已接受 | 2026-09-11 |
 | [0002](0002-timeline-model-history-source.md) | 时间线投影是模型历史的唯一来源 | 已接受 | 2026-09-22 |
+| [0003](0003-tool-contract-owner.md) | 工具协议契约归属 domain/tools | 已接受 | 2026-09-22 |
 
 ## 编号约定
 

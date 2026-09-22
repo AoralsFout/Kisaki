@@ -6,7 +6,7 @@
  */
 import { estimateChatMessageTokens } from './ai'
 import type { ContextInspectionMessage, ContextStats } from './ai'
-import type { ToolDefinition } from './agent'
+import type { ToolDefinition } from './domain/tools/contracts'
 import type { ChatMessage, CurrentContextInspection } from './stores/chat'
 import type { ModelContextMessage } from './domain/conversation/events'
 import { redactEmbeddedImageDataUrl } from './ai/imageInspection'

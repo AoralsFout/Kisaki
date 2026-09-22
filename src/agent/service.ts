@@ -4,14 +4,15 @@
  * 为 ChatStore 提供简洁的 Agent 操作接口，隐藏 registry、executor、
  * context 等内部细节。后续替换 Agent 实现时只需修改本文件。
  */
-import type { ToolDefinition, ToolCall, ToolResult } from './types'
-import { getDefinitions, getTool, type CharacterToolContext } from './registry'
+import type { ToolCall, ToolDefinition, ToolResult } from '../domain/tools/contracts'
+import type { ToolCatalogContext } from '../domain/tools/contracts'
+import { getDefinitions, getTool } from './registry'
 import { executeToolCall } from './executor'
 
 /** Agent 服务的公开接口 */
 export interface AgentService {
   /** 获取所有工具定义（含角色枚举值注入） */
-  getToolDefinitions(context: CharacterToolContext): ToolDefinition[]
+  getToolDefinitions(context: ToolCatalogContext): ToolDefinition[]
   /** 执行单个工具调用 */
   execute(tc: ToolCall): Promise<ToolResult>
   /** 从文本中提取工具调用（兜底方案） */

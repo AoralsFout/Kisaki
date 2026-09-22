@@ -4,9 +4,12 @@
  * 管理所有可用工具，提供注册、查找、列出等功能。
  * getDefinitions() 会动态注入当前角色可用值到工具参数定义中。
  */
-import type { Tool, ToolDefinition, ToolOutput } from './types'
-import type { CharacterData } from '../character/loader'
-import type { CharacterCapabilities } from '../application/character/characterRuntime'
+import type { Tool, ToolOutput } from './types'
+import type { ToolCatalogContext, ToolDefinition } from '../domain/tools/contracts'
+export type { ToolCatalogContext } from '../domain/tools/contracts'
+
+/** 兼容旧消费者；新代码应从 domain/tools/contracts 引用工具清单上下文。 */
+export type CharacterToolContext = ToolCatalogContext
 import { getCommandEnabled, getScreenCaptureEnabled } from './toolPolicy'
 import { EXPERIMENTAL_COMMAND_AVAILABLE } from '../constants'
 import { createLogger } from '../utils/logger'
@@ -38,13 +41,7 @@ export function getTool(name: string): RegisteredTool | undefined {
  * 获取所有工具定义。①按当前角色 render 类型过滤（appliesTo）；
  * ②动态注入可用枚举值：立绘用角色数据，Live2D 用 Runtime 能力快照。
  */
-export interface CharacterToolContext {
-  data: CharacterData | null
-  capabilities: CharacterCapabilities | null
-  hasWorkspace?: boolean
-}
-
-export function getDefinitions(context: CharacterToolContext): ToolDefinition[] {
+export function getDefinitions(context: ToolCatalogContext): ToolDefinition[] {
   const resolved = context.data
   const capabilities = context.capabilities
   const render = resolved?.render ?? 'illustration'

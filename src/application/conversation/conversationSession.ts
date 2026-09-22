@@ -28,8 +28,7 @@ import type {
   ImageAttachment,
   ToolCallData,
 } from '../../ai/types'
-import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
 import type { CharacterData } from '../../character/loader'
 import type { ConversationImage } from '../../domain/conversation/events'
 import type { CharacterCapabilities } from '../character/characterRuntime'
@@ -266,7 +265,7 @@ type ConversationMessageContextSync = {
  */
 export interface ConversationToolCatalog {
   /** 本次请求的工具定义（含 say）；工作区授权状态决定文件与命令工具是否可见。 */
-  definitions(context: CharacterToolContext): ToolDefinition[]
+  definitions(context: ToolCatalogContext): ToolDefinition[]
   /** 从模型正文中提取文本形式的工具调用（兜底路径）。 */
   extractTextToolCalls(text: string): ToolCall[]
   /** 从模型正文中移除文本形式的工具调用，得到用户可见文本。 */

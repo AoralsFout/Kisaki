@@ -1,4 +1,4 @@
-import type { ToolCall, ToolResult } from '../../agent/types'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
 import type { ApprovalGateway, ApprovalRequest } from './approvalGateway'
 
 export interface ToolExecutionContext {

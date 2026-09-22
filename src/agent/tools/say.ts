@@ -8,7 +8,7 @@
  * 注意：say 是对话层（chat store）的职责——它的"执行"就是渲染气泡 + 触发 TTS，
  * 因此**不注册进 agent registry/executor**，仅由 chat store 拼进发给 LLM 的工具列表。
  */
-import type { ToolDefinition } from '../types'
+import type { ToolDefinition } from '../../domain/tools/contracts'
 
 /** say 工具名（供 chat store 识别终止性调用） */
 export const SAY_TOOL_NAME = 'say'

@@ -1,4 +1,4 @@
-import type { ToolCall } from '../../agent/types'
+import type { ToolCall } from '../../domain/tools/contracts'
 import type { ModelStreamSnapshot } from './modelStreamDecoder'
 import {
   normalizeNativeToolCalls,

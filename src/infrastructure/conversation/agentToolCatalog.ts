@@ -5,13 +5,12 @@
  * 与执行流水线分开；这里只做转发，不改变任何既有语义。
  */
 import { agentService } from '../../agent/service'
-import type { CharacterToolContext } from '../../agent/registry'
-import type { ToolCall, ToolDefinition } from '../../agent/types'
+import type { ToolCall, ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 import type { ConversationToolCatalog } from '../../application/conversation/conversationSession'
 
 export class AgentServiceToolCatalog implements ConversationToolCatalog {
   /** 本次请求的工具定义（含角色枚举值注入）；没有角色时由角色数据收敛。 */
-  definitions(context: CharacterToolContext): ToolDefinition[] {
+  definitions(context: ToolCatalogContext): ToolDefinition[] {
     return agentService.getToolDefinitions(context)
   }
 

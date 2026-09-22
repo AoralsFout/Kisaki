@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ChatContext } from '../../ai/context'
 import type { ChatMessage } from '../../ai/types'
-import type { ToolDefinition } from '../../agent/types'
+import type { ToolDefinition } from '../../domain/tools/contracts'
 import type { ConversationImage } from '../../domain/conversation/events'
 import type { ModelContextMessage } from '../../domain/conversation/events'
 import type { ProtocolToolCall } from '../../application/conversation/toolCallBatch'

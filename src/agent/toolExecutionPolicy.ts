@@ -1,4 +1,4 @@
-import type { ToolCall } from './types'
+import type { ToolCall } from '../domain/tools/contracts'
 import { getAutoExecFiles, getScreenCaptureEnabled } from './toolPolicy'
 import { getTool } from './registry'
 import { approveCommandExecution, prepareCommandExecution } from './tools/command'

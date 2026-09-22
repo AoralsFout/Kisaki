@@ -16,8 +16,7 @@ import { ConversationSession } from './conversationSession'
 
 import type { ContextStats } from '../../ai/context'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
-import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
 import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
@@ -402,7 +401,7 @@ export class FakeChatSessionPort {
 }
 
 export class FakeToolCatalog implements ConversationToolCatalog {
-  readonly contexts: CharacterToolContext[] = []
+  readonly contexts: ToolCatalogContext[] = []
   readonly extracted: string[] = []
   toolDefinitions: ToolDefinition[] = [
     { type: 'function', function: { name: 'read_file', description: '读取文件', parameters: { type: 'object', properties: {} } } },
@@ -412,7 +411,7 @@ export class FakeToolCatalog implements ConversationToolCatalog {
   /** 剥离文本工具调用后的用户可见正文；null 表示原样返回。 */
   strippedText: string | null = null
 
-  definitions(context: CharacterToolContext): ToolDefinition[] {
+  definitions(context: ToolCatalogContext): ToolDefinition[] {
     this.contexts.push(context)
     return this.toolDefinitions
   }

@@ -3,7 +3,8 @@
  */
 export { register, registerAll, getTool, getDefinitions, listTools } from './registry'
 export { parseToolCalls, executeToolCall, executeToolCalls } from './executor'
-export type { Tool, ToolDefinition, ToolCall, ToolResult, ToolParameter, ToolOutput, ToolImage, ToolPolicyDescriptor } from './types'
+export type { Tool, ToolPolicyDescriptor } from './types'
+export type { ToolCall, ToolDefinition, ToolImage, ToolOutput, ToolParameter, ToolResult, ToolCatalogContext } from '../domain/tools/contracts'
 export { SAY_TOOL_DEF, SAY_TOOL_NAME } from './tools/say'
 
 import { createLogger } from '../utils/logger'

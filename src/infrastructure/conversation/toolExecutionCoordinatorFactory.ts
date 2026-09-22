@@ -16,7 +16,7 @@ import {
   type ToolExecutionPolicy,
 } from '../../application/tools/toolExecutionCoordinator'
 import type { ApprovalGateway } from '../../application/tools/approvalGateway'
-import type { ToolCall, ToolResult } from '../../agent/types'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
 import type {
   ConversationToolExecutionPort,
   ConversationToolRoundHooks,

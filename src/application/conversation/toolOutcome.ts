@@ -4,7 +4,7 @@
  * 纯函数：把一次工具执行结果翻译成「活动状态 / 会话事实状态 / 是否需要跟进」，
  * 并执行本轮工具输出图片的数量与体积上限。
  */
-import type { ToolResult } from '../../agent/types'
+import type { ToolResult } from '../../domain/tools/contracts'
 import type { ImageAttachment } from '../../ai/types'
 
 /** 单轮工具输出图片的请求级上限，由 ConversationSession 的可调参数给出。 */

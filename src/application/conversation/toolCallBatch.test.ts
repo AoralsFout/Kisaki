@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolCall, ToolResult } from '../../agent/types'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
 import {
   executeToolCallBatch,
   normalizeNativeToolCalls,

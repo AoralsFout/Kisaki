@@ -10,10 +10,7 @@
  */
 import { SAY_TOOL_DEF } from '../../agent/tools/say'
 
-import type { ToolDefinition } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
-import type { CharacterData } from '../../character/loader'
-import type { CharacterCapabilities } from '../character/characterRuntime'
+import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 
 /**
  * 装配本回合的工具清单：角色可见的工具定义，末尾补上 say 说话工具。
@@ -21,8 +18,8 @@ import type { CharacterCapabilities } from '../character/characterRuntime'
  * `hasWorkspace` 由调用方现取（一个回合内用户可能中途授权），故不在这里读端口。
  */
 export function assembleRoundToolList(
-  tools: { definitions(context: CharacterToolContext): ToolDefinition[] },
-  character: { data: CharacterData | null; capabilities: CharacterCapabilities | null },
+  tools: { definitions(context: ToolCatalogContext): ToolDefinition[] },
+  character: Pick<ToolCatalogContext, 'data' | 'capabilities'>,
   hasWorkspace: boolean,
 ): ToolDefinition[] {
   return [

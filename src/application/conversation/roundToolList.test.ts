@@ -8,8 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { SAY_TOOL_DEF } from '../../agent/tools/say'
 import { assembleRoundToolList } from './roundToolList'
 
-import type { ToolDefinition } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
+import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 import type { CharacterData } from '../../character/loader'
 import type { CharacterCapabilities } from '../character/characterRuntime'
 
@@ -44,8 +43,8 @@ const capabilities: CharacterCapabilities = {
 }
 
 /** 记录收到的装配上下文，并回一份固定清单。 */
-function catalogSpy(): { contexts: CharacterToolContext[]; definitions: (context: CharacterToolContext) => ToolDefinition[] } {
-  const contexts: CharacterToolContext[] = []
+function catalogSpy(): { contexts: ToolCatalogContext[]; definitions: (context: ToolCatalogContext) => ToolDefinition[] } {
+  const contexts: ToolCatalogContext[] = []
   return {
     contexts,
     definitions: context => {
