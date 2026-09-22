@@ -57,7 +57,7 @@ function catalogSpy(): { contexts: ToolCatalogContext[]; definitions: (context: 
 describe('assembleRoundToolList', () => {
   it('角色工具在前，say 说话工具始终在末位', () => {
     const spy = catalogSpy()
-    const list = assembleRoundToolList(spy, { data: character, capabilities }, true)
+    const list = assembleRoundToolList(spy, { data: character, capabilities }, 'grant-1')
 
     expect(list.map(item => item.function.name)).toEqual(['read_file', 'say'])
     expect(list[list.length - 1]).toBe(SAY_TOOL_DEF)
@@ -65,16 +65,16 @@ describe('assembleRoundToolList', () => {
 
   it('把角色数据、能力与工作区授权原样透传给清单端口', () => {
     const spy = catalogSpy()
-    assembleRoundToolList(spy, { data: character, capabilities }, false)
+    assembleRoundToolList(spy, { data: character, capabilities }, null)
 
-    expect(spy.contexts).toEqual([{ data: character, capabilities, hasWorkspace: false }])
+    expect(spy.contexts).toEqual([{ data: character, capabilities, workspaceGrantId: null }])
   })
 
   it('端口返回空清单时仍只剩 say，不会额外补出别的工具', () => {
     const list = assembleRoundToolList(
       { definitions: () => [] },
       { data: null, capabilities: null },
-      true,
+      'grant-1',
     )
 
     expect(list).toEqual([SAY_TOOL_DEF])

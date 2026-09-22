@@ -4,7 +4,8 @@
  * 为 ChatStore 提供简洁的 Agent 操作接口，隐藏 registry、executor、
  * context 等内部细节。后续替换 Agent 实现时只需修改本文件。
  */
-import type { ToolCall, ToolDefinition, ToolResult, ToolExecutionContext } from '../domain/tools/contracts'
+import type { ToolCall, ToolDefinition, ToolResult } from '../domain/tools/contracts'
+import type { ToolExecutionContext } from '../domain/tools/ports'
 import type { ToolCatalogContext } from '../domain/tools/contracts'
 import { getDefinitions, getTool } from './registry'
 import { executeToolCall } from './executor'

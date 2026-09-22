@@ -1,26 +1,11 @@
-import type { ToolCall, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
-import type { ApprovalGateway, ApprovalRequest } from './approvalGateway'
-
-export interface PreparedToolExecution {
-  call: ToolCall
-  approval?: ApprovalRequest
-  checkpointPath?: string
-  authorize?: () => Promise<ToolCall>
-}
-
-export interface ToolExecutionPolicy {
-  prepare(call: ToolCall, context: ToolExecutionContext): Promise<PreparedToolExecution>
-}
-
-export class ToolExecutionFailure extends Error {
-  constructor(
-    readonly content: string,
-    readonly code: string,
-    readonly retryable: boolean,
-  ) {
-    super(content)
-  }
-}
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
+import {
+  ToolExecutionFailure,
+  type PreparedToolExecution,
+  type ToolExecutionContext,
+  type ToolExecutionPolicy,
+} from '../../domain/tools/ports'
+import type { ApprovalGateway } from './approvalGateway'
 
 export interface ToolExecutionCoordinatorOptions {
   approvalGateway: ApprovalGateway

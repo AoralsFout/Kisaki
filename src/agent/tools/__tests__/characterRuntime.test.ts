@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { CharacterToolRuntimePort, CharacterToolRuntimeState } from '../../../application/character/characterToolRuntime'
+import type { ToolCharacterRuntimePort, ToolCharacterRuntimeState } from '../../../domain/tools/ports'
 import type { CharacterData } from '../../../character/loader'
-import type { ToolExecutionContext } from '../../../domain/tools/contracts'
+import type { ToolExecutionContext } from '../../../domain/tools/ports'
 import {
   getStateTool,
   setCostumeTool,
@@ -25,7 +25,7 @@ const data: CharacterData = {
   render: 'illustration',
 }
 
-function illustrationState(): CharacterToolRuntimeState {
+function illustrationState(): ToolCharacterRuntimeState {
   return {
     identity: { id: 'alice', name: '爱丽丝' },
     data,
@@ -42,7 +42,7 @@ function illustrationState(): CharacterToolRuntimeState {
   }
 }
 
-function live2dState(): CharacterToolRuntimeState {
+function live2dState(): ToolCharacterRuntimeState {
   const state = illustrationState()
   return {
     ...state,
@@ -59,15 +59,15 @@ function live2dState(): CharacterToolRuntimeState {
   }
 }
 
-class FakeCharacterRuntime implements CharacterToolRuntimePort {
-  constructor(public current: CharacterToolRuntimeState) {}
+class FakeCharacterRuntime implements ToolCharacterRuntimePort {
+  constructor(public current: ToolCharacterRuntimeState) {}
   readonly setLook = vi.fn(() => Boolean(this.current.data))
   readonly setScreenPose = vi.fn(() => Boolean(this.current.data))
   readonly playMotion = vi.fn(async () => true)
-  state(): CharacterToolRuntimeState { return this.current }
+  state(): ToolCharacterRuntimeState { return this.current }
 }
 
-function context(character: CharacterToolRuntimePort): ToolExecutionContext {
+function context(character: ToolCharacterRuntimePort): ToolExecutionContext {
   return { signal: new AbortController().signal, sessionApproval: false, workspaceGrantId: null, character }
 }
 

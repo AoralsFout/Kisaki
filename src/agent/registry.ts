@@ -49,7 +49,7 @@ export function getDefinitions(context: ToolCatalogContext): ToolDefinition[] {
     if (appliesTo !== 'both' && appliesTo !== render) continue
 
     // 没有工作区能力时不把文件/命令工具发送给模型，减少 token 和误调用。
-    if (context.hasWorkspace === false && t.policy?.requiresWorkspace) continue
+    if (context.workspaceGrantId === null && t.policy?.requiresWorkspace) continue
 
     // ② 任务执行默认关闭（无 OS 沙箱、风险最高），需用户在设置中显式开启
     if (

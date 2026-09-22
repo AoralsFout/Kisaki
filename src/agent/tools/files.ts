@@ -6,7 +6,8 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { Tool } from '../tool'
-import type { ToolOutput, ToolExecutionContext } from '../../domain/tools/contracts'
+import type { ToolOutput } from '../../domain/tools/contracts'
+import type { ToolExecutionContext } from '../../domain/tools/ports'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolFiles')

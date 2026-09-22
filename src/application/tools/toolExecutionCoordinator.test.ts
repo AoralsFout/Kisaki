@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApprovalGateway } from './approvalGateway'
-import { ToolExecutionCoordinator, type ToolExecutionPolicy } from './toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from './toolExecutionCoordinator'
+import type { ToolExecutionPolicy } from '../../domain/tools/ports'
 
 const call = { id: 'call-1', name: 'write_file', arguments: { path: 'a.txt' } }
 

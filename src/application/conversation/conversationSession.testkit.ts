@@ -7,16 +7,14 @@
  * 假端口同时记录「发生了什么」与「以什么顺序发生」，让行为断言不必去读日志缓冲区。
  */
 import { ApprovalGateway } from '../tools/approvalGateway'
-import {
-  ToolExecutionCoordinator,
-  type ToolExecutionPolicy,
-} from '../tools/toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import { ConversationSession } from './conversationSession'
 
 import type { ContextStats } from '../../ai/context'
-import type { CharacterToolRuntimePort } from '../character/characterToolRuntime'
+import type { ToolCharacterRuntimePort } from '../../domain/tools/ports'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
-import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
+import type { ToolExecutionContext, ToolExecutionPolicy } from '../../domain/tools/ports'
 import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
@@ -184,7 +182,7 @@ export class FakeTranslator implements ConversationTranslator {
 }
 
 export class FakeCharacterSource implements ConversationCharacterSource {
-  readonly characterRuntime: CharacterToolRuntimePort = {
+  readonly characterRuntime: ToolCharacterRuntimePort = {
     state: () => ({ identity: null, data: null, render: null, look: null, capabilities: null }),
     setLook: () => false,
     setScreenPose: () => false,
@@ -204,7 +202,7 @@ export class FakeCharacterSource implements ConversationCharacterSource {
 
   state(): ConversationCharacterState { return this.value }
 
-  runtime(): CharacterToolRuntimePort { return this.characterRuntime }
+  runtime(): ToolCharacterRuntimePort { return this.characterRuntime }
 }
 
 export class FakeModelContext implements ConversationModelContext {

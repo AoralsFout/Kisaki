@@ -6,10 +6,10 @@
  */
 import { useCharacterStore } from '../../stores/character'
 import type { PoseKey } from '../../character/poses'
-import type { CharacterToolRuntimePort, CharacterToolRuntimeState } from '../../application/character/characterToolRuntime'
+import type { ToolCharacterRuntimePort, ToolCharacterRuntimeState } from '../../domain/tools/ports'
 
-export class CharacterStoreToolRuntimePort implements CharacterToolRuntimePort {
-  state(): CharacterToolRuntimeState {
+export class CharacterStoreToolRuntimePort implements ToolCharacterRuntimePort {
+  state(): ToolCharacterRuntimeState {
     const store = useCharacterStore()
     const data = store.data
     const snapshot = store.getRuntimeSnapshot()
@@ -22,7 +22,7 @@ export class CharacterStoreToolRuntimePort implements CharacterToolRuntimePort {
     }
   }
 
-  setLook(change: Parameters<CharacterToolRuntimePort['setLook']>[0]): boolean {
+  setLook(change: Parameters<ToolCharacterRuntimePort['setLook']>[0]): boolean {
     return useCharacterStore().setVisualLook(change)
   }
 

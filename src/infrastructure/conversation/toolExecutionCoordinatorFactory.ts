@@ -11,12 +11,10 @@
  */
 import { agentService } from '../../agent/service'
 import { toolExecutionPolicy } from '../../agent/toolExecutionPolicy'
-import {
-  ToolExecutionCoordinator,
-  type ToolExecutionPolicy,
-} from '../../application/tools/toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from '../../application/tools/toolExecutionCoordinator'
 import type { ApprovalGateway } from '../../application/tools/approvalGateway'
-import type { ToolCall, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
+import type { ToolExecutionContext, ToolExecutionPolicy } from '../../domain/tools/ports'
 import type {
   ConversationToolExecutionPort,
   ConversationToolRoundHooks,

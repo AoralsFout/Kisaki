@@ -15,18 +15,18 @@ import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/cont
 /**
  * 装配本回合的工具清单：角色可见的工具定义，末尾补上 say 说话工具。
  *
- * `hasWorkspace` 由调用方现取（一个回合内用户可能中途授权），故不在这里读端口。
+ * `workspaceGrantId` 由调用方现取；清单只在 registry 使用点派生可见性。
  */
 export function assembleRoundToolList(
   tools: { definitions(context: ToolCatalogContext): ToolDefinition[] },
   character: Pick<ToolCatalogContext, 'data' | 'capabilities'>,
-  hasWorkspace: boolean,
+  workspaceGrantId: string | null,
 ): ToolDefinition[] {
   return [
     ...tools.definitions({
       data: character.data,
       capabilities: character.capabilities,
-      hasWorkspace,
+      workspaceGrantId,
     }),
     SAY_TOOL_DEF,
   ]

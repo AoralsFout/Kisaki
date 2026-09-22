@@ -6,7 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { Tool } from '../tool'
-import type { ToolExecutionContext } from '../../domain/tools/contracts'
+import type { ToolExecutionContext } from '../../domain/tools/ports'
 import { createLogger } from '../../utils/logger'
 import { beginExecutionTracking, finishExecutionTracking } from '../executionState'
 

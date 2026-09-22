@@ -1,13 +1,13 @@
 import type { ToolCall } from '../domain/tools/contracts'
+import type {
+  PreparedToolExecution,
+  ToolExecutionContext,
+  ToolExecutionPolicy,
+} from '../domain/tools/ports'
 import { getAutoExecFiles, getScreenCaptureEnabled } from './toolPolicy'
 import { getTool } from './registry'
 import { approveCommandExecution, prepareCommandExecution } from './tools/command'
-import type { ToolExecutionContext } from '../domain/tools/contracts'
-import {
-  ToolExecutionFailure,
-  type PreparedToolExecution,
-  type ToolExecutionPolicy,
-} from '../application/tools/toolExecutionCoordinator'
+import { ToolExecutionFailure } from '../domain/tools/ports'
 
 export const toolExecutionPolicy: ToolExecutionPolicy = {
   async prepare(call: ToolCall, context: ToolExecutionContext): Promise<PreparedToolExecution> {

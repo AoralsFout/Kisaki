@@ -8,16 +8,15 @@
  * 它必然 import Pinia store，因此只能待在基础设施层：
  * `src/architecture.boundaries.test.ts` 递归禁止 `src/application/**` 认识 vue / pinia / stores。
  */
-import type { CharacterCapabilities } from '../../application/character/characterRuntime'
-import type { CharacterToolRuntimePort } from '../../application/character/characterToolRuntime'
+import type { ToolCharacterRuntimePort } from '../../domain/tools/ports'
 import type { ConversationCharacterSource, ConversationCharacterState } from '../../application/conversation/conversationSession'
 import { DEFAULT_VOICE_LANGUAGE } from '../../constants'
 import { resolveDisplayLanguage } from '../../stores/language'
 
 export class CharacterStoreSource implements ConversationCharacterSource {
-  constructor(private readonly characterRuntime: CharacterToolRuntimePort) {}
+  constructor(private readonly characterRuntime: ToolCharacterRuntimePort) {}
 
-  runtime(): CharacterToolRuntimePort {
+  runtime(): ToolCharacterRuntimePort {
     return this.characterRuntime
   }
 
@@ -25,7 +24,7 @@ export class CharacterStoreSource implements ConversationCharacterSource {
     const runtime = this.characterRuntime.state()
     const data = runtime.data
     /** 能力快照由 Runtime 持有；角色尚未挂载时为 null，工具清单据此收敛。 */
-    const capabilities: CharacterCapabilities | null = runtime.capabilities
+    const capabilities = runtime.capabilities
 
     return {
       // 无角色时不记录身份，assistant 消息因此回退到「按当前角色显示」。

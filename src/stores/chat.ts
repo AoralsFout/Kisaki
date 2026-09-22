@@ -454,7 +454,7 @@ export const useChatStore = defineStore('chat', () => {
     const tools: ToolDefinition[] = assembleRoundToolList(
       ports.tools,
       character,
-      Boolean(ports.session.workspaceGrantId()),
+      ports.session.workspaceGrantId(),
     )
     const config = loadConfig()
     return {

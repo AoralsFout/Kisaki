@@ -4,7 +4,7 @@
  * 通过角色运行时端口执行命令，不再查找 Store 或 renderer controller。
  */
 import type { Tool } from '../tool'
-import type { ToolExecutionContext } from '../../domain/tools/contracts'
+import type { ToolExecutionContext } from '../../domain/tools/ports'
 import { ALL_POSE_KEYS, POSE_PRESETS } from '../../character/poses'
 import { createLogger } from '../../utils/logger'
 

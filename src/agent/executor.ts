@@ -4,7 +4,8 @@
  * 解析 LLM 返回的 tool_calls, 执行对应工具, 返回结果。
  */
 import { getTool } from './registry'
-import type { ToolCall, ToolResult, ToolExecutionContext } from '../domain/tools/contracts'
+import type { ToolCall, ToolResult } from '../domain/tools/contracts'
+import type { ToolExecutionContext } from '../domain/tools/ports'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentExec')

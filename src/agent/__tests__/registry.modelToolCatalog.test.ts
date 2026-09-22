@@ -23,12 +23,12 @@ describe('模型可见工具清单契约', () => {
         costumes: ['default'],
       },
       capabilities: null,
-      hasWorkspace: true,
+      workspaceGrantId: 'grant-1',
     } as const
     const definitions = assembleRoundToolList(
       { definitions: getDefinitions },
       context,
-      true,
+      'grant-1',
     )
 
     const serialized = definitions.map(definition => ({

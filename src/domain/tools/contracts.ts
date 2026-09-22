@@ -65,29 +65,6 @@ export interface ToolResult {
   images?: ToolImage[]
 }
 
-/** 一次工具执行的不可变上下文；授权能力是唯一的工作区事实来源。 */
-export interface ToolExecutionContext {
-  signal: AbortSignal
-  sessionApproval: boolean
-  workspaceGrantId: string | null
-  /** 当前回合使用的角色运行时端口；清单与执行共享同一实例。 */
-  character?: ToolCharacterRuntimePort
-}
-
-/** 工具可见的角色运行时最小能力面；实现位于 application/infrastructure。 */
-export interface ToolCharacterRuntimePort {
-  state(): {
-    identity: { id: string; name: string } | null
-    data: (ToolCharacterData & { name?: string }) | null
-    render: 'illustration' | 'live2d' | null
-    look: ToolCharacterLook | null
-    capabilities: ToolCharacterCapabilities | null
-  }
-  setLook(change: Partial<Pick<ToolCharacterLook, 'emotion' | 'stance' | 'costume'>>): boolean
-  setScreenPose(pose: string): boolean
-  playMotion(group: string, index: number): Promise<boolean>
-}
-
 /** 角色工具运行时的外观快照。 */
 export interface ToolCharacterLook {
   emotion: string
@@ -98,7 +75,11 @@ export interface ToolCharacterLook {
 
 /** 工具清单装配所需的、与具体角色实现无关的角色数据投影。 */
 export interface ToolCharacterData {
+  id?: string
   name?: string
+  voice?: string
+  voiceLanguage?: string
+  textLanguage?: string
   render?: 'illustration' | 'live2d'
   emotions?: readonly string[]
   poses?: readonly string[]
@@ -108,8 +89,12 @@ export interface ToolCharacterData {
 /** 工具清单装配所需的角色运行时能力投影。 */
 export interface ToolCharacterCapabilities {
   emotions: readonly string[]
+  stances?: readonly string[]
+  costumes?: readonly string[]
+  screenPoses?: readonly string[]
   motions: readonly {
     group: string
+    count?: number
     description?: string
   }[]
   emotionDescriptions: Readonly<Record<string, string>>
@@ -119,5 +104,6 @@ export interface ToolCharacterCapabilities {
 export interface ToolCatalogContext {
   data: ToolCharacterData | null
   capabilities: ToolCharacterCapabilities | null
-  hasWorkspace?: boolean
+  /** 当前工作目录能力；清单只在使用点按是否为空派生可见性。 */
+  workspaceGrantId: string | null
 }

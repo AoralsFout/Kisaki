@@ -153,6 +153,19 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([])
   })
 
+  it('keeps execution policy and character behavior on the neutral tools port', () => {
+    const policy = readFileSync(join(SOURCE_ROOT, 'agent', 'toolExecutionPolicy.ts'), 'utf8')
+    expect(importsOf(policy).filter(specifier => specifier.includes('/application/'))).toEqual([])
+
+    const contracts = readFileSync(join(DOMAIN_ROOT, 'tools', 'contracts.ts'), 'utf8')
+    expect(contracts).not.toContain('ToolCharacterRuntimePort')
+    expect(contracts).not.toMatch(/\b(?:setLook|setScreenPose|playMotion)\s*\(/)
+
+    const ports = readFileSync(join(DOMAIN_ROOT, 'tools', 'ports.ts'), 'utf8')
+    expect(ports).not.toContain('CharacterRuntime')
+    expect(ports).not.toContain('/application/')
+  })
+
   it('uses controlled violations to prove each boundary rule fails closed', () => {
     const toolFile = join(AGENT_ROOT, 'tools', 'controlled-violation.ts')
     const applicationFile = join(APPLICATION_ROOT, 'conversation', 'controlled-violation.ts')

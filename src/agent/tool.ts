@@ -1,6 +1,7 @@
 /** Agent 具体工具实现类型；模型协议契约归属 domain/tools。 */
 
-import type { ToolExecutionContext, ToolOutput, ToolDefinition } from '../domain/tools/contracts'
+import type { ToolOutput, ToolDefinition } from '../domain/tools/contracts'
+import type { ToolExecutionContext } from '../domain/tools/ports'
 
 /** 单个工具实现。 */
 export interface Tool<TOutput extends string | ToolOutput = string> {

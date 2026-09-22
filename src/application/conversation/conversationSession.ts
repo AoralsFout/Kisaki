@@ -29,10 +29,9 @@ import type {
   ToolCallData,
 } from '../../ai/types'
 import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
-import type { CharacterData } from '../../character/loader'
 import type { ConversationImage } from '../../domain/conversation/events'
-import type { CharacterCapabilities } from '../character/characterRuntime'
-import type { CharacterToolRuntimePort } from '../character/characterToolRuntime'
+import type { ToolCharacterCapabilities, ToolCharacterData } from '../../domain/tools/contracts'
+import type { ToolCharacterRuntimePort } from '../../domain/tools/ports'
 import type { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import type { ChatSessionPort } from './chatSessionPort'
 import type { ConversationRunState, ConversationToolTurnPorts, ConversationTurnDirective } from './conversationRun'
@@ -227,9 +226,9 @@ export interface ConversationCharacterState {
   /** 渲染方式，决定哪些工具对本角色可见。 */
   render: 'illustration' | 'live2d'
   /** 工具清单装配所需的角色数据。 */
-  data: CharacterData | null
+  data: ToolCharacterData | null
   /** 工具清单装配所需的能力快照。 */
-  capabilities: CharacterCapabilities | null
+  capabilities: ToolCharacterCapabilities | null
 }
 
 /**
@@ -239,7 +238,7 @@ export interface ConversationCharacterState {
 export interface ConversationCharacterSource {
   state(): ConversationCharacterState
   /** 与清单状态同源的角色工具端口；执行时由回合传给工具。 */
-  runtime(): CharacterToolRuntimePort
+  runtime(): ToolCharacterRuntimePort
 }
 
 /**
@@ -710,7 +709,7 @@ export class ConversationSession {
     const character = this.ports.character.state()
     const workspaceGrantId = this.ports.session.workspaceGrantId()
     // 清单装配与设置页的上下文检查共用同一处实现，两处不会漂移。
-    const tools = assembleRoundToolList(this.ports.tools, character, Boolean(workspaceGrantId))
+    const tools = assembleRoundToolList(this.ports.tools, character, workspaceGrantId)
 
     // 检查点按回合绑定：文件备份走同一份会话事实端口。
     const toolExecution = this.ports.toolExecution.create({
@@ -1000,7 +999,7 @@ export class ConversationSession {
     const result = await this.ports.model.call({
       requestId: round.requestId,
       turn,
-      messages: this.requestMessages(tools, Boolean(environment.workspaceGrantId)),
+      messages: this.requestMessages(tools, environment.workspaceGrantId !== null),
       tools,
       signal: round.run.signal,
       onChunk: (delta: string) => {

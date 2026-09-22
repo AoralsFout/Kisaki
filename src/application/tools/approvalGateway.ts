@@ -1,34 +1,12 @@
-export type ApprovalDecision = 'allow' | 'allow-session' | 'reject'
-export type ApprovalKind = 'file' | 'command' | 'screen-capture'
-
-interface ApprovalRequestBase {
-  id: string
-  toolName: string
-  args: Record<string, unknown>
-  allowedDecisions: readonly ApprovalDecision[]
-}
-
-export interface FileApprovalRequest extends ApprovalRequestBase {
-  kind: 'file'
-  path: string
-}
-
-export interface CommandApprovalRequest extends ApprovalRequestBase {
-  kind: 'command'
-  summary: string
-  details: unknown
-}
-
-export interface ScreenCaptureApprovalRequest extends ApprovalRequestBase {
-  kind: 'screen-capture'
-  target: 'cursor_monitor' | 'primary_monitor'
-  includeKisaki: boolean
-}
-
-export type ApprovalRequest =
-  | FileApprovalRequest
-  | CommandApprovalRequest
-  | ScreenCaptureApprovalRequest
+import type { ApprovalDecision, ApprovalRequest } from '../../domain/tools/ports'
+export type {
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRequest,
+  CommandApprovalRequest,
+  FileApprovalRequest,
+  ScreenCaptureApprovalRequest,
+} from '../../domain/tools/ports'
 
 type ApprovalListener = (request: ApprovalRequest | null) => void
 
