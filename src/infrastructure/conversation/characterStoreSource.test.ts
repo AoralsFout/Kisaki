@@ -14,6 +14,7 @@ vi.mock('../../character/loader', () => ({
 import type { CharacterData } from '../../character/loader'
 import { DEFAULT_VOICE_LANGUAGE, STORAGE_DISPLAY_LANGUAGE } from '../../constants'
 import { useCharacterStore } from '../../stores/character'
+import { CharacterStoreToolRuntimePort } from '../character/characterStoreToolRuntime'
 import { CharacterStoreSource } from './characterStoreSource'
 
 const character: CharacterData = {
@@ -38,6 +39,10 @@ async function storeWithCharacter() {
   return store
 }
 
+function source() {
+  return new CharacterStoreSource(new CharacterStoreToolRuntimePort())
+}
+
 describe('CharacterStoreSource', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -49,7 +54,7 @@ describe('CharacterStoreSource', () => {
   it('projects the loaded character into the round state', async () => {
     const store = await storeWithCharacter()
 
-    const state = new CharacterStoreSource().state()
+    const state = source().state()
 
     expect(state.identity).toEqual({ id: 'kisaki', name: 'Kisaki' })
     expect(state.persona).toBe('Kisaki')
@@ -63,16 +68,16 @@ describe('CharacterStoreSource', () => {
   })
 
   it('reads the character store afresh on every call', async () => {
-    const source = new CharacterStoreSource()
-    expect(source.state().identity).toBeNull()
+    const characterSource = source()
+    expect(characterSource.state().identity).toBeNull()
 
     await storeWithCharacter()
 
-    expect(source.state().identity).toEqual({ id: 'kisaki', name: 'Kisaki' })
+    expect(characterSource.state().identity).toEqual({ id: 'kisaki', name: 'Kisaki' })
   })
 
   it('keeps a usable shape when no character is loaded', () => {
-    const state = new CharacterStoreSource().state()
+    const state = source().state()
 
     expect(state.identity).toBeNull()
     expect(state.data).toBeNull()
@@ -87,7 +92,7 @@ describe('CharacterStoreSource', () => {
 
     await storeWithCharacter()
 
-    const state = new CharacterStoreSource().state()
+    const state = source().state()
     expect(state.voiceLanguage).toBe(DEFAULT_VOICE_LANGUAGE)
     expect(state.voice).toBe('')
   })
@@ -97,7 +102,7 @@ describe('CharacterStoreSource', () => {
 
     await storeWithCharacter()
 
-    expect(new CharacterStoreSource().state().displayLanguage).toBe('fr-FR')
+    expect(source().state().displayLanguage).toBe('fr-FR')
   })
 
   it('defaults the render mode to illustration', async () => {
@@ -105,6 +110,6 @@ describe('CharacterStoreSource', () => {
 
     await storeWithCharacter()
 
-    expect(new CharacterStoreSource().state().render).toBe('illustration')
+    expect(source().state().render).toBe('illustration')
   })
 })

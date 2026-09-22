@@ -70,6 +70,7 @@ export async function composeConversationAssembly(
     { ChatContextModelContext },
     { AiModelClient },
     { CharacterStoreSource },
+    { CharacterStoreToolRuntimePort },
     { TtsOrchestratorVoicePort },
     { ttsPlaybackOrchestrator },
     { AgentServiceToolCatalog },
@@ -85,6 +86,7 @@ export async function composeConversationAssembly(
     import('./infrastructure/conversation/chatContextModelContext'),
     import('./infrastructure/conversation/aiModelClient'),
     import('./infrastructure/conversation/characterStoreSource'),
+    import('./infrastructure/character/characterStoreToolRuntime'),
     import('./infrastructure/conversation/ttsOrchestratorVoicePort'),
     import('./tts/orchestrator'),
     import('./infrastructure/conversation/agentToolCatalog'),
@@ -123,10 +125,11 @@ export async function composeConversationAssembly(
     })
   })
 
+  const characterRuntime = new CharacterStoreToolRuntimePort()
   const ports: ConversationSessionPorts = {
     model: overrides.model ?? new AiModelClient(),
     translate: overrides.translate ?? new AiConversationTranslator(),
-    character: overrides.character ?? new CharacterStoreSource(),
+    character: overrides.character ?? new CharacterStoreSource(characterRuntime),
     context,
     session: sessionPort,
     tools: overrides.tools ?? new AgentServiceToolCatalog(),

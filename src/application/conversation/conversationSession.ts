@@ -32,6 +32,7 @@ import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '.
 import type { CharacterData } from '../../character/loader'
 import type { ConversationImage } from '../../domain/conversation/events'
 import type { CharacterCapabilities } from '../character/characterRuntime'
+import type { CharacterToolRuntimePort } from '../character/characterToolRuntime'
 import type { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import type { ChatSessionPort } from './chatSessionPort'
 import type { ConversationRunState, ConversationToolTurnPorts, ConversationTurnDirective } from './conversationRun'
@@ -237,6 +238,8 @@ export interface ConversationCharacterState {
  */
 export interface ConversationCharacterSource {
   state(): ConversationCharacterState
+  /** 与清单状态同源的角色工具端口；执行时由回合传给工具。 */
+  runtime(): CharacterToolRuntimePort
 }
 
 /**
@@ -1231,6 +1234,7 @@ export class ConversationSession {
       signal: environment.round.run.signal,
       sessionApproval: this.autoExecSession,
       workspaceGrantId: this.ports.session.workspaceGrantId(),
+      character: this.ports.character.runtime(),
     })
   }
 
@@ -1478,7 +1482,7 @@ const SESSION_PORT_LABELS: Readonly<Record<keyof ConversationSessionPorts, strin
 const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, readonly string[]>> = {
   model: ['configuration', 'call'],
   translate: ['translate'],
-  character: ['state'],
+  character: ['state', 'runtime'],
   context: ['messages', 'addUserMessage', 'addToolCalls', 'addToolResult', 'addToolImages', 'stats'],
   session: [
     'currentSessionId',

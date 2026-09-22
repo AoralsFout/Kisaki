@@ -15,6 +15,7 @@ import {
 import { ConversationSession } from './conversationSession'
 
 import type { ContextStats } from '../../ai/context'
+import type { CharacterToolRuntimePort } from '../character/characterToolRuntime'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
 import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
 import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
@@ -184,6 +185,13 @@ export class FakeTranslator implements ConversationTranslator {
 }
 
 export class FakeCharacterSource implements ConversationCharacterSource {
+  readonly characterRuntime: CharacterToolRuntimePort = {
+    state: () => ({ identity: null, data: null, render: null, look: null, capabilities: null }),
+    setLook: () => false,
+    setScreenPose: () => false,
+    playMotion: async () => false,
+  }
+
   value: ConversationCharacterState = {
     identity: { id: 'char-1', name: '小明' },
     persona: '小明',
@@ -196,6 +204,8 @@ export class FakeCharacterSource implements ConversationCharacterSource {
   }
 
   state(): ConversationCharacterState { return this.value }
+
+  runtime(): CharacterToolRuntimePort { return this.characterRuntime }
 }
 
 export class FakeModelContext implements ConversationModelContext {

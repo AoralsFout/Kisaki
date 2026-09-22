@@ -4,7 +4,6 @@
  * 表情/动作的可用枚举由 registry.getDefinitions 从 CharacterRuntime 能力快照注入。
  */
 import type { Tool } from '../types'
-import { useCharacterStore } from '../../stores/character'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolLive2D')
@@ -26,15 +25,15 @@ export const setExpressionTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
+  handler: async (args, context) => {
     const id = String(args.expression ?? '')
-    const store = useCharacterStore()
-    const capabilities = store.getRuntimeSnapshot().capabilities
+    const runtime = context?.character
+    const capabilities = runtime?.state().capabilities
     if (!capabilities) return '角色运行时未就绪'
     if (!capabilities.emotions.includes(id)) {
       return `不支持的表情「${id}」。可用: ${capabilities.emotions.join('、') || '（无）'}`
     }
-    const ok = store.setVisualLook({ emotion: id })
+    const ok = runtime?.setLook({ emotion: id }) ?? false
     log.info("tool_live2_d.module.info", `set_expression: ${id} → ${ok ? 'ok' : 'fail'}`, { id: id, ok: ok ? 'ok' : 'fail' })
     return ok ? `表情已切换为「${id}」` : `切换表情失败: ${id}`
   },
@@ -58,16 +57,16 @@ export const playMotionTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
+  handler: async (args, context) => {
     const group = String(args.motion ?? '')
     const no = Number.isInteger(args.index) ? Number(args.index) : 0
-    const store = useCharacterStore()
-    const capabilities = store.getRuntimeSnapshot().capabilities
+    const runtime = context?.character
+    const capabilities = runtime?.state().capabilities
     if (!capabilities) return '角色运行时未就绪'
     if (!capabilities.motions.some(motion => motion.group === group)) {
       return `不支持的动作组「${group}」。可用: ${capabilities.motions.map(motion => motion.group).join('、') || '（无）'}`
     }
-    const ok = await store.playMotion(group, no)
+    const ok = await (runtime?.playMotion(group, no) ?? false)
     log.info("tool_live2_d.module.info", `play_motion: ${group}[${no}] → ${ok ? 'ok' : 'fail'}`, { group: group, no: no, ok: ok ? 'ok' : 'fail' })
     return ok ? `已播放动作「${group}」` : `播放动作失败: ${group}`
   },

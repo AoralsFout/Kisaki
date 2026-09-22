@@ -70,10 +70,35 @@ export interface ToolExecutionContext {
   signal: AbortSignal
   sessionApproval: boolean
   workspaceGrantId: string | null
+  /** 当前回合使用的角色运行时端口；清单与执行共享同一实例。 */
+  character?: ToolCharacterRuntimePort
+}
+
+/** 工具可见的角色运行时最小能力面；实现位于 application/infrastructure。 */
+export interface ToolCharacterRuntimePort {
+  state(): {
+    identity: { id: string; name: string } | null
+    data: (ToolCharacterData & { name?: string }) | null
+    render: 'illustration' | 'live2d' | null
+    look: ToolCharacterLook | null
+    capabilities: ToolCharacterCapabilities | null
+  }
+  setLook(change: Partial<Pick<ToolCharacterLook, 'emotion' | 'stance' | 'costume'>>): boolean
+  setScreenPose(pose: string): boolean
+  playMotion(group: string, index: number): Promise<boolean>
+}
+
+/** 角色工具运行时的外观快照。 */
+export interface ToolCharacterLook {
+  emotion: string
+  stance: string
+  costume: string
+  screenPose: string
 }
 
 /** 工具清单装配所需的、与具体角色实现无关的角色数据投影。 */
 export interface ToolCharacterData {
+  name?: string
   render?: 'illustration' | 'live2d'
   emotions?: readonly string[]
   poses?: readonly string[]
