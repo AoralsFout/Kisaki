@@ -9,7 +9,6 @@
 import { ApprovalGateway } from '../tools/approvalGateway'
 import {
   ToolExecutionCoordinator,
-  type ToolExecutionContext,
   type ToolExecutionPolicy,
 } from '../tools/toolExecutionCoordinator'
 import { ConversationSession } from './conversationSession'
@@ -17,7 +16,7 @@ import { ConversationSession } from './conversationSession'
 import type { ContextStats } from '../../ai/context'
 import type { CharacterToolRuntimePort } from '../character/characterToolRuntime'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
-import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
 import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
