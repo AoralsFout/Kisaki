@@ -455,7 +455,7 @@ export class FakeToolExecutionPort implements ConversationToolExecutionPort {
           return this.prepare(call, context)
         },
       },
-      execute: async call => {
+      execute: async (call, _context) => {
         this.executed.push(call)
         return this.results.get(call.name)
           ?? { role: 'tool', tool_call_id: call.id, content: `${call.name} 完成`, ok: true }

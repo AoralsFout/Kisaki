@@ -14,7 +14,7 @@ export const toolExecutionPolicy: ToolExecutionPolicy = {
     const prepared: PreparedToolExecution = { call }
     const descriptor = getTool(call.name)?.policy
 
-    if (descriptor?.requiresWorkspace && !context.hasWorkspace) {
+    if (descriptor?.requiresWorkspace && !context.workspaceGrantId) {
       throw new ToolExecutionFailure(
         '当前会话尚未授权工作目录。请提示用户点击「工作区」并重新选择目录后再重试。',
         'WORKSPACE_NOT_SET',
@@ -42,7 +42,7 @@ export const toolExecutionPolicy: ToolExecutionPolicy = {
     } else if (descriptor?.approval === 'command') {
       let plan
       try {
-        plan = await prepareCommandExecution(call.name, call.arguments)
+        plan = await prepareCommandExecution(call.name, call.arguments, context.workspaceGrantId)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         throw new ToolExecutionFailure(`任务准备失败: ${message}`, 'COMMAND_PREPARATION_FAILED', true)

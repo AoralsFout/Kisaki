@@ -445,7 +445,7 @@ interface RoundEnvironment {
   tools: ToolDefinition[]
   sessionId: string
   checkpointId: string
-  hasWorkspace: boolean
+  workspaceGrantId: string | null
   toolExecution: ToolExecutionCoordinator
 }
 
@@ -705,9 +705,9 @@ export class ConversationSession {
 
     // ── 收集工具定义（含 say 说话工具）────────────────────
     const character = this.ports.character.state()
-    const hasWorkspace = Boolean(this.ports.session.workspaceGrantId())
+    const workspaceGrantId = this.ports.session.workspaceGrantId()
     // 清单装配与设置页的上下文检查共用同一处实现，两处不会漂移。
-    const tools = assembleRoundToolList(this.ports.tools, character, hasWorkspace)
+    const tools = assembleRoundToolList(this.ports.tools, character, Boolean(workspaceGrantId))
 
     // 检查点按回合绑定：文件备份走同一份会话事实端口。
     const toolExecution = this.ports.toolExecution.create({
@@ -730,7 +730,7 @@ export class ConversationSession {
       tools,
       sessionId: round.sessionId,
       checkpointId,
-      hasWorkspace,
+      workspaceGrantId,
       toolExecution,
     }
 
@@ -997,7 +997,7 @@ export class ConversationSession {
     const result = await this.ports.model.call({
       requestId: round.requestId,
       turn,
-      messages: this.requestMessages(tools, environment.hasWorkspace),
+      messages: this.requestMessages(tools, Boolean(environment.workspaceGrantId)),
       tools,
       signal: round.run.signal,
       onChunk: (delta: string) => {
@@ -1230,7 +1230,7 @@ export class ConversationSession {
     return environment.toolExecution.execute(call, {
       signal: environment.round.run.signal,
       sessionApproval: this.autoExecSession,
-      hasWorkspace: Boolean(this.ports.session.workspaceGrantId()),
+      workspaceGrantId: this.ports.session.workspaceGrantId(),
     })
   }
 

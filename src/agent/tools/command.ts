@@ -6,6 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { Tool } from '../types'
+import type { ToolExecutionContext } from '../../domain/tools/contracts'
 import { createLogger } from '../../utils/logger'
 import { beginExecutionTracking, finishExecutionTracking } from '../executionState'
 
@@ -47,11 +48,12 @@ interface ExecutionResult {
   isolation: string
 }
 
-async function requireWorkspaceId(): Promise<string> {
-  const { useSessionStore } = await import('../../stores/session')
-  const id = useSessionStore().currentSession?.workspaceId
+function requireWorkspaceId(workspaceGrantId: string | null | undefined): string {
+  const id = workspaceGrantId ?? null
   if (!id) {
-    throw new Error('当前会话尚未授权工作目录。请提示用户点击「工作区」并重新选择目录后再重试。')
+    const error = new Error('当前会话尚未授权工作目录。请提示用户点击「工作区」并重新选择目录后再重试。')
+    Object.assign(error, { code: 'WORKSPACE_NOT_SET' })
+    throw error
   }
   return id
 }
@@ -69,8 +71,9 @@ function stringMap(value: unknown): Record<string, string> {
 export async function prepareCommandExecution(
   toolName: string,
   args: Record<string, any>,
+  workspaceGrantId: string | null,
 ): Promise<ExecutionPlan> {
-  const workspaceId = await requireWorkspaceId()
+  const workspaceId = requireWorkspaceId(workspaceGrantId)
   const common = {
     workspace_id: workspaceId,
     cwd: args.cwd != null ? String(args.cwd) : null,
@@ -106,7 +109,7 @@ function formatResult(result: ExecutionResult): string {
   return lines.join('\n')
 }
 
-async function executeApproved(args: Record<string, any>): Promise<string> {
+async function executeApproved(args: Record<string, any>, _context?: ToolExecutionContext): Promise<string> {
   const planId = String(args.__plan_id ?? '')
   const approvalToken = String(args.__approval_token ?? '')
   if (!planId || !approvalToken) {
@@ -186,8 +189,8 @@ export const runShellTool: Tool = {
       },
     },
   },
-  handler: async args => {
+  handler: async (args, context) => {
     log.warn("tool_command.module.warn", "执行已批准的 Shell 计划")
-    return executeApproved(args)
+    return executeApproved(args, context)
   },
 }

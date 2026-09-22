@@ -6,21 +6,16 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { Tool } from '../types'
-import type { ToolOutput } from '../../domain/tools/contracts'
+import type { ToolOutput, ToolExecutionContext } from '../../domain/tools/contracts'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ToolFiles')
 
 /**
- * 取当前会话工作目录；未授权则抛出引导性错误（executor 会把它作为工具结果回给 LLM）。
- *
- * 注意：session store 在此**懒加载**而非顶层 import —— 否则会形成
- * files.ts → stores/session → stores/chat → agent(index/service, 加载即 initTools)
- * → tools/files 的循环依赖。运行时模块已加载完毕，动态 import 无开销且安全。
+ * 取本次工具执行上下文中的工作目录能力；未授权则抛出引导性错误。
  */
-async function requireWorkspaceId(): Promise<string> {
-  const { useSessionStore } = await import('../../stores/session')
-  const workspaceId = useSessionStore().currentSession?.workspaceId
+function requireWorkspaceId(context: ToolExecutionContext | undefined): string {
+  const workspaceId = context?.workspaceGrantId
   if (!workspaceId) {
     const error = new Error(
       '当前会话尚未设置工作目录。请提示用户点击界面下方的「工作区」按钮选择一个目录后再重试。',
@@ -83,8 +78,8 @@ export const readFileTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const hasRange = args.start_line != null || args.end_line != null
     if (hasRange) {
@@ -121,8 +116,8 @@ export const readImageTool: Tool<ToolOutput> = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `read_image: ${relPath}`, { rel_path: relPath })
     const image = await invoke<ImageReadResult>('agent_read_image', { workspaceId, relPath })
@@ -160,8 +155,8 @@ export const writeFileTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `write_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
@@ -190,8 +185,8 @@ export const appendFileTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const content = String(args.content ?? '')
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `append_file: ${relPath} (${content.length} 字符)`, { rel_path: relPath, content_length: content.length })
@@ -218,8 +213,8 @@ export const listDirTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `list_dir: ${relPath || '(root)'}`, { rel_path: relPath || '(root)' })
     const items = await invoke<DirEntry[]>('agent_list_dir', { workspaceId, relPath })
@@ -251,8 +246,8 @@ export const deleteFileTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `delete_file: ${relPath}`, { rel_path: relPath })
     await invoke('agent_delete_file', { workspaceId, relPath })
@@ -283,8 +278,8 @@ export const replaceLinesTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
@@ -316,8 +311,8 @@ export const insertLinesTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const startLine = Number(args.line)
     const content = String(args.content ?? '')
@@ -346,8 +341,8 @@ export const deleteLinesTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const relPath = String(args.path ?? '')
     const startLine = Number(args.start_line)
     const endLine = Number(args.end_line)
@@ -378,8 +373,8 @@ export const findFilesTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const pattern = String(args.pattern ?? '')
     const relPath = args.path != null ? String(args.path) : null
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `find_files: ${pattern} (in ${relPath || '(root)'})`, { pattern: pattern, rel_path: relPath || '(root)' })
@@ -409,8 +404,8 @@ export const searchInFilesTool: Tool = {
       },
     },
   },
-  handler: async (args) => {
-    const workspaceId = await requireWorkspaceId()
+  handler: async (args, context) => {
+    const workspaceId = requireWorkspaceId(context)
     const query = String(args.query ?? '')
     const relPath = args.path != null ? String(args.path) : null
     log.sensitiveDebug("tool_files.payload_sensitive.debug", `search_in_files: ${query} (in ${relPath || '(root)'})`, { query: query, rel_path: relPath || '(root)' })

@@ -65,6 +65,13 @@ export interface ToolResult {
   images?: ToolImage[]
 }
 
+/** 一次工具执行的不可变上下文；授权能力是唯一的工作区事实来源。 */
+export interface ToolExecutionContext {
+  signal: AbortSignal
+  sessionApproval: boolean
+  workspaceGrantId: string | null
+}
+
 /** 工具清单装配所需的、与具体角色实现无关的角色数据投影。 */
 export interface ToolCharacterData {
   render?: 'illustration' | 'live2d'

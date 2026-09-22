@@ -1,11 +1,7 @@
-import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
+import type { ToolCall, ToolResult, ToolExecutionContext } from '../../domain/tools/contracts'
 import type { ApprovalGateway, ApprovalRequest } from './approvalGateway'
 
-export interface ToolExecutionContext {
-  signal: AbortSignal
-  sessionApproval: boolean
-  hasWorkspace: boolean
-}
+export type { ToolExecutionContext } from '../../domain/tools/contracts'
 
 export interface PreparedToolExecution {
   call: ToolCall
@@ -31,7 +27,7 @@ export class ToolExecutionFailure extends Error {
 export interface ToolExecutionCoordinatorOptions {
   approvalGateway: ApprovalGateway
   policy: ToolExecutionPolicy
-  execute: (call: ToolCall) => Promise<ToolResult>
+  execute: (call: ToolCall, context: ToolExecutionContext) => Promise<ToolResult>
   checkpoint?: (path: string) => Promise<void>
   onCheckpointError?: (error: unknown, path: string) => void
   onSessionApproval?: () => void
@@ -83,7 +79,7 @@ export class ToolExecutionCoordinator {
     }
 
     if (context.signal.aborted) return this.failure(call, '工具执行已取消。', 'EXECUTION_CANCELLED', false)
-    return this.options.execute(prepared.call)
+    return this.options.execute(prepared.call, context)
   }
 
   private fromError(call: ToolCall, error: unknown, prefix: string, code: string): ToolResult {

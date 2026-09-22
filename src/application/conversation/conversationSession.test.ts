@@ -180,6 +180,7 @@ describe('ConversationSession', () => {
       expect(h.toolExecution.checkpointed).toEqual(['notes.txt'])
       expect(h.facts.events).toContain('backup:notes.txt')
       expect(h.facts.events).toContain('markCheckpoint:user-message-1')
+      expect(h.toolExecution.contexts[0].workspaceGrantId).toBe('workspace-1')
     })
   })
 
