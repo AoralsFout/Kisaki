@@ -89,4 +89,3 @@ export interface ToolCatalogContext {
   capabilities: ToolCharacterCapabilities | null
   hasWorkspace?: boolean
 }
-
