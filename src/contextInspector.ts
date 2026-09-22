@@ -115,6 +115,27 @@ function fromUiMessages(messages: ChatMessage[]): ContextInspectionMessage[] {
   })
 }
 
+/** 检查器只展示图片元数据，不把模型历史里的 data URL 带到详情面板。 */
+function inspectionContent(content: ModelContextMessage['content']): ModelContextMessage['content'] {
+  if (typeof content === 'string') return content
+  return content.map(part => {
+    if (part.type === 'text') return part
+    const url = part.image_url.url
+    if (!url.startsWith('data:')) return { type: 'image_url', image_url: { ...part.image_url } }
+    const match = url.match(/^data:([^;,]+)(?:;base64)?,(.*)$/s)
+    const mime = match?.[1] || 'application/octet-stream'
+    const encodedLength = match?.[2]?.length ?? 0
+    const approximateBytes = Math.max(0, Math.floor(encodedLength * 0.75))
+    return {
+      type: 'image_url' as const,
+      image_url: {
+        detail: part.image_url.detail,
+        url: `[embedded image: ${mime}, approximately ${approximateBytes} bytes]`,
+      },
+    }
+  })
+}
+
 function fromModelProjection(projection: readonly ModelContextMessage[]): ContextInspectionMessage[] {
   const summary = projection.find(message => message.role === 'system')
   const messages: ContextInspectionMessage[] = []
@@ -138,7 +159,7 @@ function fromModelProjection(projection: readonly ModelContextMessage[]): Contex
     if (message.role === 'system') continue
     messages.push({
       role: message.role,
-      content: message.content,
+      content: inspectionContent(message.content),
       tool_call_id: message.toolCallId,
       tool_calls: message.toolCalls?.map(call => ({
         id: call.id,

@@ -49,7 +49,7 @@ export interface ChatMessage {
   text: string
   /** 思考/推理过程内容 */
   thinking?: string
-  /** 角色母语台词（say 的 voice），用于会话恢复时忠实重建 say 工具调用 */
+  /** 角色母语台词（say 的 voice），用于 transcript 展示与持久化修订。 */
   voice?: string
   /** 用户本轮发送的图片；仅用户消息使用。 */
   images?: ImageAttachment[]
