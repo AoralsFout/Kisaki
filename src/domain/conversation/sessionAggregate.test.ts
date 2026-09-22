@@ -215,6 +215,42 @@ describe('SessionAggregate', () => {
     ])
   })
 
+  it('将原生 say 的后台修订写回工具参数而不追加正文消息', () => {
+    const session = createSession()
+    session.recordToolCalls(
+      { eventId: 'say-calls', occurredAt: 11 },
+      {
+        stepId: 'say-step',
+        calls: [{ id: 'say-call', name: 'say', arguments: { display: '预览', voice: '草稿' } }],
+      },
+    )
+    session.recordToolResult(
+      { eventId: 'say-result', occurredAt: 12 },
+      { callId: 'say-call', content: '已说出', status: 'succeeded' },
+    )
+    session.commitAssistantMessage(
+      { eventId: 'say-commit', occurredAt: 13 },
+      { messageId: 'say-answer', display: '预览', voice: '草稿', source: 'say' },
+    )
+    session.reviseAssistantMessage(
+      { eventId: 'say-revision', occurredAt: 14 },
+      { messageId: 'say-answer', display: '最终显示', voice: '最终台词' },
+    )
+
+    expect(session.projectModelContext()).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{
+          id: 'say-call',
+          name: 'say',
+          arguments: { display: '最终显示', voice: '最终台词' },
+        }],
+      },
+      { role: 'tool', content: '已说出', toolCallId: 'say-call' },
+    ])
+  })
+
   it('rejects a revision without an earlier committed assistant message', () => {
     const session = createSession()
     expect(() => session.reviseAssistantMessage(
