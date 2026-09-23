@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "bump": "node scripts/bump-version.mjs",
     "pack:characters": "node scripts/pack-characters.mjs",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "4.1.8",
     "@vue/test-utils": "^2.4.11",
     "adm-zip": "^0.5.16",
     "happy-dom": "^20.10.2",

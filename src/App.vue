@@ -11,6 +11,7 @@ import ConversationDock from './components/ConversationDock.vue'
 import CharacterSelect from './components/CharacterSelect.vue'
 import SessionList from './components/SessionList.vue'
 import WorkspaceChip from './components/WorkspaceChip.vue'
+import CharacterOpacityControl from './components/CharacterOpacityControl.vue'
 import ToolActivityList from './components/ToolActivityList.vue'
 import ToolConfirm from './components/ToolConfirm.vue'
 import CommandConfirm from './components/CommandConfirm.vue'
@@ -42,7 +43,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getAllWindows, getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
 import { listen, emitTo } from '@tauri-apps/api/event'
 import { setPassthroughEnabled, isPassthroughEnabled } from './passthrough'
-import { adjustCharacterOpacity, getCharacterOpacity } from './character/opacity'
+import { getCharacterOpacity } from './character/opacity'
 
 const log = createLogger('App')
 
@@ -59,7 +60,6 @@ const noCharacter = computed(() => charReady.value && charStore.availableList.le
 const characterRef = ref<InstanceType<typeof Character> | null>(null)
 // 透明度由 App 单一持有，角色组件通过 update:opacity 回传悬浮滚轮调整结果。
 const characterOpacity = ref(getCharacterOpacity())
-const characterOpacityPercent = computed(() => Math.round(characterOpacity.value * 100))
 
 // 聊天 = 对话框从底部弹出 + 历史对话向上展开到全高（两者由 chat.showInput 驱动）
 const showSession = ref(false)
@@ -131,21 +131,6 @@ function onCanvasHeightKeydown(event: KeyboardEvent) {
   event.preventDefault()
   event.stopPropagation()
   characterTopRatio.value = clampCharacterTopRatio(characterTopRatio.value + delta)
-}
-
-/** 工具栏显式调整透明度：不受“悬浮角色滚轮”设置开关影响。 */
-function onCharacterOpacityWheel(event: WheelEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-  characterOpacity.value = adjustCharacterOpacity(characterOpacity.value, event.deltaY)
-}
-
-function onCharacterOpacityKeydown(event: KeyboardEvent) {
-  const deltaY = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0
-  if (!deltaY) return
-  event.preventDefault()
-  event.stopPropagation()
-  characterOpacity.value = adjustCharacterOpacity(characterOpacity.value, deltaY)
 }
 
 /** 打开对话框（历史随对话框展开）；会话/换角色等其它浮层互斥关闭 */
@@ -565,15 +550,7 @@ async function handleSelectCharacter(charId: string) {
             <i class="fas fa-up-down btn-icon"></i>
             <span class="btn-label">{{ t('app.toolbar.resizeCanvas') }}</span>
           </button>
-          <button class="tool-btn" type="button"
-            :aria-label="t('app.aria.adjustCharacterOpacity', { value: characterOpacityPercent })"
-            :title="t('app.aria.adjustCharacterOpacity', { value: characterOpacityPercent })"
-            aria-keyshortcuts="ArrowUp ArrowDown"
-            @wheel.prevent.stop="onCharacterOpacityWheel"
-            @keydown="onCharacterOpacityKeydown">
-            <i class="fas fa-sun btn-icon"></i>
-            <span class="btn-label">{{ t('app.toolbar.adjustOpacity') }}</span>
-          </button>
+          <CharacterOpacityControl v-model:opacity="characterOpacity" />
         </div>
 
 
@@ -721,7 +698,7 @@ async function handleSelectCharacter(charId: string) {
   z-index: 46;
 }
 
-.tool-btn {
+.toolbar :deep(.tool-btn) {
   position: relative;
   background: none;
   border: none;
@@ -735,21 +712,21 @@ async function handleSelectCharacter(charId: string) {
   transition: background 0.15s;
 }
 
-.tool-btn:disabled {
+.toolbar :deep(.tool-btn:disabled) {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
-.tool-btn:hover:not(:disabled) {
+.toolbar :deep(.tool-btn:hover:not(:disabled)) {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.btn-icon {
+.toolbar :deep(.btn-icon) {
   font-size: 16px;
   flex-shrink: 0;
 }
 
-.btn-label {
+.toolbar :deep(.btn-label) {
   position: absolute;
   font-size: 14px;
   border-radius: 8px;
@@ -765,12 +742,12 @@ async function handleSelectCharacter(charId: string) {
   transition: opacity 0.1s ease 0.1s;
 }
 
-.tool-btn:hover .btn-label,
-.tool-btn:focus-visible .btn-label {
+.toolbar :deep(.tool-btn:hover .btn-label),
+.toolbar :deep(.tool-btn:focus-visible .btn-label) {
   opacity: 1;
 }
 
-.tool-btn.active {
+.toolbar :deep(.tool-btn.active) {
   background: rgba(255, 255, 255, 0.14);
 }
 
