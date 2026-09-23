@@ -201,16 +201,96 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
   ensureBroadcastChannel()
   if (!bc) return () => {}
 
-  /** 收到其它窗口广播的日志 → 立即展示 + 写入文件（避免源窗口崩溃丢失） */
+  /** 将非 JSON 值整理成可读数据；遇到循环、不可读属性或深度过大时保留明确占位。 */
+  function serializeIncomingValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return value
+    }
+    if (value === undefined) return '[undefined]'
+    if (typeof value === 'bigint') return `${value}n`
+    if (typeof value === 'symbol') return '[Symbol]'
+    if (typeof value === 'function') return '[Function]'
+    if (depth >= 6) return '[最大嵌套深度]'
+    if (value instanceof Date) {
+      try { return value.toISOString() } catch { return '[无效日期]' }
+    }
+    if (value instanceof Error) {
+      const error = value as Error & { cause?: unknown }
+      const normalized: Record<string, unknown> = {
+        name: typeof error.name === 'string' ? error.name : 'Error',
+        message: typeof error.message === 'string' ? error.message : '[异常消息不可读取]',
+      }
+      if (typeof error.stack === 'string') normalized.stack = error.stack
+      if (error.cause !== undefined) normalized.cause = serializeIncomingValue(error.cause, seen, depth + 1)
+      return normalized
+    }
+    if (typeof value !== 'object') return '[不可表达的值]'
+    if (seen.has(value)) return '[Circular]'
+    seen.add(value)
+
+    if (Array.isArray(value)) {
+      const length = value.length
+      const result = value.slice(0, 100).map(item => serializeIncomingValue(item, seen, depth + 1))
+      if (length > 100) result.push(`[内容已截断：省略 ${length - 100} 项]`)
+      return result
+    }
+
+    let keys: string[]
+    try {
+      keys = Object.keys(value)
+    } catch {
+      return '[对象无法读取]'
+    }
+
+    const result: Record<string, unknown> = Object.create(null)
+    for (const key of keys.slice(0, 100)) {
+      try {
+        result[key] = serializeIncomingValue((value as Record<string, unknown>)[key], seen, depth + 1)
+      } catch {
+        result[key] = '[属性无法读取]'
+      }
+    }
+    if (keys.length > 100) result.__truncated__ = `省略 ${keys.length - 100} 项`
+    return result
+  }
+
+  function serializeIncomingPayload(value: unknown): string {
+    try {
+      const serialized = JSON.stringify(serializeIncomingValue(value))
+      return serialized ?? '[输入内容无法转换为 JSON]'
+    } catch {
+      return '[输入内容无法安全序列化]'
+    }
+  }
+
+  function parseFailureEntry(value: unknown, reason: string): LogEntry {
+    return {
+      schemaVersion: LOG_SCHEMA_VERSION,
+      timestamp: getTimestamp(),
+      level: 'warn',
+      namespace: 'System',
+      message: `[日志解析失败] ${reason}；输入：${serializeIncomingPayload(value)}`,
+      event: 'logger.parse_failed',
+      source: '跨窗口',
+    }
+  }
+
+  /** 收到其它窗口广播的日志 → 合法条目或合成解析失败警告进入日志窗口数据源。 */
   const handler = (event: MessageEvent) => {
     const entry = event.data
-    if (isValidLogEntry(entry)) {
-      // 通知 UI 订阅者
-      try { cb(entry as LogEntry) } catch { /* 忽略 */ }
-
-      // 注意：不在此处写文件——源窗口已经在 log() 中写过了。
-      // 若接收方也写，会导致 JSONL 中每条跨窗口日志重复。
+    let validation
+    try {
+      validation = validateLogEntry(entry)
+    } catch {
+      validation = { valid: false, reason: '条目无法安全校验' }
     }
+
+    const delivered = validation.valid
+      ? entry as LogEntry
+      : parseFailureEntry(entry, validation.reason ?? '条目不符合 v2 契约')
+
+    // 这里只进入接收窗口的数据源；合成警告不加入缓冲、不再次广播，也不写入文件。
+    try { cb(delivered) } catch { /* 忽略 */ }
   }
   bc.addEventListener('message', handler)
   return () => { bc?.removeEventListener('message', handler) }

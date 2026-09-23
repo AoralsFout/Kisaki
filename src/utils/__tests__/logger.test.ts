@@ -8,10 +8,24 @@
  * - createLogger 日志创建与输出
  * - subscribe 订阅者机制
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const invokeMock = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
+
+class FakeLogBroadcastChannel extends EventTarget {
+  static instances: FakeLogBroadcastChannel[] = []
+  readonly postMessage = vi.fn()
+
+  constructor(readonly name: string) {
+    super()
+    FakeLogBroadcastChannel.instances.push(this)
+  }
+
+  receive(data: unknown) {
+    this.dispatchEvent(new MessageEvent('message', { data }))
+  }
+}
 
 // 注意：logger 模块有模块级状态（全局变量），
 // 在每个测试文件内重置状态以避免跨测试污染
@@ -230,6 +244,109 @@ describe('Logger - 订阅者机制', () => {
 
     expect(cb1).toHaveBeenCalledTimes(1)
     expect(cb2).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Logger - 跨窗口广播', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    FakeLogBroadcastChannel.instances = []
+    vi.stubGlobal('BroadcastChannel', FakeLogBroadcastChannel)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function subscribeToCrossWindow() {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    const callback = vi.fn()
+    const unsubscribe = mod.subscribeCrossWindow(callback)
+    const channel = FakeLogBroadcastChannel.instances[0]
+    if (!channel) throw new Error('BroadcastChannel 未初始化')
+    return { mod, callback, unsubscribe, channel }
+  }
+
+  const validEntry = {
+    schemaVersion: 2,
+    timestamp: '2026-09-23T00:00:00.000Z',
+    level: 'info',
+    namespace: 'TTS',
+    message: '播报完成',
+    source: '主窗口',
+    event: 'tts.playback_completed',
+  }
+
+  const missingSource = { ...validEntry } as Record<string, unknown>
+  delete missingSource.source
+
+  it.each([
+    ['缺少必填字段', missingSource],
+    ['错误版本', { ...validEntry, schemaVersion: 1 }],
+    ['非法事件名', { ...validEntry, event: 'TTS.bad-event' }],
+  ])('无效广播（%s）进入一次解析失败警告', async (_label, payload) => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+
+    channel.receive(payload)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const failure = callback.mock.calls[0][0]
+    expect(failure).toMatchObject({ level: 'warn', event: 'logger.parse_failed', namespace: 'System' })
+    expect(mod.isValidLogEntry(failure)).toBe(true)
+    expect(mod.getBuffer()).toEqual([])
+    expect(channel.postMessage).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('合法广播原样回调，不产生合成警告', async () => {
+    const { callback, unsubscribe, channel } = await subscribeToCrossWindow()
+
+    channel.receive(validEntry)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith(validEntry)
+    expect(channel.postMessage).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('循环引用、不可表达值和敏感字段可安全序列化，并在显示准备时脱敏', async () => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const context: Record<string, unknown> = { apiKey: 'sk-secret-token', password: 'private-value' }
+    context.self = context
+    context.callback = () => {}
+    context.symbol = Symbol('不可序列化')
+    context.bigint = 42n
+    const payload = { ...validEntry, event: 'TTS.invalid', context }
+
+    expect(() => channel.receive(payload)).not.toThrow()
+
+    const failure = callback.mock.calls[0][0]
+    expect(failure.message).toContain('[Circular]')
+    expect(failure.message).toContain('[Function]')
+    expect(failure.message).toContain('[Symbol]')
+    expect(failure.message).toContain('42n')
+    const display = mod.prepareParseFailureForDisplay(failure.message)
+    expect(display.message).toContain('[REDACTED]')
+    expect(display.message).not.toContain('sk-secret-token')
+    expect(display.message).not.toContain('private-value')
+    unsubscribe()
+  })
+
+  it('不可读取的输入使用占位，超长内容显示截断长度', async () => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const unreadable = new Proxy({}, { ownKeys: () => { throw new Error('cannot inspect') } })
+
+    expect(() => channel.receive(unreadable)).not.toThrow()
+    expect(callback.mock.calls[0][0].message).toContain('[对象无法读取]')
+
+    callback.mockClear()
+    const longPayload = { ...validEntry, event: 'TTS.invalid', message: '排查内容'.repeat(1500) }
+    channel.receive(longPayload)
+    const display = mod.prepareParseFailureForDisplay(callback.mock.calls[0][0].message)
+    expect(display.truncated).toBe(true)
+    expect(display.originalLength).toBeGreaterThan(4096)
+    unsubscribe()
   })
 })
 
