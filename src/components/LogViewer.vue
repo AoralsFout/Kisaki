@@ -8,6 +8,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  LOG_LEVELS,
   LOG_SCHEMA_VERSION,
   createLogger,
   getBuffer,
@@ -15,6 +16,7 @@ import {
   flushLogs,
   subscribe,
   subscribeCrossWindow,
+  prepareParseFailureForDisplay,
 } from '../utils/logger'
 import type { LogEntry, LogLevel, LogContext, SerializedError } from '../utils/logger'
 import { QUERY_LOGS } from '../constants'
@@ -45,13 +47,17 @@ interface DisplayEntry {
   context?: LogContext
   /** 来源窗口 */
   source: string
+  /** 合成解析失败条目是否因展示上限而截断 */
+  truncated?: boolean
+  /** 被截断时的原始异常内容字符数 */
+  originalLength?: number
   /** 是否展开显示详细内容 */
   expanded: boolean
 }
 
 // ─── 状态 ─────────────────────────────────────────────
 
-const ALL_LEVELS: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error']
+const ALL_LEVELS: LogLevel[] = [...LOG_LEVELS]
 
 const LEVEL_LABELS: Record<LogLevel, string> = {
   trace: 'TRC', debug: 'DBG', info: 'INF', warn: 'WRN', error: 'ERR',
@@ -99,7 +105,7 @@ function flushPendingEntries() {
 
 // 过滤器
 const enabledLevels = ref<Set<LogLevel>>(new Set(isStandalone
-  ? ['trace', 'debug', 'info', 'warn', 'error']   // 独立窗口默认显示全部
+  ? [...LOG_LEVELS]                               // 独立窗口默认显示全部
   : ['info', 'warn', 'error']                       // 内嵌模式默认只显示重要级别
 ))
 const namespaceFilter = ref('')
@@ -232,6 +238,12 @@ function hasDetails(entry: DisplayEntry): boolean {
 function formatDetailsDisplay(entry: DisplayEntry): string {
   const sections: string[] = []
   if (entry.event) sections.push(`event: ${entry.event}`)
+  if (entry.event === 'logger.parse_failed') {
+    sections.push(entry.message)
+    if (entry.truncated && entry.originalLength !== undefined) {
+      sections.push(t('logs.parseFailureTruncated', { length: entry.originalLength }))
+    }
+  }
   if (entry.error) {
     const lines = [`${entry.error.name}: ${entry.error.message}`]
     if (entry.error.code) lines.push(`code: ${entry.error.code}`)
@@ -246,20 +258,33 @@ function formatDetailsDisplay(entry: DisplayEntry): string {
 
 // ─── 实时模式（rAF 节流） ────────────────────────────
 
-function addEntry(entry: LogEntry) {
-  const display: DisplayEntry = {
+type DisplayEntrySource = Pick<LogEntry,
+  'schemaVersion' | 'timestamp' | 'level' | 'namespace' | 'message' | 'event' | 'error' | 'context' | 'source'
+>
+
+function mapDisplayEntry(entry: DisplayEntrySource): DisplayEntry {
+  const parseFailure = entry.event === 'logger.parse_failed'
+    ? prepareParseFailureForDisplay(entry.message)
+    : undefined
+  return {
     id: nextId++,
     schemaVersion: entry.schemaVersion,
     timestamp: entry.timestamp,
     level: entry.level,
     namespace: entry.namespace,
-    message: entry.message,
+    message: parseFailure?.message ?? entry.message,
     event: entry.event,
     error: entry.error,
     context: entry.context,
     source: entry.source,
+    truncated: parseFailure?.truncated,
+    originalLength: parseFailure?.originalLength,
     expanded: false,
   }
+}
+
+function addEntry(entry: LogEntry) {
+  const display = mapDisplayEntry(entry)
   // 写入缓冲队列，在下一个 rAF 批量推入响应式数组
   pendingEntries.push(display)
   if (!flushRafId) {
@@ -291,19 +316,7 @@ interface HistoryPage {
 function mapHistoryEntries(result: HistoryResultEntry[]): DisplayEntry[] {
   return result
     .filter(r => r.schemaVersion === LOG_SCHEMA_VERSION)
-    .map(r => ({
-    id: nextId++,
-    schemaVersion: r.schemaVersion,
-    timestamp: r.timestamp,
-    level: r.level,
-    namespace: r.namespace,
-    message: r.message,
-    event: r.event,
-    error: r.error,
-    context: r.context,
-    source: r.source,
-    expanded: false,
-    }))
+    .map(mapDisplayEntry)
 }
 
 async function readHistoryPage(before: number | null): Promise<HistoryPage> {
@@ -680,6 +693,9 @@ function onWheel() {
           <span class="log-namespace">{{ entry.namespace }}</span>
           <span v-if="entry.source" class="log-source">{{ entry.source }}</span>
           <span class="log-msg">{{ entry.message }}</span>
+          <span v-if="entry.truncated && entry.originalLength !== undefined" class="log-truncated">
+            {{ t('logs.parseFailureTruncated', { length: entry.originalLength }) }}
+          </span>
           <span v-if="hasDetails(entry)" class="log-expand-icon">
             <i class="fas fa-chevron-down"></i>
           </span>
@@ -1124,6 +1140,12 @@ function onWheel() {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #d0d0d0;
+}
+
+.log-truncated {
+  flex-shrink: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-aux);
 }
 
 .log-expand-icon {

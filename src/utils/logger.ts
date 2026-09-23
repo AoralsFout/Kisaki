@@ -21,11 +21,19 @@ import {
   STORAGE_LOG_RETENTION_DAYS,
   STORAGE_SENSITIVE_DIAGNOSTICS,
 } from '../constants'
+import {
+  isValidLogEntry,
+  isValidLogEventName,
+  LOG_LEVELS,
+  LOG_SCHEMA_VERSION,
+  validateLogEntry,
+  type LogLevel,
+} from './logSchema'
+
+export { LOG_SCHEMA_VERSION, LOG_LEVELS, isValidLogEntry, isValidLogEventName, validateLogEntry }
+export type { LogLevel } from './logSchema'
 
 // ─── 类型定义 ─────────────────────────────────────────
-
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error'
-export const LOG_SCHEMA_VERSION = 2 as const
 
 export interface SerializedError {
   name: string
@@ -101,13 +109,7 @@ function detectWindowSource(): string {
   return _windowSource
 }
 
-const LEVEL_WEIGHT: Record<LogLevel, number> = {
-  trace: 0,
-  debug: 1,
-  info: 2,
-  warn: 3,
-  error: 4,
-}
+const LEVEL_WEIGHT = Object.fromEntries(LOG_LEVELS.map((level, weight) => [level, weight])) as Record<LogLevel, number>
 
 /** 控制台 CSS 样式 — 用颜色区分级别 */
 const LEVEL_STYLES: Record<LogLevel, string> = {
@@ -199,16 +201,44 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
   ensureBroadcastChannel()
   if (!bc) return () => {}
 
-  /** 收到其它窗口广播的日志 → 立即展示 + 写入文件（避免源窗口崩溃丢失） */
-  const handler = (event: MessageEvent) => {
-    const entry = event.data as LogEntry
-    if (entry?.schemaVersion === LOG_SCHEMA_VERSION && entry.timestamp && entry.level && entry.namespace && entry.event) {
-      // 通知 UI 订阅者
-      try { cb(entry) } catch { /* 忽略 */ }
-
-      // 注意：不在此处写文件——源窗口已经在 log() 中写过了。
-      // 若接收方也写，会导致 JSONL 中每条跨窗口日志重复。
+  function serializeIncomingPayload(value: unknown): string {
+    try {
+      const serialized = JSON.stringify(serializeUnknown(value))
+      return serialized ?? '[输入内容无法转换为 JSON]'
+    } catch {
+      return '[输入内容无法安全序列化]'
     }
+  }
+
+  function parseFailureEntry(value: unknown, reason: string): LogEntry {
+    const message = `[日志解析失败] ${reason}；输入：${serializeIncomingPayload(value)}`
+    return {
+      schemaVersion: LOG_SCHEMA_VERSION,
+      timestamp: getTimestamp(),
+      level: 'warn',
+      namespace: 'System',
+      message: redactSensitiveText(message),
+      event: 'logger.parse_failed',
+      source: '跨窗口',
+    }
+  }
+
+  /** 收到其它窗口广播的日志 → 合法条目或合成解析失败警告进入日志窗口数据源。 */
+  const handler = (event: MessageEvent) => {
+    const entry = event.data
+    let validation
+    try {
+      validation = validateLogEntry(entry)
+    } catch {
+      validation = { valid: false, reason: '条目无法安全校验' }
+    }
+
+    const delivered = validation.valid
+      ? entry as LogEntry
+      : parseFailureEntry(entry, validation.reason ?? '条目不符合 v2 契约')
+
+    // 这里只进入接收窗口的数据源；合成警告不加入缓冲、不再次广播，也不写入文件。
+    try { cb(delivered) } catch { /* 忽略 */ }
   }
   bc.addEventListener('message', handler)
   return () => { bc?.removeEventListener('message', handler) }
@@ -272,30 +302,81 @@ export function clearBuffer() {
 
 const SENSITIVE_KEY = /^(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|secret)$/i
 
+function readPropertySafely(value: object, key: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: (value as Record<string, unknown>)[key] }
+  } catch {
+    return { ok: false }
+  }
+}
+
+function enumerableKeysSafely(value: object): string[] | undefined {
+  try {
+    return Object.keys(value)
+  } catch {
+    return undefined
+  }
+}
+
+function stringSafely(value: unknown, fallback: string): string {
+  try {
+    return String(value)
+  } catch {
+    return fallback
+  }
+}
+
 function serializeUnknown(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
-  if (typeof value === 'string') return redactSensitiveText(value)
-  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
-  if (typeof value === 'bigint') return `${value}n`
-  if (typeof value === 'symbol' || typeof value === 'function') return String(value)
-  if (value instanceof Error) return normalizeError(value, seen, depth)
-  if (value instanceof Date) return value.toISOString()
-  if (depth >= 6) return '[MaxDepth]'
-  if (typeof value !== 'object') return String(value)
-  if (seen.has(value)) return '[Circular]'
-  seen.add(value)
+  try {
+    if (typeof value === 'string') return redactSensitiveText(value)
+    if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
+    if (typeof value === 'bigint') return `${value}n`
+    if (typeof value === 'symbol') return '[Symbol]'
+    if (typeof value === 'function') return '[Function]'
 
-  if (Array.isArray(value)) {
-    const result = value.slice(0, 100).map(item => serializeUnknown(item, seen, depth + 1))
-    if (value.length > 100) result.push(`[Truncated ${value.length - 100} items]`)
+    let isError = false
+    let isDate = false
+    let isArray = false
+    try { isError = value instanceof Error } catch { return '[对象无法读取]' }
+    try { isDate = value instanceof Date } catch { return '[对象无法读取]' }
+    try { isArray = Array.isArray(value) } catch { return '[对象无法读取]' }
+    if (isError) return normalizeError(value, seen, depth)
+    if (isDate) {
+      try { return (value as Date).toISOString() } catch { return '[无效日期]' }
+    }
+    if (depth >= 6) return '[MaxDepth]'
+    if (typeof value !== 'object') return '[不可表达的值]'
+    if (seen.has(value)) return '[Circular]'
+    seen.add(value)
+
+    if (isArray) {
+      let length: number
+      try { length = (value as unknown[]).length } catch { return '[对象无法读取]' }
+      const result: unknown[] = []
+      for (let index = 0; index < Math.min(length, 100); index++) {
+        const item = readPropertySafely(value, String(index))
+        result.push(item.ok ? serializeUnknown(item.value, seen, depth + 1) : '[属性无法读取]')
+      }
+      if (length > 100) result.push(`[Truncated ${length - 100} items]`)
+      return result
+    }
+
+    const keys = enumerableKeysSafely(value)
+    if (!keys) return '[对象无法读取]'
+    const result: Record<string, unknown> = Object.create(null)
+    for (const key of keys.slice(0, 100)) {
+      if (SENSITIVE_KEY.test(key)) {
+        result[key] = '[REDACTED]'
+        continue
+      }
+      const child = readPropertySafely(value, key)
+      result[key] = child.ok ? serializeUnknown(child.value, seen, depth + 1) : '[属性无法读取]'
+    }
+    if (keys.length > 100) result.__truncated__ = true
     return result
+  } catch {
+    return '[对象无法读取]'
   }
-
-  const result: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value).slice(0, 100)) {
-    result[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(child, seen, depth + 1)
-  }
-  if (Object.keys(value).length > 100) result.__truncated__ = true
-  return result
 }
 
 /** 将浏览器、Tauri 和第三方库抛出的任意值统一成可持久化异常。 */
@@ -304,26 +385,56 @@ export function normalizeError(
   seen = new WeakSet<object>(),
   depth = 0,
 ): SerializedError {
-  if (error instanceof Error) {
-    if (seen.has(error)) return { name: error.name || 'Error', message: '[Circular error]' }
-    seen.add(error)
-    const withExtras = error as Error & { code?: unknown; cause?: unknown }
-    const serialized: SerializedError = {
-      name: error.name || 'Error',
-      message: redactSensitiveText(error.message || String(error)),
-    }
-    if (error.stack) serialized.stack = redactSensitiveText(error.stack)
-    if (withExtras.code != null) serialized.code = String(withExtras.code)
-    if (withExtras.cause != null && depth < 5) {
-      serialized.cause = normalizeError(withExtras.cause, seen, depth + 1)
-    }
-    const extras: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(error)) {
-      if (!['name', 'message', 'stack', 'code', 'cause'].includes(key)) {
-        extras[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(value, seen, depth + 1)
+  let isError = false
+  try { isError = error instanceof Error } catch { /* 使用下面的安全对象路径 */ }
+  if (isError && error && typeof error === 'object') {
+    if (seen.has(error)) {
+      const name = readPropertySafely(error, 'name')
+      return {
+        name: name.ok && typeof name.value === 'string' && name.value ? name.value : 'Error',
+        message: '[Circular error]',
       }
     }
+    seen.add(error)
+    const name = readPropertySafely(error, 'name')
+    const message = readPropertySafely(error, 'message')
+    const stack = readPropertySafely(error, 'stack')
+    const code = readPropertySafely(error, 'code')
+    const cause = readPropertySafely(error, 'cause')
+    const serialized: SerializedError = {
+      name: name.ok && typeof name.value === 'string' && name.value ? name.value : 'Error',
+      message: redactSensitiveText(
+        message.ok && message.value ? stringSafely(message.value, '[属性无法读取]') : '未知错误',
+      ),
+    }
+    if (stack.ok && typeof stack.value === 'string' && stack.value) {
+      serialized.stack = redactSensitiveText(stack.value)
+    } else if (!stack.ok) {
+      serialized.stack = '[属性无法读取]'
+    }
+    const extras: Record<string, unknown> = {}
+    const keys = enumerableKeysSafely(error)
+    if (keys) {
+      for (const key of keys.slice(0, 100)) {
+        if (['name', 'message', 'stack', 'code', 'cause'].includes(key)) continue
+        if (SENSITIVE_KEY.test(key)) {
+          extras[key] = '[REDACTED]'
+          continue
+        }
+        const value = readPropertySafely(error, key)
+        extras[key] = value.ok ? serializeUnknown(value.value, seen, depth + 1) : '[属性无法读取]'
+      }
+      if (keys.length > 100) extras.__truncated__ = true
+    } else {
+      extras.__unreadable__ = '[对象无法读取]'
+    }
     if (Object.keys(extras).length) serialized.details = extras
+    if (code.ok && code.value != null) serialized.code = stringSafely(code.value, '[属性无法读取]')
+    if (cause.ok && cause.value != null && depth < 5) {
+      serialized.cause = normalizeError(cause.value, seen, depth + 1)
+    } else if (!cause.ok && depth < 5) {
+      serialized.cause = normalizeError('[属性无法读取]', seen, depth + 1)
+    }
     return serialized
   }
 
@@ -333,21 +444,99 @@ export function normalizeError(
 
   const details = serializeUnknown(error, seen, depth + 1)
   let message = '未知错误'
-  if (error && typeof error === 'object' && 'message' in error) {
-    message = redactSensitiveText(String((error as { message?: unknown }).message ?? message))
+  if (error && typeof error === 'object') {
+    const rawMessage = readPropertySafely(error, 'message')
+    if (rawMessage.ok && rawMessage.value != null) {
+      message = redactSensitiveText(stringSafely(rawMessage.value, '[属性无法读取]'))
+    } else if (!rawMessage.ok) {
+      message = '[属性无法读取]'
+    } else if (details != null) {
+      try { message = JSON.stringify(details) ?? message } catch { message = '[对象无法读取]' }
+    }
   } else if (details != null) {
-    try { message = JSON.stringify(details) } catch { message = String(details) }
+    try { message = JSON.stringify(details) ?? message } catch { message = stringSafely(details, '[对象无法读取]') }
   }
   return { name: 'Error', message, details }
 }
 
 function serializeEntry(entry: LogEntry): LogEntry {
+  const { error, context, ...required } = entry
   return {
-    ...entry,
+    ...required,
     message: redactSensitiveText(entry.message),
-    error: entry.error ? serializeUnknown(entry.error) as SerializedError : undefined,
-    context: entry.context ? serializeUnknown(entry.context) as LogContext : undefined,
+    ...(error !== undefined ? { error: serializeUnknown(error) as SerializedError } : {}),
+    ...(context !== undefined ? { context: serializeUnknown(context) as LogContext } : {}),
   }
+}
+
+const MAX_RECORD_INVALID_INPUT_CHARS = 4096
+
+function safeDiagnosticString(value: unknown): string {
+  try { return String(value) } catch { return '[无法转换为文本]' }
+}
+
+function prepareRecordInvalidInput(entry: unknown): { input: string; truncated: boolean; originalLength?: number } {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(serializeUnknown(entry)) ?? '[输入无法序列化]'
+  } catch {
+    return { input: '[输入无法安全序列化]', truncated: true }
+  }
+
+  const safeInput = redactSensitiveText(serialized)
+  const characters = [...safeInput]
+  if (characters.length > MAX_RECORD_INVALID_INPUT_CHARS) {
+    return {
+      input: characters.slice(0, MAX_RECORD_INVALID_INPUT_CHARS).join(''),
+      truncated: true,
+      originalLength: characters.length,
+    }
+  }
+
+  return { input: safeInput, truncated: false }
+}
+
+/** 将已通过 v2 校验的记录送入所有常规日志出口。 */
+function publishLogEntry(entry: LogEntry) {
+  pushToBuffer(entry)
+  subscribers.forEach(cb => { try { cb(entry) } catch { /* 忽略 */ } })
+
+  ensureBroadcastChannel()
+  try { bc?.postMessage(entry) } catch { /* 忽略 */ }
+
+  enqueueFileWrite(entry)
+  if (entry.level === 'error') void flushLogs()
+  else scheduleFileFlush()
+}
+
+/** 直接构造违规诊断，避免再次进入可能失败的 logger 记录入口。 */
+function reportRecordInvalid(namespace: string, level: LogLevel, entry: unknown, reason: string) {
+  if (!globalConfig.enabled) return
+
+  const input = prepareRecordInvalidInput(entry)
+  const diagnostic: LogEntry = {
+    schemaVersion: LOG_SCHEMA_VERSION,
+    timestamp: getTimestamp(),
+    level: 'warn',
+    namespace: 'Logger',
+    message: `日志记录违规：${redactSensitiveText(reason)}`,
+    event: 'logger.record_invalid',
+    context: {
+      input: input.input,
+      inputTruncated: input.truncated,
+      ...(input.originalLength !== undefined ? { inputOriginalLength: input.originalLength } : {}),
+      attemptedNamespace: redactSensitiveText(safeDiagnosticString(namespace)),
+      attemptedLevel: level,
+    },
+    source: detectWindowSource(),
+  }
+  const safeDiagnostic = serializeEntry(diagnostic)
+  if (!isValidLogEntry(safeDiagnostic)) return
+
+  if (import.meta.env.DEV) {
+    console.warn('[Logger] 已拒绝不符合日志 v2 契约的记录', safeDiagnostic)
+  }
+  publishLogEntry(safeDiagnostic)
 }
 
 function publishInternalDiagnostic(
@@ -363,11 +552,12 @@ function publishInternalDiagnostic(
     namespace: 'Logger',
     event: level === 'error' ? 'logger.persistence_failed' : 'logger.persistence_recovered',
     message,
-    error: error === undefined ? undefined : normalizeError(error),
-    context,
+    ...(error !== undefined ? { error: normalizeError(error) } : {}),
+    ...(context !== undefined ? { context } : {}),
     source: detectWindowSource(),
   }
   const safeEntry = serializeEntry(entry)
+  if (!isValidLogEntry(safeEntry)) return
   pushToBuffer(safeEntry)
   subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
   ensureBroadcastChannel()
@@ -423,6 +613,58 @@ export function redactSensitiveText(text: string): string {
     .replace(/\bsk-[A-Za-z0-9_-]{6,}\b/g, '[REDACTED]')
   out = redactWindowsPath(out)
   return out
+}
+
+/** 合成解析失败条目只展示有限长度，避免单条异常内容占满日志窗口。 */
+const MAX_PARSE_FAILURE_DISPLAY_CHARS = 4096
+const PARSE_FAILURE_MESSAGE_PREFIX = '[日志解析失败] '
+
+export interface ParseFailureDisplay {
+  message: string
+  truncated: boolean
+  /** 被截断时返回脱敏前异常内容的 Unicode 字符数。 */
+  originalLength?: number
+}
+
+function countUnicodeCharacters(text: string): number {
+  let length = 0
+  for (const _character of text) length++
+  return length
+}
+
+/** 为日志窗口安全准备合成解析失败条目，不修改历史文件中的原文。 */
+export function prepareParseFailureForDisplay(message: string): ParseFailureDisplay {
+  const rawContent = message.startsWith(PARSE_FAILURE_MESSAGE_PREFIX)
+    ? message.slice(PARSE_FAILURE_MESSAGE_PREFIX.length)
+    : message
+
+  try {
+    const safeContent = redactSensitiveText(rawContent)
+    let characterCount = 0
+    let endOffset = 0
+    for (const character of safeContent) {
+      if (characterCount >= MAX_PARSE_FAILURE_DISPLAY_CHARS) {
+        return {
+          message: `${PARSE_FAILURE_MESSAGE_PREFIX}${safeContent.slice(0, endOffset)}`,
+          truncated: true,
+          originalLength: countUnicodeCharacters(rawContent),
+        }
+      }
+      endOffset += character.length
+      characterCount++
+    }
+
+    return {
+      message: `${PARSE_FAILURE_MESSAGE_PREFIX}${safeContent}`,
+      truncated: false,
+    }
+  } catch {
+    return {
+      message: `${PARSE_FAILURE_MESSAGE_PREFIX}[异常内容无法安全显示]`,
+      truncated: true,
+      originalLength: countUnicodeCharacters(rawContent),
+    }
+  }
 }
 
 // ─── 文件持久化 ──────────────────────────────────────
@@ -593,8 +835,6 @@ export function getConfig(): LoggerConfig {
 // ─── Logger 工厂 ──────────────────────────────────────
 
 const nsColorCache = new Map<string, string>()
-const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/
-
 /**
  * 创建一个命名空间 Logger。
  *
@@ -617,69 +857,76 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
   }
 
   function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
-    if (!EVENT_NAME_PATTERN.test(record.event)) {
-      throw new TypeError(`无效的日志事件名: ${record.event}`)
-    }
     if (!globalConfig.enabled) return
-    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
-    if (!forceLevel && !meetsLevel(lvl)) return
 
-    const ts = getTimestamp()
-    const label = formatLabel(lvl)
-    const styles = formatStyles(lvl)
-    const fullMsg = `${record.message}`
-    const consoleDetails = {
-      ...(record.context ? { context: record.context } : {}),
-      ...(record.error !== undefined ? { error: record.error } : {}),
-    }
-
-    // 控制台输出
-    switch (lvl) {
-      case 'trace':
-        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'debug':
-        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'info':
-        console.info(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'warn':
-        console.warn(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'error':
-        console.error(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-    }
-
-    // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
-    const entry: LogEntry = {
-      schemaVersion: LOG_SCHEMA_VERSION,
-      timestamp: ts,
-      level: lvl,
-      namespace,
-      message: fullMsg,
-      event: record.event,
-      error: record.error !== undefined ? normalizeError(record.error) : undefined,
-      context: record.context,
-      source: detectWindowSource(),
-    }
-    const safeEntry = serializeEntry(entry)
-    pushToBuffer(safeEntry)
-
-    // 通知 UI 订阅者
-    subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
-
-    // 跨窗口广播（让日志窗口实时看到其它窗口的日志）
-    ensureBroadcastChannel()
     try {
-      bc?.postMessage(safeEntry)
-    } catch { /* 忽略 */ }
+      const ts = getTimestamp()
+      const label = formatLabel(lvl)
+      const styles = formatStyles(lvl)
+      const entry: LogEntry = {
+        schemaVersion: LOG_SCHEMA_VERSION,
+        timestamp: ts,
+        level: lvl,
+        namespace,
+        message: record.message,
+        event: record.event,
+        ...(record.error !== undefined ? { error: normalizeError(record.error) } : {}),
+        ...(record.context !== undefined ? { context: record.context } : {}),
+        source: detectWindowSource(),
+      }
+      const validation = validateLogEntry(entry)
+      if (!validation.valid) {
+        reportRecordInvalid(namespace, lvl, entry, validation.reason ?? '未知原因')
+        return
+      }
 
-    // 文件持久化（全部级别写入文件，2 秒节流批量写入）
-    enqueueFileWrite(safeEntry)
-    if (lvl === 'error') void flushLogs()
-    else scheduleFileFlush()
+      let safeEntry: LogEntry
+      try {
+        safeEntry = serializeEntry(entry)
+      } catch {
+        reportRecordInvalid(namespace, lvl, entry, '脱敏序列化失败')
+        return
+      }
+      const safeValidation = validateLogEntry(safeEntry)
+      if (!safeValidation.valid) {
+        reportRecordInvalid(namespace, lvl, entry, safeValidation.reason ?? '脱敏后的日志条目不符合契约')
+        return
+      }
+
+      if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
+      if (!forceLevel && !meetsLevel(lvl)) return
+
+      const fullMsg = entry.message
+      const consoleDetails = {
+        ...(record.context ? { context: record.context } : {}),
+        ...(record.error !== undefined ? { error: record.error } : {}),
+      }
+
+      // 控制台输出
+      switch (lvl) {
+        case 'trace':
+          console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'debug':
+          console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'info':
+          console.info(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'warn':
+          console.warn(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'error':
+          console.error(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+      }
+
+      // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
+      publishLogEntry(safeEntry)
+    } catch {
+      // 日志数据可能带有异常 getter；尽力报告后吞掉日志自身的失败，不能打断调用方。
+      try { reportRecordInvalid(namespace, lvl, record, '日志条目无法安全处理') } catch { /* 忽略 */ }
+    }
   }
 
   return {

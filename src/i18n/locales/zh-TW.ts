@@ -624,6 +624,7 @@ export default {
     emptyHistoryHint: '選擇左側的日誌檔案以檢視歷史記錄',
     emptyRealtimeHint: '應用程式執行時產生的日誌將在此顯示',
     loadError: '載入失敗: {msg}',
+    parseFailureTruncated: '已截斷，原文 {length} 個字元',
     newLogs: '新日誌',
   },
 }

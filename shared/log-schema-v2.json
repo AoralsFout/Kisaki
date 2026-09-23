@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "versionField": "schemaVersion",
+  "unknownFields": "reject",
+  "fields": {
+    "schemaVersion": { "type": "integer", "required": true },
+    "timestamp": { "type": "string", "required": true, "nonBlank": true },
+    "level": { "type": "string", "required": true, "values": ["trace", "debug", "info", "warn", "error"] },
+    "namespace": { "type": "string", "required": true, "nonBlank": true },
+    "message": { "type": "string", "required": true, "nonBlank": true },
+    "source": { "type": "string", "required": true, "nonBlank": true },
+    "event": { "type": "string", "required": true, "format": "eventName" },
+    "error": { "type": "object", "required": false, "nullable": true },
+    "context": { "type": "object", "required": false, "nullable": true }
+  },
+  "eventName": {
+    "separator": ".",
+    "minimumSegments": 2,
+    "firstCharacters": "abcdefghijklmnopqrstuvwxyz",
+    "followingCharacters": "abcdefghijklmnopqrstuvwxyz0123456789_"
+  }
+}

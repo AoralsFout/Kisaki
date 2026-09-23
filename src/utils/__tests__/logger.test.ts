@@ -8,10 +8,25 @@
  * - createLogger 日志创建与输出
  * - subscribe 订阅者机制
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { LogLevel } from '../logger'
 
 const invokeMock = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
+
+class FakeLogBroadcastChannel extends EventTarget {
+  static instances: FakeLogBroadcastChannel[] = []
+  readonly postMessage = vi.fn()
+
+  constructor(readonly name: string) {
+    super()
+    FakeLogBroadcastChannel.instances.push(this)
+  }
+
+  receive(data: unknown) {
+    this.dispatchEvent(new MessageEvent('message', { data }))
+  }
+}
 
 // 注意：logger 模块有模块级状态（全局变量），
 // 在每个测试文件内重置状态以避免跨测试污染
@@ -31,6 +46,15 @@ describe('Logger - 配置管理', () => {
 
     mod.setLogLevel('info')
     expect(mod.getLogLevel()).toBe('info')
+  })
+
+  it('LogLevel 类型只接受共享声明中的级别', () => {
+    const supported: LogLevel = 'debug'
+    expect(supported).toBe('debug')
+
+    // @ts-expect-error 共享声明未提供 notice 级别
+    const unsupported: LogLevel = 'notice'
+    void unsupported
   })
 
   it('getConfig 返回只读快照', async () => {
@@ -169,21 +193,11 @@ describe('Logger - 级别过滤', () => {
 
   it('全局 enabled=false 时全部静默', async () => {
     const mod = await import('../logger')
-
-    // 通过闭包设置 enabled=false
-    // 由于 setLogEnabled 未导出，我们需要直接重置
     mod.resetConfig()
-    mod.setLogLevel('trace')
-    mod.clearBuffer()
-
-    // 模拟设置 enabled=false：通过 resetConfig 再设置低级别
-    // 实际上我们测试的是 setLogLevel('trace') 时的行为
-    // 要测试 disable，我们需要找到禁用方法
-    // 从源码看，setLogEnabled 和 disableFilePersistence 都导出了
-    // 但 setLogEnabled 未导出。我们通过 setLogLevel 测试相反方向
+    mod.setLogEnabled(false)
     const log = mod.createLogger('DisabledTest')
     log.info("test.module.info", "消息1")
-    expect(mod.getBuffer().length).toBe(1)
+    expect(mod.getBuffer()).toEqual([])
   })
 })
 
@@ -240,6 +254,126 @@ describe('Logger - 订阅者机制', () => {
 
     expect(cb1).toHaveBeenCalledTimes(1)
     expect(cb2).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Logger - 跨窗口广播', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    FakeLogBroadcastChannel.instances = []
+    vi.stubGlobal('BroadcastChannel', FakeLogBroadcastChannel)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  async function subscribeToCrossWindow() {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    const callback = vi.fn()
+    const unsubscribe = mod.subscribeCrossWindow(callback)
+    const channel = FakeLogBroadcastChannel.instances[0]
+    if (!channel) throw new Error('BroadcastChannel 未初始化')
+    return { mod, callback, unsubscribe, channel }
+  }
+
+  const validEntry = {
+    schemaVersion: 2,
+    timestamp: '2026-09-23T00:00:00.000Z',
+    level: 'info',
+    namespace: 'TTS',
+    message: '播报完成',
+    source: '主窗口',
+    event: 'tts.playback_completed',
+  }
+
+  const missingSource = { ...validEntry } as Record<string, unknown>
+  delete missingSource.source
+
+  it.each([
+    ['缺少必填字段', missingSource],
+    ['错误版本', { ...validEntry, schemaVersion: 1 }],
+    ['非法事件名', { ...validEntry, event: 'TTS.bad-event' }],
+  ])('无效广播（%s）进入一次解析失败警告', async (_label, payload) => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+
+    channel.receive(payload)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const failure = callback.mock.calls[0][0]
+    expect(failure).toMatchObject({ level: 'warn', event: 'logger.parse_failed', namespace: 'System' })
+    expect(mod.isValidLogEntry(failure)).toBe(true)
+    expect(mod.getBuffer()).toEqual([])
+    expect(channel.postMessage).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('合法广播原样回调，不产生合成警告', async () => {
+    const { callback, unsubscribe, channel } = await subscribeToCrossWindow()
+
+    channel.receive(validEntry)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith(validEntry)
+    expect(channel.postMessage).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('调用解析失败回调前已脱敏敏感文本和 Windows 路径', async () => {
+    const { callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const secret = 'Authorization: Bearer abc.def-123; path=C:\\Users\\Alice Smith\\private.txt'
+
+    channel.receive({ ...validEntry, event: 'TTS.invalid', message: secret })
+
+    const failure = callback.mock.calls[0][0]
+    expect(failure.message).not.toContain('abc.def-123')
+    expect(failure.message).not.toContain('Alice Smith')
+    expect(failure.message).toContain('[REDACTED]')
+    expect(failure.message).toContain('[PATH]')
+    unsubscribe()
+  })
+
+  it('循环引用、不可表达值和敏感字段可安全序列化，并在显示准备时脱敏', async () => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const context: Record<string, unknown> = { apiKey: 'sk-secret-token', password: 'private-value' }
+    context.self = context
+    context.callback = () => {}
+    context.symbol = Symbol('不可序列化')
+    context.bigint = 42n
+    Object.defineProperty(context, 'unreadable', { enumerable: true, get() { throw new Error('读取失败') } })
+    const payload = { ...validEntry, event: 'TTS.invalid', context }
+
+    expect(() => channel.receive(payload)).not.toThrow()
+
+    const failure = callback.mock.calls[0][0]
+    expect(failure.message).toContain('[Circular]')
+    expect(failure.message).toContain('[Function]')
+    expect(failure.message).toContain('[Symbol]')
+    expect(failure.message).toContain('42n')
+    expect(failure.message).toContain('[属性无法读取]')
+    const display = mod.prepareParseFailureForDisplay(failure.message)
+    expect(display.message).toContain('[REDACTED]')
+    expect(display.message).not.toContain('sk-secret-token')
+    expect(display.message).not.toContain('private-value')
+    unsubscribe()
+  })
+
+  it('不可读取的输入使用占位，超长内容显示截断长度', async () => {
+    const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const unreadable = new Proxy({}, { ownKeys: () => { throw new Error('cannot inspect') } })
+
+    expect(() => channel.receive(unreadable)).not.toThrow()
+    expect(callback.mock.calls[0][0].message).toContain('[对象无法读取]')
+
+    callback.mockClear()
+    const longPayload = { ...validEntry, event: 'TTS.invalid', message: '排查内容'.repeat(1500) }
+    channel.receive(longPayload)
+    const display = mod.prepareParseFailureForDisplay(callback.mock.calls[0][0].message)
+    expect(display.truncated).toBe(true)
+    expect(display.originalLength).toBeGreaterThan(4096)
+    unsubscribe()
   })
 })
 
@@ -381,13 +515,139 @@ describe('Logger - 异常序列化', () => {
     }))
   })
 
-  it('拒绝不稳定或非结构化的事件名', async () => {
+  it('记录违规会生成脱敏的 warn 诊断并进入常规日志出口', async () => {
     const mod = await import('../logger')
+    mod.resetConfig()
+    mod.setLogLevel('error')
+    invokeMock.mockReset()
+    invokeMock.mockResolvedValue(undefined)
+    await mod.enableFilePersistence()
+    invokeMock.mockClear()
+
+    const consoleWarning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const broadcast = vi.spyOn(BroadcastChannel.prototype, 'postMessage')
+    const callback = vi.fn()
+    const unsubscribe = mod.subscribe(callback)
     const log = mod.createLogger('Events')
 
-    expect(() => log.info('request started', '请求开始')).toThrow(TypeError)
-    expect(() => log.info('Request.Started', '请求开始')).toThrow(TypeError)
-    expect(() => log.info('started', '请求开始')).toThrow(TypeError)
+    expect(() => log.info(
+      'Request.Started',
+      'Authorization: Bearer abc.def-123 at C:\\Users\\Alice\\secret.txt',
+      { apiKey: 'sk-private-secret' },
+    )).not.toThrow()
+    await mod.flushLogs()
+
+    expect(mod.getBuffer()).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        namespace: 'Logger',
+        event: 'logger.record_invalid',
+        message: expect.stringContaining('event'),
+        context: expect.objectContaining({
+          attemptedNamespace: 'Events',
+          attemptedLevel: 'info',
+          inputTruncated: false,
+        }),
+      }),
+    ])
+    const diagnostic = mod.getBuffer()[0]
+    const safeInput = diagnostic.context?.input as string
+    expect(safeInput).toContain('Request.Started')
+    expect(safeInput).toContain('[REDACTED]')
+    expect(safeInput).toContain('[PATH]')
+    expect(safeInput).not.toContain('abc.def-123')
+    expect(safeInput).not.toContain('sk-private-secret')
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith(diagnostic)
+    expect(broadcast).toHaveBeenCalledTimes(1)
+    expect(broadcast).toHaveBeenCalledWith(diagnostic)
+    expect(invokeMock).toHaveBeenCalledWith('append_log_entries', expect.objectContaining({
+      entries: [expect.objectContaining({ event: 'logger.record_invalid', level: 'warn' })],
+    }))
+    expect(consoleWarning).toHaveBeenCalledWith(
+      '[Logger] 已拒绝不符合日志 v2 契约的记录',
+      diagnostic,
+    )
+
+    unsubscribe()
+    consoleWarning.mockRestore()
+    broadcast.mockRestore()
+  })
+
+  it('脱敏序列化后的二次校验失败也会报告合法诊断', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    const log = mod.createLogger('Events')
+
+    expect(() => log.info('request.started', '请求开始', new Date() as never)).not.toThrow()
+
+    expect(mod.getBuffer()).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        event: 'logger.record_invalid',
+        message: expect.stringContaining('context'),
+        context: expect.objectContaining({ inputTruncated: false }),
+      }),
+    ])
+  })
+
+  it('全局日志关闭时不产生违规诊断或文件记录', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    mod.setLogEnabled(false)
+    invokeMock.mockReset()
+    await mod.enableFilePersistence()
+    const consoleWarning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(() => mod.createLogger('Events').info('Request.Started', '不合法事件')).not.toThrow()
+    await mod.flushLogs()
+
+    expect(mod.getBuffer()).toEqual([])
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(consoleWarning).not.toHaveBeenCalled()
+    consoleWarning.mockRestore()
+  })
+
+  it('fatal 记录违规时仍返回等待落盘的 Promise', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    invokeMock.mockReset()
+    await mod.enableFilePersistence()
+
+    let releaseWrite!: () => void
+    invokeMock.mockImplementation(() => new Promise<void>(resolve => { releaseWrite = resolve }))
+    const fatal = mod.createLogger('Events').fatal('Request.Started', '致命日志违规', new Error('bad event'))
+    expect(fatal).toBeInstanceOf(Promise)
+
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+      'append_log_entries',
+      expect.objectContaining({ entries: [expect.objectContaining({ event: 'logger.record_invalid' })] }),
+    ))
+    let completed = false
+    void fatal.then(() => { completed = true })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+
+    releaseWrite()
+    await expect(fatal).resolves.toBeUndefined()
+  })
+
+  it('异常对象带抛错 getter 时 schema 违规记录不会打断普通调用或 fatal', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = new Error()
+    Object.defineProperty(error, 'message', {
+      configurable: true,
+      get() { throw new Error('getter failed') },
+    })
+    const logger = mod.createLogger('Events')
+
+    expect(() => logger.error('Request.Started', '无效事件', error)).not.toThrow()
+    await expect(logger.fatal('Request.Started', '致命无效事件', error)).resolves.toBeUndefined()
+
+    expect(mod.getBuffer().filter(entry => entry.event === 'logger.record_invalid')).toHaveLength(2)
+    warning.mockRestore()
   })
 
   it('循环对象和嵌套敏感字段可安全处理', async () => {
@@ -443,6 +703,25 @@ describe('Logger - 敏感信息脱敏', () => {
     expect(output).not.toContain('server')
     expect(output).not.toContain('private share')
     expect(output).toContain('[PATH]')
+  })
+
+  it('安全展示历史解析失败内容并标出截断长度', async () => {
+    const { prepareParseFailureForDisplay } = await import('../logger')
+    const raw = 'not JSON; Authorization: Bearer abc.def-123; path=C:\\Users\\Alice Smith\\secret.txt'
+    const prepared = prepareParseFailureForDisplay(`[日志解析失败] ${raw}`)
+
+    expect(prepared.message).toContain('not JSON')
+    expect(prepared.message).not.toContain('abc.def-123')
+    expect(prepared.message).not.toContain('Alice Smith')
+    expect(prepared.message).toContain('[REDACTED]')
+    expect(prepared.message).toContain('[PATH]')
+    expect(prepared.truncated).toBe(false)
+
+    const longRaw = `${'排查说明'.repeat(1400)}; ${raw}`
+    const longPrepared = prepareParseFailureForDisplay(`[日志解析失败] ${longRaw}`)
+    expect(longPrepared.truncated).toBe(true)
+    expect(longPrepared.originalLength).toBe([...longRaw].length)
+    expect([...longPrepared.message.slice('[日志解析失败] '.length)]).toHaveLength(4096)
   })
 })
 

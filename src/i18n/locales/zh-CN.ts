@@ -627,6 +627,7 @@ export default {
     emptyHistoryHint: '选择左侧的日志文件以查看历史记录',
     emptyRealtimeHint: '应用运行时产生的日志将在此显示',
     loadError: '加载失败: {msg}',
+    parseFailureTruncated: '已截断，原文 {length} 字符',
     newLogs: '新日志',
   },
 }
