@@ -353,6 +353,76 @@ function serializeEntry(entry: LogEntry): LogEntry {
   }
 }
 
+const MAX_RECORD_INVALID_INPUT_CHARS = 4096
+
+function safeDiagnosticString(value: unknown): string {
+  try { return String(value) } catch { return '[无法转换为文本]' }
+}
+
+function prepareRecordInvalidInput(entry: unknown): { input: string; truncated: boolean; originalLength?: number } {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(serializeUnknown(entry)) ?? '[输入无法序列化]'
+  } catch {
+    return { input: '[输入无法安全序列化]', truncated: true }
+  }
+
+  const safeInput = redactSensitiveText(serialized)
+  const characters = [...safeInput]
+  if (characters.length > MAX_RECORD_INVALID_INPUT_CHARS) {
+    return {
+      input: characters.slice(0, MAX_RECORD_INVALID_INPUT_CHARS).join(''),
+      truncated: true,
+      originalLength: characters.length,
+    }
+  }
+
+  return { input: safeInput, truncated: false }
+}
+
+/** 将已通过 v2 校验的记录送入所有常规日志出口。 */
+function publishLogEntry(entry: LogEntry) {
+  pushToBuffer(entry)
+  subscribers.forEach(cb => { try { cb(entry) } catch { /* 忽略 */ } })
+
+  ensureBroadcastChannel()
+  try { bc?.postMessage(entry) } catch { /* 忽略 */ }
+
+  enqueueFileWrite(entry)
+  if (entry.level === 'error') void flushLogs()
+  else scheduleFileFlush()
+}
+
+/** 直接构造违规诊断，避免再次进入可能失败的 logger 记录入口。 */
+function reportRecordInvalid(namespace: string, level: LogLevel, entry: unknown, reason: string) {
+  if (!globalConfig.enabled) return
+
+  const input = prepareRecordInvalidInput(entry)
+  const diagnostic: LogEntry = {
+    schemaVersion: LOG_SCHEMA_VERSION,
+    timestamp: getTimestamp(),
+    level: 'warn',
+    namespace: 'Logger',
+    message: `日志记录违规：${redactSensitiveText(reason)}`,
+    event: 'logger.record_invalid',
+    context: {
+      input: input.input,
+      inputTruncated: input.truncated,
+      ...(input.originalLength !== undefined ? { inputOriginalLength: input.originalLength } : {}),
+      attemptedNamespace: redactSensitiveText(safeDiagnosticString(namespace)),
+      attemptedLevel: level,
+    },
+    source: detectWindowSource(),
+  }
+  const safeDiagnostic = serializeEntry(diagnostic)
+  if (!isValidLogEntry(safeDiagnostic)) return
+
+  if (import.meta.env.DEV) {
+    console.warn('[Logger] 已拒绝不符合日志 v2 契约的记录', safeDiagnostic)
+  }
+  publishLogEntry(safeDiagnostic)
+}
+
 function publishInternalDiagnostic(
   level: LogLevel,
   message: string,
@@ -671,23 +741,17 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
   }
 
   function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
-    if (!isValidLogEventName(record.event)) {
-      throw new TypeError(`无效的日志事件名: ${record.event}`)
-    }
     if (!globalConfig.enabled) return
-    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
-    if (!forceLevel && !meetsLevel(lvl)) return
 
     const ts = getTimestamp()
     const label = formatLabel(lvl)
     const styles = formatStyles(lvl)
-    const fullMsg = `${record.message}`
     const entry: LogEntry = {
       schemaVersion: LOG_SCHEMA_VERSION,
       timestamp: ts,
       level: lvl,
       namespace,
-      message: fullMsg,
+      message: record.message,
       event: record.event,
       ...(record.error !== undefined ? { error: normalizeError(record.error) } : {}),
       ...(record.context !== undefined ? { context: record.context } : {}),
@@ -695,8 +759,27 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     }
     const validation = validateLogEntry(entry)
     if (!validation.valid) {
-      throw new TypeError(`日志条目不符合 v${LOG_SCHEMA_VERSION} schema：${validation.reason ?? '未知原因'}`)
+      reportRecordInvalid(namespace, lvl, entry, validation.reason ?? '未知原因')
+      return
     }
+
+    let safeEntry: LogEntry
+    try {
+      safeEntry = serializeEntry(entry)
+    } catch {
+      reportRecordInvalid(namespace, lvl, entry, '脱敏序列化失败')
+      return
+    }
+    const safeValidation = validateLogEntry(safeEntry)
+    if (!safeValidation.valid) {
+      reportRecordInvalid(namespace, lvl, entry, safeValidation.reason ?? '脱敏后的日志条目不符合契约')
+      return
+    }
+
+    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
+    if (!forceLevel && !meetsLevel(lvl)) return
+
+    const fullMsg = entry.message
     const consoleDetails = {
       ...(record.context ? { context: record.context } : {}),
       ...(record.error !== undefined ? { error: record.error } : {}),
@@ -722,23 +805,7 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     }
 
     // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
-    const safeEntry = serializeEntry(entry)
-    if (!isValidLogEntry(safeEntry)) return
-    pushToBuffer(safeEntry)
-
-    // 通知 UI 订阅者
-    subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
-
-    // 跨窗口广播（让日志窗口实时看到其它窗口的日志）
-    ensureBroadcastChannel()
-    try {
-      bc?.postMessage(safeEntry)
-    } catch { /* 忽略 */ }
-
-    // 文件持久化（全部级别写入文件，2 秒节流批量写入）
-    enqueueFileWrite(safeEntry)
-    if (lvl === 'error') void flushLogs()
-    else scheduleFileFlush()
+    publishLogEntry(safeEntry)
   }
 
   return {
