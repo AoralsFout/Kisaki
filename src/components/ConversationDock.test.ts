@@ -53,6 +53,16 @@ function rect(height: number): DOMRect {
   }
 }
 
+function mockDockMeasurements(sizes: { container: number; before: number; after: number; input: number }) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('conversation-dock')) return rect(sizes.container)
+    if (this.classList.contains('dock-before')) return rect(sizes.before)
+    if (this.classList.contains('dock-after')) return rect(sizes.after)
+    if (this.classList.contains('dock-input')) return rect(sizes.input)
+    return rect(0)
+  })
+}
+
 describe('ConversationDock', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -64,13 +74,7 @@ describe('ConversationDock', () => {
   it('首次测量后才启用过渡，并把实际测量结果交给历史插槽', async () => {
     const frames = controlAnimationFrames()
     const sizes = { container: 640, before: 40, after: 60, input: 180 }
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('conversation-dock')) return rect(sizes.container)
-      if (this.classList.contains('dock-before')) return rect(sizes.before)
-      if (this.classList.contains('dock-after')) return rect(sizes.after)
-      if (this.classList.contains('dock-input')) return rect(sizes.input)
-      return rect(0)
-    })
+    mockDockMeasurements(sizes)
 
     const wrapper = mount(ConversationDock, {
       props: { expanded: false, latestMessageHeight: 420 },
@@ -102,13 +106,7 @@ describe('ConversationDock', () => {
     const frames = controlAnimationFrames()
     vi.stubGlobal('ResizeObserver', TestResizeObserver)
     const sizes = { container: 640, before: 40, after: 60, input: 180 }
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('conversation-dock')) return rect(sizes.container)
-      if (this.classList.contains('dock-before')) return rect(sizes.before)
-      if (this.classList.contains('dock-after')) return rect(sizes.after)
-      if (this.classList.contains('dock-input')) return rect(sizes.input)
-      return rect(0)
-    })
+    mockDockMeasurements(sizes)
 
     const wrapper = mount(ConversationDock, {
       props: { expanded: false, latestMessageHeight: 420 },
@@ -156,13 +154,7 @@ describe('ConversationDock', () => {
   it('快速连续切换会话时以最后一次测量结果结束过渡', async () => {
     const frames = controlAnimationFrames()
     const sizes = { container: 500, before: 50, after: 30, input: 120 }
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('conversation-dock')) return rect(sizes.container)
-      if (this.classList.contains('dock-before')) return rect(sizes.before)
-      if (this.classList.contains('dock-after')) return rect(sizes.after)
-      if (this.classList.contains('dock-input')) return rect(sizes.input)
-      return rect(0)
-    })
+    mockDockMeasurements(sizes)
     const wrapper = mount(ConversationDock, {
       props: { expanded: false, latestMessageHeight: 80, layoutKey: 'session-a' },
       slots: {
@@ -206,14 +198,8 @@ describe('ConversationDock', () => {
   })
 
   it('用同一组最终高度协调输入区移出与历史区展开', async () => {
-    let inputHeight = 200
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('conversation-dock')) return rect(700)
-      if (this.classList.contains('dock-before')) return rect(40)
-      if (this.classList.contains('dock-after')) return rect(60)
-      if (this.classList.contains('dock-input')) return rect(inputHeight)
-      return rect(0)
-    })
+    const sizes = { container: 700, before: 40, after: 60, input: 200 }
+    mockDockMeasurements(sizes)
 
     const wrapper = mount(ConversationDock, {
       attachTo: document.body,
@@ -235,7 +221,7 @@ describe('ConversationDock', () => {
     expect(wrapper.get('.dock-track').attributes('style')).toContain('--input-drop: 0px')
     expect(wrapper.get('.dock-history').attributes('style')).toContain('--history-height: 400px')
 
-    inputHeight = 260
+    sizes.input = 260
     window.dispatchEvent(new Event('resize'))
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     expect(wrapper.get('.dock-history').attributes('style')).toContain('--history-height: 340px')
@@ -249,13 +235,7 @@ describe('ConversationDock', () => {
   })
 
   it('通过作用域插槽把折叠容量和溢出状态交给历史组件', async () => {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('conversation-dock')) return rect(300)
-      if (this.classList.contains('dock-before')) return rect(40)
-      if (this.classList.contains('dock-after')) return rect(60)
-      if (this.classList.contains('dock-input')) return rect(100)
-      return rect(0)
-    })
+    mockDockMeasurements({ container: 300, before: 40, after: 60, input: 100 })
 
     const wrapper = mount(ConversationDock, {
       props: { expanded: false, latestMessageHeight: 444 },
