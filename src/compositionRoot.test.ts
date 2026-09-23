@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { SAY_TOOL_NAME } from './agent'
+import { SAY_TOOL_NAME } from './domain/tools/say'
 import { ConversationSession, type ConversationSessionPorts } from './application/conversation/conversationSession'
 import type { ConversationModelClient } from './application/conversation/conversationSession'
 import type { ConversationVoiceRequest } from './application/conversation/conversationSession'

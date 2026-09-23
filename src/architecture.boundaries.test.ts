@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 const SOURCE_ROOT = join(process.cwd(), 'src')
 const DOMAIN_ROOT = join(SOURCE_ROOT, 'domain')
+const AGENT_ROOT = join(SOURCE_ROOT, 'agent')
 const APPLICATION_ROOT = join(SOURCE_ROOT, 'application')
+const AI_ROOT = join(SOURCE_ROOT, 'ai')
 const FORBIDDEN_DOMAIN_IMPORTS = [
   'vue',
   'pinia',
@@ -33,6 +35,57 @@ function importsOf(source: string): string[] {
   // 少了这一遍，`await import('pinia')` 就能绕过全部规则。
   for (const match of source.matchAll(/\bimport\s*\(\s*['\"]([^'\"]+)['\"]/g)) specifiers.push(match[1])
   return specifiers
+}
+
+type BoundaryLayer = 'tool' | 'application' | 'ai' | 'tool-contract'
+
+/**
+ * 把相对模块说明符解析为仓库内的层级路径。
+ *
+ * 架构规则只在这里按真实路径分类，不用 `source.includes('store')` 之类的
+ * 关键词匹配；这样组合根和基础设施适配器可以合法读取 Store，而工具层不能。
+ */
+function localTarget(importer: string, specifier: string): string | null {
+  if (!specifier.startsWith('.')) return null
+  const target = resolve(dirname(importer), specifier).replace(/\\/g, '/')
+  return relative(SOURCE_ROOT, target).replace(/\\/g, '/')
+}
+
+function isPathWithinRoot(target: string | null, root: string): boolean {
+  return target === root || target?.startsWith(`${root}/`) === true
+}
+
+function boundaryViolation(layer: BoundaryLayer, importer: string, specifier: string): string | null {
+  const target = localTarget(importer, specifier)
+  const normalizedSpecifier = specifier.toLowerCase()
+
+  if (layer === 'tool' && isPathWithinRoot(target, 'stores')) return '工具实现不得依赖界面 Store'
+  if ((layer === 'application' || layer === 'ai') && isPathWithinRoot(target, 'agent')) {
+    return 'application/AI 不得依赖 Agent 具体实现'
+  }
+  if (layer === 'tool-contract') {
+    if (
+      isPathWithinRoot(target, 'agent') ||
+      isPathWithinRoot(target, 'application') ||
+      isPathWithinRoot(target, 'ai') ||
+      isPathWithinRoot(target, 'infrastructure') ||
+      isPathWithinRoot(target, 'stores') ||
+      isPathWithinRoot(target, 'components') ||
+      normalizedSpecifier === 'vue' ||
+      normalizedSpecifier === 'pinia' ||
+      normalizedSpecifier.startsWith('@tauri-apps/')
+    ) return '共享工具契约不得反向依赖实现层、应用层或界面层'
+  }
+  return null
+}
+
+function boundaryViolations(layer: BoundaryLayer, importer: string, source: string): string[] {
+  return importsOf(source)
+    .map(specifier => {
+      const reason = boundaryViolation(layer, importer, specifier)
+      return reason ? `${relative(SOURCE_ROOT, importer)} -> ${specifier}: ${reason}` : null
+    })
+    .filter((violation): violation is string => violation !== null)
 }
 
 /**
@@ -77,6 +130,75 @@ function memberCallsOf(source: string): string[] {
 }
 
 describe('architecture boundaries', () => {
+  it('keeps tool implementations away from UI stores', () => {
+    const violations: string[] = []
+    for (const file of sourceFiles(AGENT_ROOT)) {
+      violations.push(...boundaryViolations('tool', file, readFileSync(file, 'utf8')))
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('keeps application and AI layers away from concrete Agent implementations', () => {
+    const violations: string[] = []
+    for (const [layer, root] of [['application', APPLICATION_ROOT], ['ai', AI_ROOT]] as const) {
+      for (const file of sourceFiles(root)) {
+        violations.push(...boundaryViolations(layer, file, readFileSync(file, 'utf8')))
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('keeps the shared tool contract independent from both sides of the boundary', () => {
+    const violations: string[] = []
+    const contractRoot = join(DOMAIN_ROOT, 'tools')
+    for (const file of sourceFiles(contractRoot)) {
+      violations.push(...boundaryViolations('tool-contract', file, readFileSync(file, 'utf8')))
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('keeps execution policy and character behavior on the neutral tools port', () => {
+    const policy = readFileSync(join(SOURCE_ROOT, 'agent', 'toolExecutionPolicy.ts'), 'utf8')
+    expect(importsOf(policy).filter(specifier => specifier.includes('/application/'))).toEqual([])
+
+    const contracts = readFileSync(join(DOMAIN_ROOT, 'tools', 'contracts.ts'), 'utf8')
+    expect(contracts).not.toContain('ToolCharacterRuntimePort')
+    expect(contracts).not.toMatch(/\b(?:setLook|setScreenPose|playMotion)\s*\(/)
+
+    const ports = readFileSync(join(DOMAIN_ROOT, 'tools', 'ports.ts'), 'utf8')
+    expect(ports).not.toContain('CharacterToolRuntimePort')
+    expect(ports).toContain('ToolCharacterRuntimePort')
+    expect(ports).not.toContain('/application/')
+  })
+
+  it('uses controlled violations to prove each boundary rule fails closed', () => {
+    const toolFile = join(AGENT_ROOT, 'tools', 'controlled-violation.ts')
+    const applicationFile = join(APPLICATION_ROOT, 'conversation', 'controlled-violation.ts')
+    const aiFile = join(AI_ROOT, 'controlled-violation.ts')
+    const contractFile = join(DOMAIN_ROOT, 'tools', 'controlled-violation.ts')
+
+    expect(boundaryViolations(
+      'tool',
+      toolFile,
+      "import { useChatStore } from '../../stores'",
+    )).toHaveLength(1)
+    expect(boundaryViolations(
+      'application',
+      applicationFile,
+      "import { readFileTool } from '../../agent'",
+    )).toHaveLength(1)
+    expect(boundaryViolations(
+      'ai',
+      aiFile,
+      "import { executeToolCall } from '../agent'",
+    )).toHaveLength(1)
+    expect(boundaryViolations(
+      'tool-contract',
+      contractFile,
+      "import { agentService } from '../../agent'",
+    )).toHaveLength(1)
+  })
+
   it('keeps the new domain layer independent from frameworks and adapters', () => {
     const violations: string[] = []
     for (const file of sourceFiles(DOMAIN_ROOT)) {

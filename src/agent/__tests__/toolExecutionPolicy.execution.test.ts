@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { register } from '../registry'
 import { toolExecutionPolicy } from '../toolExecutionPolicy'
 import { setAutoExecFiles, setScreenCaptureEnabled } from '../toolPolicy'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 
 function registerPolicyTool(name: string, policy: Tool['policy']): void {
   register({
@@ -15,10 +15,10 @@ function registerPolicyTool(name: string, policy: Tool['policy']): void {
   })
 }
 
-const context = (change: Partial<{ sessionApproval: boolean; hasWorkspace: boolean }> = {}) => ({
+const context = (change: Partial<{ sessionApproval: boolean; workspaceGrantId: string | null }> = {}) => ({
   signal: new AbortController().signal,
   sessionApproval: false,
-  hasWorkspace: true,
+  workspaceGrantId: 'grant-A',
   ...change,
 })
 
@@ -34,7 +34,7 @@ describe('toolExecutionPolicy', () => {
 
     await expect(toolExecutionPolicy.prepare(
       { id: 'one', name: 'test_workspace_write', arguments: { path: 'a.txt' } },
-      context({ hasWorkspace: false }),
+      context({ workspaceGrantId: null }),
     )).rejects.toMatchObject({ code: 'WORKSPACE_NOT_SET', retryable: true })
   })
 

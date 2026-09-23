@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPinia, setActivePinia } from 'pinia'
 
 const invokeMock = vi.fn()
 const listenMock = vi.fn().mockResolvedValue(() => {})
@@ -23,21 +22,13 @@ const localStorageMock = (() => {
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
 import { prepareCommandExecution, runProcessTool } from '../command'
-import { composeApplication } from '../../../compositionRoot'
-import { useSessionStore } from '../../../stores/session'
 
 describe('结构化任务执行工具', () => {
   beforeEach(async () => {
-    setActivePinia(createPinia())
     localStorageMock.clear()
     invokeMock.mockReset()
     listenMock.mockClear()
     invokeMock.mockRejectedValue(new Error('not in tauri'))
-    // 会话服务的装配（含真机不可用时的内存兜底）由组合根完成。
-    await composeApplication()
-    const session = useSessionStore()
-    await session.init()
-    await session.setWorkspace({ id: 'ws_test', path: 'C:\\work\\project' })
   })
 
   it('准备进程计划时注入工作区能力并保持参数边界', async () => {
@@ -46,7 +37,7 @@ describe('结构化任务执行工具', () => {
 
     await expect(prepareCommandExecution('run_process', {
       program: 'npm', args: ['test', '--', 'a b'], cwd: 'app', timeout_secs: 20,
-    })).resolves.toBe(plan)
+    }, 'ws_test')).resolves.toBe(plan)
 
     expect(invokeMock).toHaveBeenCalledWith('agent_prepare_execution', {
       request: {
@@ -54,6 +45,29 @@ describe('结构化任务执行工具', () => {
         cwd: 'app', timeout_secs: 20, env: {}, intent: '',
       },
     })
+  })
+
+  it('同一准备入口在工作区授权撤销后不复用旧能力且不调用 Rust', async () => {
+    const plan = { id: 'run_1', digest: 'abc' }
+    invokeMock.mockResolvedValue(plan)
+
+    await expect(prepareCommandExecution('run_process', { program: 'npm' }, 'grant-A'))
+      .resolves.toBe(plan)
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+
+    invokeMock.mockClear()
+    await expect(prepareCommandExecution('run_process', { program: 'npm' }, null))
+      .rejects.toMatchObject({
+        code: 'WORKSPACE_NOT_SET',
+        message: '当前会话尚未授权工作目录。请提示用户点击「工作区」并重新选择目录后再重试。',
+      })
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('没有工作区能力时在准备计划前稳定拒绝', async () => {
+    await expect(prepareCommandExecution('run_process', { program: 'npm' }, null))
+      .rejects.toMatchObject({ code: 'WORKSPACE_NOT_SET' })
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('模型不能绕过批准阶段直接调用 handler', async () => {

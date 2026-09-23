@@ -10,7 +10,7 @@
  */
 import { MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES } from '../../ai/images'
 import { MAX_TOOL_TURNS } from '../../ai/modelCapabilities'
-import { SAY_TOOL_NAME } from '../../agent/tools/say'
+import { SAY_TOOL_NAME } from '../../domain/tools/say'
 import { createLogger } from '../../utils/logger'
 import { AssistantMessageCoordinator } from './assistantMessageCoordinator'
 import { ConversationCoordinator, isConversationRunActive, type ConversationRun } from './conversationRun'
@@ -28,11 +28,10 @@ import type {
   ImageAttachment,
   ToolCallData,
 } from '../../ai/types'
-import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
-import type { CharacterData } from '../../character/loader'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
 import type { ConversationImage } from '../../domain/conversation/events'
-import type { CharacterCapabilities } from '../character/characterRuntime'
+import type { ToolCharacterCapabilities, ToolCharacterData } from '../../domain/tools/contracts'
+import type { ToolCharacterRuntimePort } from '../../domain/tools/ports'
 import type { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import type { ChatSessionPort } from './chatSessionPort'
 import type { ConversationRunState, ConversationToolTurnPorts, ConversationTurnDirective } from './conversationRun'
@@ -227,9 +226,9 @@ export interface ConversationCharacterState {
   /** 渲染方式，决定哪些工具对本角色可见。 */
   render: 'illustration' | 'live2d'
   /** 工具清单装配所需的角色数据。 */
-  data: CharacterData | null
+  data: ToolCharacterData | null
   /** 工具清单装配所需的能力快照。 */
-  capabilities: CharacterCapabilities | null
+  capabilities: ToolCharacterCapabilities | null
 }
 
 /**
@@ -238,6 +237,8 @@ export interface ConversationCharacterState {
  */
 export interface ConversationCharacterSource {
   state(): ConversationCharacterState
+  /** 与清单状态同源的角色工具端口；执行时由回合传给工具。 */
+  runtime(): ToolCharacterRuntimePort
 }
 
 /**
@@ -266,7 +267,7 @@ type ConversationMessageContextSync = {
  */
 export interface ConversationToolCatalog {
   /** 本次请求的工具定义（含 say）；工作区授权状态决定文件与命令工具是否可见。 */
-  definitions(context: CharacterToolContext): ToolDefinition[]
+  definitions(context: ToolCatalogContext): ToolDefinition[]
   /** 从模型正文中提取文本形式的工具调用（兜底路径）。 */
   extractTextToolCalls(text: string): ToolCall[]
   /** 从模型正文中移除文本形式的工具调用，得到用户可见文本。 */
@@ -446,7 +447,7 @@ interface RoundEnvironment {
   tools: ToolDefinition[]
   sessionId: string
   checkpointId: string
-  hasWorkspace: boolean
+  workspaceGrantId: string | null
   toolExecution: ToolExecutionCoordinator
 }
 
@@ -706,9 +707,9 @@ export class ConversationSession {
 
     // ── 收集工具定义（含 say 说话工具）────────────────────
     const character = this.ports.character.state()
-    const hasWorkspace = Boolean(this.ports.session.workspaceGrantId())
+    const workspaceGrantId = this.ports.session.workspaceGrantId()
     // 清单装配与设置页的上下文检查共用同一处实现，两处不会漂移。
-    const tools = assembleRoundToolList(this.ports.tools, character, hasWorkspace)
+    const tools = assembleRoundToolList(this.ports.tools, character, workspaceGrantId)
 
     // 检查点按回合绑定：文件备份走同一份会话事实端口。
     const toolExecution = this.ports.toolExecution.create({
@@ -731,7 +732,7 @@ export class ConversationSession {
       tools,
       sessionId: round.sessionId,
       checkpointId,
-      hasWorkspace,
+      workspaceGrantId,
       toolExecution,
     }
 
@@ -998,7 +999,7 @@ export class ConversationSession {
     const result = await this.ports.model.call({
       requestId: round.requestId,
       turn,
-      messages: this.requestMessages(tools, environment.hasWorkspace),
+      messages: this.requestMessages(tools, environment.workspaceGrantId !== null),
       tools,
       signal: round.run.signal,
       onChunk: (delta: string) => {
@@ -1231,7 +1232,8 @@ export class ConversationSession {
     return environment.toolExecution.execute(call, {
       signal: environment.round.run.signal,
       sessionApproval: this.autoExecSession,
-      hasWorkspace: Boolean(this.ports.session.workspaceGrantId()),
+      workspaceGrantId: this.ports.session.workspaceGrantId(),
+      character: this.ports.character.runtime(),
     })
   }
 
@@ -1479,7 +1481,7 @@ const SESSION_PORT_LABELS: Readonly<Record<keyof ConversationSessionPorts, strin
 const SESSION_PORT_MEMBERS: Readonly<Record<keyof ConversationSessionPorts, readonly string[]>> = {
   model: ['configuration', 'call'],
   translate: ['translate'],
-  character: ['state'],
+  character: ['state', 'runtime'],
   context: ['messages', 'addUserMessage', 'addToolCalls', 'addToolResult', 'addToolImages', 'stats'],
   session: [
     'currentSessionId',

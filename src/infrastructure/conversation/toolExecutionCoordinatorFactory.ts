@@ -11,12 +11,10 @@
  */
 import { agentService } from '../../agent/service'
 import { toolExecutionPolicy } from '../../agent/toolExecutionPolicy'
-import {
-  ToolExecutionCoordinator,
-  type ToolExecutionPolicy,
-} from '../../application/tools/toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from '../../application/tools/toolExecutionCoordinator'
 import type { ApprovalGateway } from '../../application/tools/approvalGateway'
-import type { ToolCall, ToolResult } from '../../agent/types'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
+import type { ToolExecutionContext, ToolExecutionPolicy } from '../../domain/tools/ports'
 import type {
   ConversationToolExecutionPort,
   ConversationToolRoundHooks,
@@ -26,14 +24,14 @@ export class ToolExecutionCoordinatorFactory implements ConversationToolExecutio
   constructor(
     private readonly approvalGateway: ApprovalGateway,
     private readonly policy: ToolExecutionPolicy = toolExecutionPolicy,
-    private readonly execute: (call: ToolCall) => Promise<ToolResult> = call => agentService.execute(call),
+    private readonly execute: (call: ToolCall, context: ToolExecutionContext) => Promise<ToolResult> = (call, context) => agentService.execute(call, context),
   ) {}
 
   create(round: ConversationToolRoundHooks): ToolExecutionCoordinator {
     return new ToolExecutionCoordinator({
       approvalGateway: this.approvalGateway,
       policy: this.policy,
-      execute: call => this.execute(call),
+      execute: (call, context) => this.execute(call, context),
       checkpoint: round.checkpoint,
       onCheckpointError: round.onCheckpointError,
       onSessionApproval: round.onSessionApproval,

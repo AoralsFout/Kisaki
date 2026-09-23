@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SAY_TOOL_DEF } from '../tools/say'
+import { SAY_TOOL_DEF } from '../../domain/tools/say'
 
 describe('say 工具约束', () => {
   it('把 say 描述为最终且终止性的单独调用', () => {

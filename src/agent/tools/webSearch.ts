@@ -5,7 +5,7 @@
  * 支持可插拔 provider：Tavily（默认，专为 LLM 优化）/ Brave / SearXNG（自建）。
  * handler 返回纯文本（带来源 URL），LLM 在下一轮据此作答并标注来源。
  */
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import { createLogger } from '../../utils/logger'
 import { loadSearchConfigSecure, isSearchConfigValid, type SearchConfig } from './searchConfig'
 import { searchHttpJson } from './searchHttp'

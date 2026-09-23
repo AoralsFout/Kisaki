@@ -1,4 +1,4 @@
-import type { ToolCall, ToolResult } from '../../agent/types'
+import type { ToolCall, ToolResult } from '../../domain/tools/contracts'
 
 export interface ProtocolToolCall {
   id: string

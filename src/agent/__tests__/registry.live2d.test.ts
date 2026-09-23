@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { register, getDefinitions } from '../registry'
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import type { CharacterCapabilities } from '../../application/character/characterRuntime'
 import { setScreenCaptureEnabled } from '../toolPolicy'
 
@@ -34,10 +34,10 @@ const capabilities = (change: Partial<CharacterCapabilities> = {}): CharacterCap
   ...change,
 })
 
-const context = (data: any, change: Partial<CharacterCapabilities> = {}, hasWorkspace?: boolean) => ({
+const context = (data: any, change: Partial<CharacterCapabilities> = {}, workspaceGrantId: string | null = null) => ({
   data,
   capabilities: capabilities(change),
-  hasWorkspace,
+  workspaceGrantId,
 })
 
 describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
@@ -59,8 +59,8 @@ describe('registry getDefinitions — 渲染过滤 + 枚举注入', () => {
   it('没有工作区时不暴露文件工具', () => {
     register(mkTool('read_file', undefined, undefined, { requiresWorkspace: true }))
     register(mkTool('write_file', undefined, undefined, { requiresWorkspace: true }))
-    const withoutWorkspace = getDefinitions(context({ render: 'illustration' }, {}, false)).map(d => d.function.name)
-    const withWorkspace = getDefinitions(context({ render: 'illustration' }, {}, true)).map(d => d.function.name)
+    const withoutWorkspace = getDefinitions(context({ render: 'illustration' })).map(d => d.function.name)
+    const withWorkspace = getDefinitions(context({ render: 'illustration' }, {}, 'grant-1')).map(d => d.function.name)
     expect(withoutWorkspace).not.toContain('read_file')
     expect(withoutWorkspace).not.toContain('write_file')
     expect(withWorkspace).toContain('read_file')

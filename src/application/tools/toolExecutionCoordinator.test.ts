@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApprovalGateway } from './approvalGateway'
-import { ToolExecutionCoordinator, type ToolExecutionPolicy } from './toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from './toolExecutionCoordinator'
+import type { ToolExecutionPolicy } from '../../domain/tools/ports'
 
 const call = { id: 'call-1', name: 'write_file', arguments: { path: 'a.txt' } }
 
@@ -14,9 +15,12 @@ function deferred() {
 describe('ToolExecutionCoordinator', () => {
   it('runs policy, approval, checkpoint, and handler in a fixed order', async () => {
     const order: string[] = []
+    let preparedContext: unknown
+    let executedContext: unknown
     const gateway = new ApprovalGateway()
     const policy: ToolExecutionPolicy = {
-      prepare: vi.fn(async input => {
+      prepare: vi.fn(async (input, context) => {
+        preparedContext = context
         order.push('precondition')
         return {
           call: input,
@@ -37,16 +41,20 @@ describe('ToolExecutionCoordinator', () => {
       approvalGateway: gateway,
       policy,
       checkpoint: async () => { order.push('checkpoint') },
-      execute: async input => {
+      execute: async (input, context) => {
+        executedContext = context
         order.push('handler')
         return { role: 'tool', tool_call_id: input.id, content: 'ok', ok: true }
       },
     })
 
-    const result = await coordinator.execute(call, { signal: new AbortController().signal, sessionApproval: false, hasWorkspace: true })
+    const context = { signal: new AbortController().signal, sessionApproval: false, workspaceGrantId: 'grant-A' }
+    const result = await coordinator.execute(call, context)
 
     expect(result.ok).toBe(true)
     expect(order).toEqual(['precondition', 'approval', 'authorize', 'checkpoint', 'handler'])
+    expect(preparedContext).toBe(context)
+    expect(executedContext).toBe(context)
   })
 
   it('never checkpoints or executes after rejection', async () => {
@@ -70,7 +78,7 @@ describe('ToolExecutionCoordinator', () => {
       execute,
     })
 
-    const result = await coordinator.execute(call, { signal: new AbortController().signal, sessionApproval: false, hasWorkspace: true })
+    const result = await coordinator.execute(call, { signal: new AbortController().signal, sessionApproval: false, workspaceGrantId: 'grant-A' })
 
     expect(result).toMatchObject({ ok: false, code: 'USER_REJECTED' })
     expect(checkpoint).not.toHaveBeenCalled()
@@ -88,7 +96,7 @@ describe('ToolExecutionCoordinator', () => {
       execute,
     })
 
-    const result = await coordinator.execute(call, { signal: new AbortController().signal, sessionApproval: true, hasWorkspace: true })
+    const result = await coordinator.execute(call, { signal: new AbortController().signal, sessionApproval: true, workspaceGrantId: 'grant-A' })
 
     expect(result.ok).toBe(true)
     expect(onCheckpointError).toHaveBeenCalledWith(expect.any(Error), 'a.txt')
@@ -111,7 +119,7 @@ describe('ToolExecutionCoordinator', () => {
     const context = (controller: AbortController) => ({
       signal: controller.signal,
       sessionApproval: true,
-      hasWorkspace: true,
+      workspaceGrantId: 'grant-A',
     })
 
     it('取消于开始之前：不准备、不检查点、不执行', async () => {

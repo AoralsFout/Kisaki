@@ -19,7 +19,7 @@ import {
   type ContextSessionInspection,
 } from '../../contextInspector'
 import type { ContextInspectionMessage } from '../../ai'
-import type { ToolDefinition } from '../../agent'
+import type { ToolDefinition } from '../../domain/tools/contracts'
 import { DEFAULT_VOICE_LANGUAGE } from '../../constants'
 
 const { t, locale } = useI18n()

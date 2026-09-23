@@ -8,28 +8,25 @@
  * 它是一个独立的无框架小模块，而不是长在 `conversationSession.ts` 里：展示层要
  * import 它，而回合模块本身是按需动态加载的，不该被静态拽进启动路径。
  */
-import { SAY_TOOL_DEF } from '../../agent/tools/say'
+import { SAY_TOOL_DEF } from '../../domain/tools/say'
 
-import type { ToolDefinition } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
-import type { CharacterData } from '../../character/loader'
-import type { CharacterCapabilities } from '../character/characterRuntime'
+import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 
 /**
  * 装配本回合的工具清单：角色可见的工具定义，末尾补上 say 说话工具。
  *
- * `hasWorkspace` 由调用方现取（一个回合内用户可能中途授权），故不在这里读端口。
+ * `workspaceGrantId` 由调用方现取；清单只在 registry 使用点派生可见性。
  */
 export function assembleRoundToolList(
-  tools: { definitions(context: CharacterToolContext): ToolDefinition[] },
-  character: { data: CharacterData | null; capabilities: CharacterCapabilities | null },
-  hasWorkspace: boolean,
+  tools: { definitions(context: ToolCatalogContext): ToolDefinition[] },
+  character: Pick<ToolCatalogContext, 'data' | 'capabilities'>,
+  workspaceGrantId: string | null,
 ): ToolDefinition[] {
   return [
     ...tools.definitions({
       data: character.data,
       capabilities: character.capabilities,
-      hasWorkspace,
+      workspaceGrantId,
     }),
     SAY_TOOL_DEF,
   ]

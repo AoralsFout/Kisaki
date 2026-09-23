@@ -5,7 +5,6 @@
  * list_dir 的格式化输出。invoke 与 localStorage 均被 mock。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
 
 // ── 模拟 Tauri invoke ──
 const invokeMock = vi.fn()
@@ -26,28 +25,45 @@ const localStorageMock = (() => {
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock })
 
 import {
-  readFileTool, readImageTool, writeFileTool, appendFileTool, listDirTool, deleteFileTool,
-  replaceLinesTool, insertLinesTool, deleteLinesTool, findFilesTool, searchInFilesTool,
+  readFileTool as rawReadFileTool, readImageTool as rawReadImageTool,
+  writeFileTool as rawWriteFileTool, appendFileTool as rawAppendFileTool,
+  listDirTool as rawListDirTool, deleteFileTool as rawDeleteFileTool,
+  replaceLinesTool as rawReplaceLinesTool, insertLinesTool as rawInsertLinesTool,
+  deleteLinesTool as rawDeleteLinesTool, findFilesTool as rawFindFilesTool,
+  searchInFilesTool as rawSearchInFilesTool,
 } from '../files'
-import { composeApplication } from '../../../compositionRoot'
-import { useSessionStore } from '../../../stores/session'
+import type { Tool } from '../../tool'
+import type { ToolOutput } from '../../../domain/tools/contracts'
 
-const ROOT = 'C:\\work\\ws'
 const WORKSPACE_ID = 'ws_test'
+let workspaceGrantId: string | null = null
 
-async function setupSessionWithWorkspace(root: string | null) {
-  // 会话服务的装配（含真机不可用时的内存兜底）由组合根完成。
-  await composeApplication()
-  const store = useSessionStore()
-  await store.init()
-  if (root) await store.setWorkspace({ id: WORKSPACE_ID, path: root })
-  else await store.clearWorkspace()
-  return store
+function withExecutionContext<TOutput extends string | ToolOutput>(tool: Tool<TOutput>): Tool<TOutput> {
+  return {
+    ...tool,
+    handler: args => tool.handler(args, {
+      signal: new AbortController().signal,
+      sessionApproval: false,
+      workspaceGrantId,
+    }),
+  } as Tool<TOutput>
 }
+
+const readFileTool = withExecutionContext(rawReadFileTool)
+const readImageTool = withExecutionContext(rawReadImageTool)
+const writeFileTool = withExecutionContext(rawWriteFileTool)
+const appendFileTool = withExecutionContext(rawAppendFileTool)
+const listDirTool = withExecutionContext(rawListDirTool)
+const deleteFileTool = withExecutionContext(rawDeleteFileTool)
+const replaceLinesTool = withExecutionContext(rawReplaceLinesTool)
+const insertLinesTool = withExecutionContext(rawInsertLinesTool)
+const deleteLinesTool = withExecutionContext(rawDeleteLinesTool)
+const findFilesTool = withExecutionContext(rawFindFilesTool)
+const searchInFilesTool = withExecutionContext(rawSearchInFilesTool)
 
 describe('文件工具 - 未授权工作目录', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
+    workspaceGrantId = null
     localStorageMock.clear()
     invokeMock.mockReset()
     // 默认模拟非 Tauri 环境：组合根据此装配内存兜底仓储，不产生 invoke 噪音
@@ -55,13 +71,11 @@ describe('文件工具 - 未授权工作目录', () => {
   })
 
   it('未设置工作目录时 read_file 抛出引导性错误', async () => {
-    await setupSessionWithWorkspace(null)
     await expect(readFileTool.handler({ path: 'a.txt' })).rejects.toThrow(/工作目录/)
     expect(invokeMock).not.toHaveBeenCalledWith('agent_read_file', expect.anything())
   })
 
   it('未设置工作目录时 write_file 抛错且不调用后端', async () => {
-    await setupSessionWithWorkspace(null)
     await expect(writeFileTool.handler({ path: 'a.txt', content: 'x' })).rejects.toThrow()
     expect(invokeMock).not.toHaveBeenCalledWith('agent_write_file', expect.anything())
   })
@@ -69,11 +83,10 @@ describe('文件工具 - 未授权工作目录', () => {
 
 describe('文件工具 - 已授权工作目录', () => {
   beforeEach(async () => {
-    setActivePinia(createPinia())
+    workspaceGrantId = WORKSPACE_ID
     localStorageMock.clear()
     invokeMock.mockReset()
     invokeMock.mockRejectedValue(new Error('not in tauri'))
-    await setupSessionWithWorkspace(ROOT)
   })
 
   it('read_file 传入 root+relPath，返回内容', async () => {
@@ -86,6 +99,16 @@ describe('文件工具 - 已授权工作目录', () => {
   it('read_file 空文件返回占位提示', async () => {
     invokeMock.mockResolvedValue('')
     expect(await readFileTool.handler({ path: 'a.txt' })).toBe('(空文件)')
+  })
+
+  it('授权撤销后立即拒绝且不复用旧能力 id', async () => {
+    invokeMock.mockResolvedValue('hello')
+    await readFileTool.handler({ path: 'a.txt' })
+    expect(invokeMock).toHaveBeenLastCalledWith('agent_read_file', { workspaceId: WORKSPACE_ID, relPath: 'a.txt' })
+
+    workspaceGrantId = null
+    await expect(readFileTool.handler({ path: 'a.txt' })).rejects.toMatchObject({ code: 'WORKSPACE_NOT_SET' })
+    expect(invokeMock).toHaveBeenCalledTimes(1)
   })
 
   it('read_image 返回可交给多模态上下文的图片，而不是把 base64 塞进文本', async () => {

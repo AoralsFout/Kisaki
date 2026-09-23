@@ -5,11 +5,10 @@
  * 两个调用方都依赖的形状 —— 角色工具在前、say 在末位、授权状态原样透传。
  */
 import { describe, expect, it } from 'vitest'
-import { SAY_TOOL_DEF } from '../../agent/tools/say'
+import { SAY_TOOL_DEF } from '../../domain/tools/say'
 import { assembleRoundToolList } from './roundToolList'
 
-import type { ToolDefinition } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
+import type { ToolCatalogContext, ToolDefinition } from '../../domain/tools/contracts'
 import type { CharacterData } from '../../character/loader'
 import type { CharacterCapabilities } from '../character/characterRuntime'
 
@@ -44,8 +43,8 @@ const capabilities: CharacterCapabilities = {
 }
 
 /** 记录收到的装配上下文，并回一份固定清单。 */
-function catalogSpy(): { contexts: CharacterToolContext[]; definitions: (context: CharacterToolContext) => ToolDefinition[] } {
-  const contexts: CharacterToolContext[] = []
+function catalogSpy(): { contexts: ToolCatalogContext[]; definitions: (context: ToolCatalogContext) => ToolDefinition[] } {
+  const contexts: ToolCatalogContext[] = []
   return {
     contexts,
     definitions: context => {
@@ -58,7 +57,7 @@ function catalogSpy(): { contexts: CharacterToolContext[]; definitions: (context
 describe('assembleRoundToolList', () => {
   it('角色工具在前，say 说话工具始终在末位', () => {
     const spy = catalogSpy()
-    const list = assembleRoundToolList(spy, { data: character, capabilities }, true)
+    const list = assembleRoundToolList(spy, { data: character, capabilities }, 'grant-1')
 
     expect(list.map(item => item.function.name)).toEqual(['read_file', 'say'])
     expect(list[list.length - 1]).toBe(SAY_TOOL_DEF)
@@ -66,16 +65,16 @@ describe('assembleRoundToolList', () => {
 
   it('把角色数据、能力与工作区授权原样透传给清单端口', () => {
     const spy = catalogSpy()
-    assembleRoundToolList(spy, { data: character, capabilities }, false)
+    assembleRoundToolList(spy, { data: character, capabilities }, null)
 
-    expect(spy.contexts).toEqual([{ data: character, capabilities, hasWorkspace: false }])
+    expect(spy.contexts).toEqual([{ data: character, capabilities, workspaceGrantId: null }])
   })
 
   it('端口返回空清单时仍只剩 say，不会额外补出别的工具', () => {
     const list = assembleRoundToolList(
       { definitions: () => [] },
       { data: null, capabilities: null },
-      true,
+      'grant-1',
     )
 
     expect(list).toEqual([SAY_TOOL_DEF])

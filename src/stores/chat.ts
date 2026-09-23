@@ -21,7 +21,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { isConfigValid, loadConfig } from '../ai'
 import type { ChatContextInspection, ChatInputPayload, ContextStats, ImageAttachment } from '../ai'
-import type { ToolDefinition } from '../agent'
+import type { ToolDefinition } from '../domain/tools/contracts'
 import { conversationAssembly, type ConversationAssembly } from '../compositionRoot'
 import { assembleRoundToolList } from '../application/conversation/roundToolList'
 import type { ApprovalDecision, ApprovalRequest } from '../application/tools/approvalGateway'
@@ -454,7 +454,7 @@ export const useChatStore = defineStore('chat', () => {
     const tools: ToolDefinition[] = assembleRoundToolList(
       ports.tools,
       character,
-      Boolean(ports.session.workspaceGrantId()),
+      ports.session.workspaceGrantId(),
     )
     const config = loadConfig()
     return {

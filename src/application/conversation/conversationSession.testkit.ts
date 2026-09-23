@@ -7,17 +7,14 @@
  * 假端口同时记录「发生了什么」与「以什么顺序发生」，让行为断言不必去读日志缓冲区。
  */
 import { ApprovalGateway } from '../tools/approvalGateway'
-import {
-  ToolExecutionCoordinator,
-  type ToolExecutionContext,
-  type ToolExecutionPolicy,
-} from '../tools/toolExecutionCoordinator'
+import { ToolExecutionCoordinator } from '../tools/toolExecutionCoordinator'
 import { ConversationSession } from './conversationSession'
 
 import type { ContextStats } from '../../ai/context'
+import type { ToolCharacterRuntimePort } from '../../domain/tools/ports'
 import type { ChatMessage as ConversationModelMessage, ImageAttachment } from '../../ai/types'
-import type { ToolCall, ToolDefinition, ToolResult } from '../../agent/types'
-import type { CharacterToolContext } from '../../agent/registry'
+import type { ToolCall, ToolCatalogContext, ToolDefinition, ToolResult } from '../../domain/tools/contracts'
+import type { ToolExecutionContext, ToolExecutionPolicy } from '../../domain/tools/ports'
 import type { ConversationImage, ModelContextMessage, ModelHistoryCompaction, ModelHistoryStats } from '../../domain/conversation/events'
 import type { CommitAssistantMessage, ReviseAssistantMessage } from './assistantMessageCoordinator'
 import type {
@@ -101,7 +98,7 @@ export function approvalPolicyOnlyFirstTime(decisions: readonly ('allow' | 'allo
 }
 
 /** 一批不含 say 的动作工具调用。 */
-export function actionTurn(name: string, id = `action-${name}`): TurnScript {
+export function actionTurn(name: string, id = `action-${name}`): RawModelTurn {
   return {
     type: 'tools',
     calls: [{ id, type: 'function', function: { name, arguments: '{}' } }],
@@ -185,6 +182,13 @@ export class FakeTranslator implements ConversationTranslator {
 }
 
 export class FakeCharacterSource implements ConversationCharacterSource {
+  readonly characterRuntime: ToolCharacterRuntimePort = {
+    state: () => ({ identity: null, data: null, render: null, look: null, capabilities: null }),
+    setLook: () => false,
+    setScreenPose: () => false,
+    playMotion: async () => false,
+  }
+
   value: ConversationCharacterState = {
     identity: { id: 'char-1', name: '小明' },
     persona: '小明',
@@ -197,6 +201,8 @@ export class FakeCharacterSource implements ConversationCharacterSource {
   }
 
   state(): ConversationCharacterState { return this.value }
+
+  runtime(): ToolCharacterRuntimePort { return this.characterRuntime }
 }
 
 export class FakeModelContext implements ConversationModelContext {
@@ -402,7 +408,7 @@ export class FakeChatSessionPort {
 }
 
 export class FakeToolCatalog implements ConversationToolCatalog {
-  readonly contexts: CharacterToolContext[] = []
+  readonly contexts: ToolCatalogContext[] = []
   readonly extracted: string[] = []
   toolDefinitions: ToolDefinition[] = [
     { type: 'function', function: { name: 'read_file', description: '读取文件', parameters: { type: 'object', properties: {} } } },
@@ -412,7 +418,7 @@ export class FakeToolCatalog implements ConversationToolCatalog {
   /** 剥离文本工具调用后的用户可见正文；null 表示原样返回。 */
   strippedText: string | null = null
 
-  definitions(context: CharacterToolContext): ToolDefinition[] {
+  definitions(context: ToolCatalogContext): ToolDefinition[] {
     this.contexts.push(context)
     return this.toolDefinitions
   }
@@ -456,7 +462,7 @@ export class FakeToolExecutionPort implements ConversationToolExecutionPort {
           return this.prepare(call, context)
         },
       },
-      execute: async call => {
+      execute: async (call, _context) => {
         this.executed.push(call)
         return this.results.get(call.name)
           ?? { role: 'tool', tool_call_id: call.id, content: `${call.name} 完成`, ok: true }

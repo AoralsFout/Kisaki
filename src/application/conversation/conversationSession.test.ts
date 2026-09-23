@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApprovalGateway } from '../tools/approvalGateway'
-import type { ToolExecutionPolicy } from '../tools/toolExecutionCoordinator'
+import type { ToolExecutionPolicy } from '../../domain/tools/ports'
 import { subscribe, type LogEntry } from '../../utils/logger'
 import { ConversationSession, type ConversationSessionPorts } from './conversationSession'
 import {
@@ -180,6 +180,31 @@ describe('ConversationSession', () => {
       expect(h.toolExecution.checkpointed).toEqual(['notes.txt'])
       expect(h.facts.events).toContain('backup:notes.txt')
       expect(h.facts.events).toContain('markCheckpoint:user-message-1')
+      expect(h.toolExecution.contexts[0].workspaceGrantId).toBe('workspace-1')
+    })
+
+    it('每次工具执行都读取当前工作目录授权，不冻结回合开始时的 grant', async () => {
+      const h = createConversationHarness()
+      h.model.enqueue(
+        actionTurn('read_file', 'action-1'),
+        async () => {
+          h.facts.workspace = null
+          return actionTurn('read_file', 'action-2')
+        },
+        async () => {
+          h.facts.workspace = 'workspace-2'
+          return actionTurn('read_file', 'action-3')
+        },
+        sayTurn('say-1', { voice: '完成', display: '完成' }),
+      )
+
+      await h.session.send({ text: 'hi', images: [] })
+
+      expect(h.toolExecution.contexts.map(context => context.workspaceGrantId)).toEqual([
+        'workspace-1',
+        null,
+        'workspace-2',
+      ])
     })
   })
 

@@ -4,7 +4,8 @@
  * 解析 LLM 返回的 tool_calls, 执行对应工具, 返回结果。
  */
 import { getTool } from './registry'
-import type { ToolCall, ToolResult } from './types'
+import type { ToolCall, ToolResult } from '../domain/tools/contracts'
+import type { ToolExecutionContext } from '../domain/tools/ports'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('AgentExec')
@@ -61,7 +62,7 @@ export function parseToolCalls(choice: LLMChoice): ToolCall[] {
 }
 
 /** 执行单个工具调用 */
-export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
+export async function executeToolCall(tc: ToolCall, executionContext?: ToolExecutionContext): Promise<ToolResult> {
   const tool = getTool(tc.name)
   if (!tool) {
     log.warn("agent_exec.execute_tool_call.warn", `未知工具调用: ${tc.name}`, undefined, {
@@ -88,7 +89,7 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
     argument_keys: argumentKeys,
   })
   try {
-    const output = await tool.handler(tc.arguments)
+    const output = await tool.handler(tc.arguments, executionContext)
     const result = typeof output === 'string' ? { content: output } : output
     log.info("agent_exec.execute_tool_call.info", `工具执行完成: ${tc.name}`, {
       requestId: tc.requestId,
@@ -131,6 +132,6 @@ export async function executeToolCall(tc: ToolCall): Promise<ToolResult> {
 }
 
 /** 执行所有工具调用（可并行执行无依赖的工具） */
-export async function executeToolCalls(tcList: ToolCall[]): Promise<ToolResult[]> {
-  return Promise.all(tcList.map(tc => executeToolCall(tc)))
+export async function executeToolCalls(tcList: ToolCall[], executionContext?: ToolExecutionContext): Promise<ToolResult[]> {
+  return Promise.all(tcList.map(tc => executeToolCall(tc, executionContext)))
 }

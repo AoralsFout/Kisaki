@@ -3,7 +3,7 @@
  *
  * 使用 wttr.in（免费，无需 API Key）
  */
-import type { Tool } from '../types'
+import type { Tool } from '../tool'
 import { createLogger } from '../../utils/logger'
 import { RequestError, toRequestError } from '../../application/net/requestError'
 import { RequestExecutor } from '../../application/net/requestExecutor'
