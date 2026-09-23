@@ -1,4 +1,7 @@
 import schemaSource from '../../shared/log-schema-v2.json'
+import type { LogLevel } from './logSchema.generated'
+
+export type { LogLevel } from './logSchema.generated'
 
 interface FieldDefinition {
   type: 'integer' | 'string' | 'object'
@@ -24,8 +27,7 @@ interface LogSchema {
 
 const LOG_SCHEMA = schemaSource as LogSchema
 export const LOG_SCHEMA_VERSION = LOG_SCHEMA.version
-export const LOG_LEVELS = Object.freeze([...(LOG_SCHEMA.fields.level.values ?? [])])
-export type LogLevel = (typeof LOG_LEVELS)[number]
+export const LOG_LEVELS: readonly LogLevel[] = Object.freeze([...(LOG_SCHEMA.fields.level.values ?? [])]) as readonly LogLevel[]
 
 export interface LogSchemaValidation {
   valid: boolean

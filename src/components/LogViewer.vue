@@ -258,11 +258,15 @@ function formatDetailsDisplay(entry: DisplayEntry): string {
 
 // ─── 实时模式（rAF 节流） ────────────────────────────
 
-function addEntry(entry: LogEntry) {
+type DisplayEntrySource = Pick<LogEntry,
+  'schemaVersion' | 'timestamp' | 'level' | 'namespace' | 'message' | 'event' | 'error' | 'context' | 'source'
+>
+
+function mapDisplayEntry(entry: DisplayEntrySource): DisplayEntry {
   const parseFailure = entry.event === 'logger.parse_failed'
     ? prepareParseFailureForDisplay(entry.message)
     : undefined
-  const display: DisplayEntry = {
+  return {
     id: nextId++,
     schemaVersion: entry.schemaVersion,
     timestamp: entry.timestamp,
@@ -277,6 +281,10 @@ function addEntry(entry: LogEntry) {
     originalLength: parseFailure?.originalLength,
     expanded: false,
   }
+}
+
+function addEntry(entry: LogEntry) {
+  const display = mapDisplayEntry(entry)
   // 写入缓冲队列，在下一个 rAF 批量推入响应式数组
   pendingEntries.push(display)
   if (!flushRafId) {
@@ -308,26 +316,7 @@ interface HistoryPage {
 function mapHistoryEntries(result: HistoryResultEntry[]): DisplayEntry[] {
   return result
     .filter(r => r.schemaVersion === LOG_SCHEMA_VERSION)
-    .map(r => {
-      const parseFailure = r.event === 'logger.parse_failed'
-        ? prepareParseFailureForDisplay(r.message)
-        : undefined
-      return {
-        id: nextId++,
-        schemaVersion: r.schemaVersion,
-        timestamp: r.timestamp,
-        level: r.level,
-        namespace: r.namespace,
-        message: parseFailure?.message ?? r.message,
-        event: r.event,
-        error: r.error,
-        context: r.context,
-        source: r.source,
-        truncated: parseFailure?.truncated,
-        originalLength: parseFailure?.originalLength,
-        expanded: false,
-      }
-    })
+    .map(mapDisplayEntry)
 }
 
 async function readHistoryPage(before: number | null): Promise<HistoryPage> {

@@ -201,62 +201,9 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
   ensureBroadcastChannel()
   if (!bc) return () => {}
 
-  /** 将非 JSON 值整理成可读数据；遇到循环、不可读属性或深度过大时保留明确占位。 */
-  function serializeIncomingValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
-    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      return value
-    }
-    if (value === undefined) return '[undefined]'
-    if (typeof value === 'bigint') return `${value}n`
-    if (typeof value === 'symbol') return '[Symbol]'
-    if (typeof value === 'function') return '[Function]'
-    if (depth >= 6) return '[最大嵌套深度]'
-    if (value instanceof Date) {
-      try { return value.toISOString() } catch { return '[无效日期]' }
-    }
-    if (value instanceof Error) {
-      const error = value as Error & { cause?: unknown }
-      const normalized: Record<string, unknown> = {
-        name: typeof error.name === 'string' ? error.name : 'Error',
-        message: typeof error.message === 'string' ? error.message : '[异常消息不可读取]',
-      }
-      if (typeof error.stack === 'string') normalized.stack = error.stack
-      if (error.cause !== undefined) normalized.cause = serializeIncomingValue(error.cause, seen, depth + 1)
-      return normalized
-    }
-    if (typeof value !== 'object') return '[不可表达的值]'
-    if (seen.has(value)) return '[Circular]'
-    seen.add(value)
-
-    if (Array.isArray(value)) {
-      const length = value.length
-      const result = value.slice(0, 100).map(item => serializeIncomingValue(item, seen, depth + 1))
-      if (length > 100) result.push(`[内容已截断：省略 ${length - 100} 项]`)
-      return result
-    }
-
-    let keys: string[]
-    try {
-      keys = Object.keys(value)
-    } catch {
-      return '[对象无法读取]'
-    }
-
-    const result: Record<string, unknown> = Object.create(null)
-    for (const key of keys.slice(0, 100)) {
-      try {
-        result[key] = serializeIncomingValue((value as Record<string, unknown>)[key], seen, depth + 1)
-      } catch {
-        result[key] = '[属性无法读取]'
-      }
-    }
-    if (keys.length > 100) result.__truncated__ = `省略 ${keys.length - 100} 项`
-    return result
-  }
-
   function serializeIncomingPayload(value: unknown): string {
     try {
-      const serialized = JSON.stringify(serializeIncomingValue(value))
+      const serialized = JSON.stringify(serializeUnknown(value))
       return serialized ?? '[输入内容无法转换为 JSON]'
     } catch {
       return '[输入内容无法安全序列化]'
@@ -264,12 +211,13 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
   }
 
   function parseFailureEntry(value: unknown, reason: string): LogEntry {
+    const message = `[日志解析失败] ${reason}；输入：${serializeIncomingPayload(value)}`
     return {
       schemaVersion: LOG_SCHEMA_VERSION,
       timestamp: getTimestamp(),
       level: 'warn',
       namespace: 'System',
-      message: `[日志解析失败] ${reason}；输入：${serializeIncomingPayload(value)}`,
+      message: redactSensitiveText(message),
       event: 'logger.parse_failed',
       source: '跨窗口',
     }
@@ -354,30 +302,81 @@ export function clearBuffer() {
 
 const SENSITIVE_KEY = /^(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|secret)$/i
 
+function readPropertySafely(value: object, key: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: (value as Record<string, unknown>)[key] }
+  } catch {
+    return { ok: false }
+  }
+}
+
+function enumerableKeysSafely(value: object): string[] | undefined {
+  try {
+    return Object.keys(value)
+  } catch {
+    return undefined
+  }
+}
+
+function stringSafely(value: unknown, fallback: string): string {
+  try {
+    return String(value)
+  } catch {
+    return fallback
+  }
+}
+
 function serializeUnknown(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
-  if (typeof value === 'string') return redactSensitiveText(value)
-  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
-  if (typeof value === 'bigint') return `${value}n`
-  if (typeof value === 'symbol' || typeof value === 'function') return String(value)
-  if (value instanceof Error) return normalizeError(value, seen, depth)
-  if (value instanceof Date) return value.toISOString()
-  if (depth >= 6) return '[MaxDepth]'
-  if (typeof value !== 'object') return String(value)
-  if (seen.has(value)) return '[Circular]'
-  seen.add(value)
+  try {
+    if (typeof value === 'string') return redactSensitiveText(value)
+    if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
+    if (typeof value === 'bigint') return `${value}n`
+    if (typeof value === 'symbol') return '[Symbol]'
+    if (typeof value === 'function') return '[Function]'
 
-  if (Array.isArray(value)) {
-    const result = value.slice(0, 100).map(item => serializeUnknown(item, seen, depth + 1))
-    if (value.length > 100) result.push(`[Truncated ${value.length - 100} items]`)
+    let isError = false
+    let isDate = false
+    let isArray = false
+    try { isError = value instanceof Error } catch { return '[对象无法读取]' }
+    try { isDate = value instanceof Date } catch { return '[对象无法读取]' }
+    try { isArray = Array.isArray(value) } catch { return '[对象无法读取]' }
+    if (isError) return normalizeError(value, seen, depth)
+    if (isDate) {
+      try { return (value as Date).toISOString() } catch { return '[无效日期]' }
+    }
+    if (depth >= 6) return '[MaxDepth]'
+    if (typeof value !== 'object') return '[不可表达的值]'
+    if (seen.has(value)) return '[Circular]'
+    seen.add(value)
+
+    if (isArray) {
+      let length: number
+      try { length = (value as unknown[]).length } catch { return '[对象无法读取]' }
+      const result: unknown[] = []
+      for (let index = 0; index < Math.min(length, 100); index++) {
+        const item = readPropertySafely(value, String(index))
+        result.push(item.ok ? serializeUnknown(item.value, seen, depth + 1) : '[属性无法读取]')
+      }
+      if (length > 100) result.push(`[Truncated ${length - 100} items]`)
+      return result
+    }
+
+    const keys = enumerableKeysSafely(value)
+    if (!keys) return '[对象无法读取]'
+    const result: Record<string, unknown> = Object.create(null)
+    for (const key of keys.slice(0, 100)) {
+      if (SENSITIVE_KEY.test(key)) {
+        result[key] = '[REDACTED]'
+        continue
+      }
+      const child = readPropertySafely(value, key)
+      result[key] = child.ok ? serializeUnknown(child.value, seen, depth + 1) : '[属性无法读取]'
+    }
+    if (keys.length > 100) result.__truncated__ = true
     return result
+  } catch {
+    return '[对象无法读取]'
   }
-
-  const result: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value).slice(0, 100)) {
-    result[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(child, seen, depth + 1)
-  }
-  if (Object.keys(value).length > 100) result.__truncated__ = true
-  return result
 }
 
 /** 将浏览器、Tauri 和第三方库抛出的任意值统一成可持久化异常。 */
@@ -386,26 +385,56 @@ export function normalizeError(
   seen = new WeakSet<object>(),
   depth = 0,
 ): SerializedError {
-  if (error instanceof Error) {
-    if (seen.has(error)) return { name: error.name || 'Error', message: '[Circular error]' }
-    seen.add(error)
-    const withExtras = error as Error & { code?: unknown; cause?: unknown }
-    const serialized: SerializedError = {
-      name: error.name || 'Error',
-      message: redactSensitiveText(error.message || String(error)),
-    }
-    if (error.stack) serialized.stack = redactSensitiveText(error.stack)
-    if (withExtras.code != null) serialized.code = String(withExtras.code)
-    if (withExtras.cause != null && depth < 5) {
-      serialized.cause = normalizeError(withExtras.cause, seen, depth + 1)
-    }
-    const extras: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(error)) {
-      if (!['name', 'message', 'stack', 'code', 'cause'].includes(key)) {
-        extras[key] = SENSITIVE_KEY.test(key) ? '[REDACTED]' : serializeUnknown(value, seen, depth + 1)
+  let isError = false
+  try { isError = error instanceof Error } catch { /* 使用下面的安全对象路径 */ }
+  if (isError && error && typeof error === 'object') {
+    if (seen.has(error)) {
+      const name = readPropertySafely(error, 'name')
+      return {
+        name: name.ok && typeof name.value === 'string' && name.value ? name.value : 'Error',
+        message: '[Circular error]',
       }
     }
+    seen.add(error)
+    const name = readPropertySafely(error, 'name')
+    const message = readPropertySafely(error, 'message')
+    const stack = readPropertySafely(error, 'stack')
+    const code = readPropertySafely(error, 'code')
+    const cause = readPropertySafely(error, 'cause')
+    const serialized: SerializedError = {
+      name: name.ok && typeof name.value === 'string' && name.value ? name.value : 'Error',
+      message: redactSensitiveText(
+        message.ok && message.value ? stringSafely(message.value, '[属性无法读取]') : '未知错误',
+      ),
+    }
+    if (stack.ok && typeof stack.value === 'string' && stack.value) {
+      serialized.stack = redactSensitiveText(stack.value)
+    } else if (!stack.ok) {
+      serialized.stack = '[属性无法读取]'
+    }
+    const extras: Record<string, unknown> = {}
+    const keys = enumerableKeysSafely(error)
+    if (keys) {
+      for (const key of keys.slice(0, 100)) {
+        if (['name', 'message', 'stack', 'code', 'cause'].includes(key)) continue
+        if (SENSITIVE_KEY.test(key)) {
+          extras[key] = '[REDACTED]'
+          continue
+        }
+        const value = readPropertySafely(error, key)
+        extras[key] = value.ok ? serializeUnknown(value.value, seen, depth + 1) : '[属性无法读取]'
+      }
+      if (keys.length > 100) extras.__truncated__ = true
+    } else {
+      extras.__unreadable__ = '[对象无法读取]'
+    }
     if (Object.keys(extras).length) serialized.details = extras
+    if (code.ok && code.value != null) serialized.code = stringSafely(code.value, '[属性无法读取]')
+    if (cause.ok && cause.value != null && depth < 5) {
+      serialized.cause = normalizeError(cause.value, seen, depth + 1)
+    } else if (!cause.ok && depth < 5) {
+      serialized.cause = normalizeError('[属性无法读取]', seen, depth + 1)
+    }
     return serialized
   }
 
@@ -415,10 +444,17 @@ export function normalizeError(
 
   const details = serializeUnknown(error, seen, depth + 1)
   let message = '未知错误'
-  if (error && typeof error === 'object' && 'message' in error) {
-    message = redactSensitiveText(String((error as { message?: unknown }).message ?? message))
+  if (error && typeof error === 'object') {
+    const rawMessage = readPropertySafely(error, 'message')
+    if (rawMessage.ok && rawMessage.value != null) {
+      message = redactSensitiveText(stringSafely(rawMessage.value, '[属性无法读取]'))
+    } else if (!rawMessage.ok) {
+      message = '[属性无法读取]'
+    } else if (details != null) {
+      try { message = JSON.stringify(details) ?? message } catch { message = '[对象无法读取]' }
+    }
   } else if (details != null) {
-    try { message = JSON.stringify(details) } catch { message = String(details) }
+    try { message = JSON.stringify(details) ?? message } catch { message = stringSafely(details, '[对象无法读取]') }
   }
   return { name: 'Error', message, details }
 }
@@ -823,69 +859,74 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
   function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
     if (!globalConfig.enabled) return
 
-    const ts = getTimestamp()
-    const label = formatLabel(lvl)
-    const styles = formatStyles(lvl)
-    const entry: LogEntry = {
-      schemaVersion: LOG_SCHEMA_VERSION,
-      timestamp: ts,
-      level: lvl,
-      namespace,
-      message: record.message,
-      event: record.event,
-      ...(record.error !== undefined ? { error: normalizeError(record.error) } : {}),
-      ...(record.context !== undefined ? { context: record.context } : {}),
-      source: detectWindowSource(),
-    }
-    const validation = validateLogEntry(entry)
-    if (!validation.valid) {
-      reportRecordInvalid(namespace, lvl, entry, validation.reason ?? '未知原因')
-      return
-    }
-
-    let safeEntry: LogEntry
     try {
-      safeEntry = serializeEntry(entry)
+      const ts = getTimestamp()
+      const label = formatLabel(lvl)
+      const styles = formatStyles(lvl)
+      const entry: LogEntry = {
+        schemaVersion: LOG_SCHEMA_VERSION,
+        timestamp: ts,
+        level: lvl,
+        namespace,
+        message: record.message,
+        event: record.event,
+        ...(record.error !== undefined ? { error: normalizeError(record.error) } : {}),
+        ...(record.context !== undefined ? { context: record.context } : {}),
+        source: detectWindowSource(),
+      }
+      const validation = validateLogEntry(entry)
+      if (!validation.valid) {
+        reportRecordInvalid(namespace, lvl, entry, validation.reason ?? '未知原因')
+        return
+      }
+
+      let safeEntry: LogEntry
+      try {
+        safeEntry = serializeEntry(entry)
+      } catch {
+        reportRecordInvalid(namespace, lvl, entry, '脱敏序列化失败')
+        return
+      }
+      const safeValidation = validateLogEntry(safeEntry)
+      if (!safeValidation.valid) {
+        reportRecordInvalid(namespace, lvl, entry, safeValidation.reason ?? '脱敏后的日志条目不符合契约')
+        return
+      }
+
+      if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
+      if (!forceLevel && !meetsLevel(lvl)) return
+
+      const fullMsg = entry.message
+      const consoleDetails = {
+        ...(record.context ? { context: record.context } : {}),
+        ...(record.error !== undefined ? { error: record.error } : {}),
+      }
+
+      // 控制台输出
+      switch (lvl) {
+        case 'trace':
+          console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'debug':
+          console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'info':
+          console.info(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'warn':
+          console.warn(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+        case 'error':
+          console.error(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
+          break
+      }
+
+      // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
+      publishLogEntry(safeEntry)
     } catch {
-      reportRecordInvalid(namespace, lvl, entry, '脱敏序列化失败')
-      return
+      // 日志数据可能带有异常 getter；尽力报告后吞掉日志自身的失败，不能打断调用方。
+      try { reportRecordInvalid(namespace, lvl, record, '日志条目无法安全处理') } catch { /* 忽略 */ }
     }
-    const safeValidation = validateLogEntry(safeEntry)
-    if (!safeValidation.valid) {
-      reportRecordInvalid(namespace, lvl, entry, safeValidation.reason ?? '脱敏后的日志条目不符合契约')
-      return
-    }
-
-    if (!forceLevel && level && LEVEL_WEIGHT[lvl] < LEVEL_WEIGHT[level]) return
-    if (!forceLevel && !meetsLevel(lvl)) return
-
-    const fullMsg = entry.message
-    const consoleDetails = {
-      ...(record.context ? { context: record.context } : {}),
-      ...(record.error !== undefined ? { error: record.error } : {}),
-    }
-
-    // 控制台输出
-    switch (lvl) {
-      case 'trace':
-        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'debug':
-        console.debug(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'info':
-        console.info(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'warn':
-        console.warn(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-      case 'error':
-        console.error(label + `[${record.event}] ${fullMsg}`, ...styles, consoleDetails)
-        break
-    }
-
-    // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
-    publishLogEntry(safeEntry)
   }
 
   return {

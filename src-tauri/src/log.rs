@@ -46,19 +46,24 @@ struct EventNameGrammar {
     following_characters: String,
 }
 
-fn log_schema() -> &'static LogSchema {
-    static SCHEMA: OnceLock<LogSchema> = OnceLock::new();
-    SCHEMA.get_or_init(|| {
-        serde_json::from_str(LOG_SCHEMA_DECLARATION).expect("共享日志 v2 声明必须是有效 JSON")
-    })
+fn log_schema() -> LogSchema {
+    serde_json::from_str(LOG_SCHEMA_DECLARATION).expect("共享日志 v2 声明必须是有效 JSON")
 }
 
 fn log_schema_version() -> u8 {
     log_schema().version
 }
 
+#[cfg(test)]
 fn validate_log_entry_value(value: &serde_json::Value) -> Result<(), String> {
     let schema = log_schema();
+    validate_log_entry_value_with_schema(value, &schema)
+}
+
+fn validate_log_entry_value_with_schema(
+    value: &serde_json::Value,
+    schema: &LogSchema,
+) -> Result<(), String> {
     let entry = value
         .as_object()
         .ok_or_else(|| "日志条目必须是对象".to_string())?;
@@ -118,6 +123,21 @@ fn validate_log_entry_value(value: &serde_json::Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// 契约把 2.0 视为整数；serde_json 保留其浮点表示，先按共享声明规范化版本再适配宿主结构。
+fn deserialize_log_entry_payload(
+    value: &serde_json::Value,
+    schema: &LogSchema,
+) -> Result<LogEntryPayload, serde_json::Error> {
+    let mut normalized = value.clone();
+    if let Some(entry) = normalized.as_object_mut() {
+        entry.insert(
+            schema.version_field.clone(),
+            serde_json::Value::from(schema.version),
+        );
+    }
+    serde_json::from_value(normalized)
 }
 
 fn is_valid_event_name(event: &str, grammar: &EventNameGrammar) -> bool {
@@ -298,14 +318,14 @@ pub(crate) fn prune_files(paths: &AppPaths, retention_days: u32) -> Result<u32, 
     Ok(removed)
 }
 
-fn parse_log_entry(line: &[u8], line_number: usize) -> LogEntry {
+fn parse_log_entry(line: &[u8], line_number: usize, schema: &LogSchema) -> LogEntry {
     let text = String::from_utf8_lossy(line)
         .trim_end_matches('\r')
         .to_string();
     let parsed = serde_json::from_str::<serde_json::Value>(&text)
         .ok()
-        .filter(|value| validate_log_entry_value(value).is_ok())
-        .and_then(|value| serde_json::from_value::<LogEntryPayload>(value).ok());
+        .filter(|value| validate_log_entry_value_with_schema(value, schema).is_ok())
+        .and_then(|value| deserialize_log_entry_payload(&value, schema).ok());
     match parsed {
         Some(val) => LogEntry {
             line: line_number,
@@ -321,7 +341,7 @@ fn parse_log_entry(line: &[u8], line_number: usize) -> LogEntry {
         },
         _ => LogEntry {
             line: line_number,
-            schema_version: log_schema_version(),
+            schema_version: schema.version,
             timestamp: String::new(),
             level: "warn".to_string(),
             namespace: "System".to_string(),
@@ -393,6 +413,7 @@ fn read_log_page(
 
     let selected_from = ranges.len().saturating_sub(page_size);
     let selected = &ranges[selected_from..];
+    let schema = log_schema();
     let page_start = selected
         .first()
         .map(|(s, _)| start + *s as u64)
@@ -400,7 +421,7 @@ fn read_log_page(
     let entries = selected
         .iter()
         .enumerate()
-        .map(|(i, (from, to))| parse_log_entry(&buffer[*from..*to], i + 1))
+        .map(|(i, (from, to))| parse_log_entry(&buffer[*from..*to], i + 1, &schema))
         .collect();
     let has_more = page_start > 0;
 
@@ -444,16 +465,16 @@ fn append_entry_values(
     if !is_safe_filename(filename) || !is_log_filename(filename) {
         return Err("无效的文件名".to_string());
     }
+    let schema = log_schema();
     for value in values {
-        validate_log_entry_value(value)
-            .map_err(|_| format!("日志条目不符合 v{} schema", log_schema_version()))?;
+        validate_log_entry_value_with_schema(value, &schema)
+            .map_err(|_| format!("日志条目不符合 v{} schema", schema.version))?;
     }
     let entries = values
         .iter()
-        .cloned()
-        .map(serde_json::from_value::<LogEntryPayload>)
+        .map(|value| deserialize_log_entry_payload(value, &schema))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| format!("日志条目不符合 v{} schema", log_schema_version()))?;
+        .map_err(|_| format!("日志条目不符合 v{} schema", schema.version))?;
 
     let _guard = log_write_lock()
         .lock()
@@ -498,8 +519,8 @@ fn write_native_log_file(
     event: &str,
 ) -> Result<(), String> {
     let now = Local::now();
-    let line = serde_json::json!({
-        "schemaVersion": log_schema_version(),
+    let schema = log_schema();
+    let mut line = serde_json::json!({
         "timestamp": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         "level": level,
         "namespace": namespace,
@@ -507,8 +528,11 @@ fn write_native_log_file(
         "source": "Rust",
         "event": event
     });
-    validate_log_entry_value(&line)
-        .map_err(|_| format!("原生日志条目不符合 v{} schema", log_schema_version()))?;
+    line.as_object_mut()
+        .expect("原生日志对象必须是 JSON 对象")
+        .insert(schema.version_field.clone(), schema.version.into());
+    validate_log_entry_value_with_schema(&line, &schema)
+        .map_err(|_| format!("原生日志条目不符合 v{} schema", schema.version))?;
     let dir = prepare_log_dir(paths);
     let path = dir.join(format!(
         "{}{}.jsonl",
@@ -589,11 +613,12 @@ pub(crate) fn read_file(paths: &AppPaths, filename: &str) -> Result<Vec<LogEntry
     let content = fs::read_to_string(&path).map_err(|e| format!("读取日志文件失败: {}", e))?;
 
     let mut entries = Vec::new();
+    let schema = log_schema();
     for (i, line) in content.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        entries.push(parse_log_entry(line.as_bytes(), i + 1));
+        entries.push(parse_log_entry(line.as_bytes(), i + 1, &schema));
     }
 
     Ok(entries)
@@ -760,6 +785,46 @@ mod tests {
                 sample.name
             );
         }
+    }
+
+    #[test]
+    fn every_valid_shared_sample_can_be_appended_and_read_back() {
+        #[derive(Deserialize)]
+        struct Sample {
+            valid: bool,
+            entry: serde_json::Value,
+        }
+
+        let samples: Vec<Sample> =
+            serde_json::from_str(include_str!("../../shared/log-schema-v2-samples.json")).unwrap();
+        let valid_entries: Vec<_> = samples
+            .into_iter()
+            .filter(|sample| sample.valid)
+            .map(|sample| sample.entry)
+            .collect();
+        assert!(valid_entries.iter().any(|entry| {
+            entry["schemaVersion"]
+                .as_number()
+                .is_some_and(serde_json::Number::is_f64)
+        }));
+
+        let fixture = TempAppPaths::new();
+        let paths = fixture.paths();
+        let filename = "app-v2-2026-09-12.jsonl";
+        append_entry_values(paths, filename, &valid_entries).unwrap();
+
+        let entries = read_file(paths, filename).unwrap();
+        assert_eq!(entries.len(), valid_entries.len());
+        assert!(entries.iter().all(|entry| entry.schema_version == 2));
+
+        let written = fs::read_to_string(paths.logs_dir().join(filename)).unwrap();
+        let written_values: Vec<serde_json::Value> = written
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(written_values
+            .iter()
+            .all(|entry| entry["schemaVersion"].as_u64() == Some(2)));
     }
 
     #[test]

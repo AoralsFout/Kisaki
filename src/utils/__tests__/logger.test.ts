@@ -9,6 +9,7 @@
  * - subscribe 订阅者机制
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { LogLevel } from '../logger'
 
 const invokeMock = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
@@ -45,6 +46,15 @@ describe('Logger - 配置管理', () => {
 
     mod.setLogLevel('info')
     expect(mod.getLogLevel()).toBe('info')
+  })
+
+  it('LogLevel 类型只接受共享声明中的级别', () => {
+    const supported: LogLevel = 'debug'
+    expect(supported).toBe('debug')
+
+    // @ts-expect-error 共享声明未提供 notice 级别
+    const unsupported: LogLevel = 'notice'
+    void unsupported
   })
 
   it('getConfig 返回只读快照', async () => {
@@ -311,6 +321,20 @@ describe('Logger - 跨窗口广播', () => {
     unsubscribe()
   })
 
+  it('调用解析失败回调前已脱敏敏感文本和 Windows 路径', async () => {
+    const { callback, unsubscribe, channel } = await subscribeToCrossWindow()
+    const secret = 'Authorization: Bearer abc.def-123; path=C:\\Users\\Alice Smith\\private.txt'
+
+    channel.receive({ ...validEntry, event: 'TTS.invalid', message: secret })
+
+    const failure = callback.mock.calls[0][0]
+    expect(failure.message).not.toContain('abc.def-123')
+    expect(failure.message).not.toContain('Alice Smith')
+    expect(failure.message).toContain('[REDACTED]')
+    expect(failure.message).toContain('[PATH]')
+    unsubscribe()
+  })
+
   it('循环引用、不可表达值和敏感字段可安全序列化，并在显示准备时脱敏', async () => {
     const { mod, callback, unsubscribe, channel } = await subscribeToCrossWindow()
     const context: Record<string, unknown> = { apiKey: 'sk-secret-token', password: 'private-value' }
@@ -318,6 +342,7 @@ describe('Logger - 跨窗口广播', () => {
     context.callback = () => {}
     context.symbol = Symbol('不可序列化')
     context.bigint = 42n
+    Object.defineProperty(context, 'unreadable', { enumerable: true, get() { throw new Error('读取失败') } })
     const payload = { ...validEntry, event: 'TTS.invalid', context }
 
     expect(() => channel.receive(payload)).not.toThrow()
@@ -327,6 +352,7 @@ describe('Logger - 跨窗口广播', () => {
     expect(failure.message).toContain('[Function]')
     expect(failure.message).toContain('[Symbol]')
     expect(failure.message).toContain('42n')
+    expect(failure.message).toContain('[属性无法读取]')
     const display = mod.prepareParseFailureForDisplay(failure.message)
     expect(display.message).toContain('[REDACTED]')
     expect(display.message).not.toContain('sk-secret-token')
@@ -604,6 +630,24 @@ describe('Logger - 异常序列化', () => {
 
     releaseWrite()
     await expect(fatal).resolves.toBeUndefined()
+  })
+
+  it('异常对象带抛错 getter 时 schema 违规记录不会打断普通调用或 fatal', async () => {
+    const mod = await import('../logger')
+    mod.resetConfig()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = new Error()
+    Object.defineProperty(error, 'message', {
+      configurable: true,
+      get() { throw new Error('getter failed') },
+    })
+    const logger = mod.createLogger('Events')
+
+    expect(() => logger.error('Request.Started', '无效事件', error)).not.toThrow()
+    await expect(logger.fatal('Request.Started', '致命无效事件', error)).resolves.toBeUndefined()
+
+    expect(mod.getBuffer().filter(entry => entry.event === 'logger.record_invalid')).toHaveLength(2)
+    warning.mockRestore()
   })
 
   it('循环对象和嵌套敏感字段可安全处理', async () => {
