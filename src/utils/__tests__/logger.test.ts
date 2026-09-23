@@ -256,6 +256,7 @@ describe('Logger - 跨窗口广播', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.resetModules()
   })
 
   async function subscribeToCrossWindow() {
