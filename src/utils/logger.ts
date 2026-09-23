@@ -425,6 +425,58 @@ export function redactSensitiveText(text: string): string {
   return out
 }
 
+/** 合成解析失败条目只展示有限长度，避免单条异常内容占满日志窗口。 */
+const MAX_PARSE_FAILURE_DISPLAY_CHARS = 4096
+const PARSE_FAILURE_MESSAGE_PREFIX = '[日志解析失败] '
+
+export interface ParseFailureDisplay {
+  message: string
+  truncated: boolean
+  /** 被截断时返回脱敏前异常内容的 Unicode 字符数。 */
+  originalLength?: number
+}
+
+function countUnicodeCharacters(text: string): number {
+  let length = 0
+  for (const _character of text) length++
+  return length
+}
+
+/** 为日志窗口安全准备合成解析失败条目，不修改历史文件中的原文。 */
+export function prepareParseFailureForDisplay(message: string): ParseFailureDisplay {
+  const rawContent = message.startsWith(PARSE_FAILURE_MESSAGE_PREFIX)
+    ? message.slice(PARSE_FAILURE_MESSAGE_PREFIX.length)
+    : message
+
+  try {
+    const safeContent = redactSensitiveText(rawContent)
+    let characterCount = 0
+    let endOffset = 0
+    for (const character of safeContent) {
+      if (characterCount >= MAX_PARSE_FAILURE_DISPLAY_CHARS) {
+        return {
+          message: `${PARSE_FAILURE_MESSAGE_PREFIX}${safeContent.slice(0, endOffset)}`,
+          truncated: true,
+          originalLength: countUnicodeCharacters(rawContent),
+        }
+      }
+      endOffset += character.length
+      characterCount++
+    }
+
+    return {
+      message: `${PARSE_FAILURE_MESSAGE_PREFIX}${safeContent}`,
+      truncated: false,
+    }
+  } catch {
+    return {
+      message: `${PARSE_FAILURE_MESSAGE_PREFIX}[异常内容无法安全显示]`,
+      truncated: true,
+      originalLength: countUnicodeCharacters(rawContent),
+    }
+  }
+}
+
 // ─── 文件持久化 ──────────────────────────────────────
 
 async function flushFileEntries(): Promise<void> {

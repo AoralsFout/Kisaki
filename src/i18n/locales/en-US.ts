@@ -624,6 +624,7 @@ export default {
     emptyHistoryHint: 'Select a log file on the left to view history',
     emptyRealtimeHint: 'Logs produced while the app runs will appear here',
     loadError: 'Load failed: {msg}',
+    parseFailureTruncated: 'Truncated; original length: {length} characters',
     newLogs: 'New logs',
   },
 }

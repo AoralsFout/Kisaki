@@ -820,23 +820,23 @@ mod tests {
         let fixture = TempAppPaths::new();
         let paths = fixture.paths();
         let filename = "app-v2-2026-09-12.jsonl";
+        let malformed =
+            r#"not JSON; Authorization: Bearer abc.def-123; path=C:\Users\Alice Smith\secret.txt"#;
         let mut unknown = payload_value("多余字段");
         unknown["extra"] = serde_json::json!(true);
-        fs::write(
-            paths.logs_dir().join(filename),
-            format!(
-                "\n{}\r\n不是 JSON\n{{\"schemaVersion\":1}}\n{}\n\n",
-                payload_value("正常记录"),
-                unknown,
-            ),
-        )
-        .unwrap();
+        let original = format!(
+            "\n{}\r\n{}\n{{\"schemaVersion\":1}}\n{}\n\n",
+            payload_value("正常记录"),
+            malformed,
+            unknown,
+        );
+        fs::write(paths.logs_dir().join(filename), original.as_bytes()).unwrap();
         let entries = read_file(paths, filename).unwrap();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].line, 2);
         assert_eq!(entries[0].message, "正常记录");
         assert_eq!(entries[1].line, 3);
-        assert_eq!(entries[1].message, "[日志解析失败] 不是 JSON");
+        assert_eq!(entries[1].message, format!("[日志解析失败] {malformed}"));
         assert_eq!(entries[3].line, 5);
         for entry in &entries[1..] {
             assert_eq!(entry.schema_version, 2);
@@ -851,6 +851,10 @@ mod tests {
         assert_eq!(page.entries.len(), 4);
         assert_eq!(page.entries[1].event, "logger.parse_failed");
         assert_eq!(page.entries[3].line, 4, "分页继续使用页内行号");
+
+        let destination = fixture.root().join("export/anomalous.jsonl");
+        export_file(paths, filename, &destination.to_string_lossy()).unwrap();
+        assert_eq!(fs::read(destination).unwrap(), original.as_bytes());
     }
 
     #[test]

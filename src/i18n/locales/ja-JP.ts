@@ -624,6 +624,7 @@ export default {
     emptyHistoryHint: '左側のログファイルを選択して履歴を表示',
     emptyRealtimeHint: 'アプリ実行中に生成されたログがここに表示されます',
     loadError: '読み込みに失敗しました: {msg}',
+    parseFailureTruncated: '表示を省略しました（原文 {length} 文字）',
     newLogs: '新しいログ',
   },
 }

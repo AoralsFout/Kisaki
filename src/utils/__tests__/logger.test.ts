@@ -444,6 +444,25 @@ describe('Logger - 敏感信息脱敏', () => {
     expect(output).not.toContain('private share')
     expect(output).toContain('[PATH]')
   })
+
+  it('安全展示历史解析失败内容并标出截断长度', async () => {
+    const { prepareParseFailureForDisplay } = await import('../logger')
+    const raw = 'not JSON; Authorization: Bearer abc.def-123; path=C:\\Users\\Alice Smith\\secret.txt'
+    const prepared = prepareParseFailureForDisplay(`[日志解析失败] ${raw}`)
+
+    expect(prepared.message).toContain('not JSON')
+    expect(prepared.message).not.toContain('abc.def-123')
+    expect(prepared.message).not.toContain('Alice Smith')
+    expect(prepared.message).toContain('[REDACTED]')
+    expect(prepared.message).toContain('[PATH]')
+    expect(prepared.truncated).toBe(false)
+
+    const longRaw = `${'排查说明'.repeat(1400)}; ${raw}`
+    const longPrepared = prepareParseFailureForDisplay(`[日志解析失败] ${longRaw}`)
+    expect(longPrepared.truncated).toBe(true)
+    expect(longPrepared.originalLength).toBe([...longRaw].length)
+    expect([...longPrepared.message.slice('[日志解析失败] '.length)]).toHaveLength(4096)
+  })
 })
 
 describe('Logger - 敏感诊断开关', () => {
