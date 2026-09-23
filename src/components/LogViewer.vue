@@ -8,6 +8,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  LOG_LEVELS,
   LOG_SCHEMA_VERSION,
   createLogger,
   getBuffer,
@@ -56,7 +57,7 @@ interface DisplayEntry {
 
 // ─── 状态 ─────────────────────────────────────────────
 
-const ALL_LEVELS: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error']
+const ALL_LEVELS: LogLevel[] = [...LOG_LEVELS]
 
 const LEVEL_LABELS: Record<LogLevel, string> = {
   trace: 'TRC', debug: 'DBG', info: 'INF', warn: 'WRN', error: 'ERR',
@@ -104,7 +105,7 @@ function flushPendingEntries() {
 
 // 过滤器
 const enabledLevels = ref<Set<LogLevel>>(new Set(isStandalone
-  ? ['trace', 'debug', 'info', 'warn', 'error']   // 独立窗口默认显示全部
+  ? [...LOG_LEVELS]                               // 独立窗口默认显示全部
   : ['info', 'warn', 'error']                       // 内嵌模式默认只显示重要级别
 ))
 const namespaceFilter = ref('')

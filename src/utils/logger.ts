@@ -21,11 +21,19 @@ import {
   STORAGE_LOG_RETENTION_DAYS,
   STORAGE_SENSITIVE_DIAGNOSTICS,
 } from '../constants'
+import {
+  isValidLogEntry,
+  isValidLogEventName,
+  LOG_LEVELS,
+  LOG_SCHEMA_VERSION,
+  validateLogEntry,
+  type LogLevel,
+} from './logSchema'
+
+export { LOG_SCHEMA_VERSION, LOG_LEVELS, isValidLogEntry, isValidLogEventName, validateLogEntry }
+export type { LogLevel } from './logSchema'
 
 // ─── 类型定义 ─────────────────────────────────────────
-
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error'
-export const LOG_SCHEMA_VERSION = 2 as const
 
 export interface SerializedError {
   name: string
@@ -101,13 +109,7 @@ function detectWindowSource(): string {
   return _windowSource
 }
 
-const LEVEL_WEIGHT: Record<LogLevel, number> = {
-  trace: 0,
-  debug: 1,
-  info: 2,
-  warn: 3,
-  error: 4,
-}
+const LEVEL_WEIGHT = Object.fromEntries(LOG_LEVELS.map((level, weight) => [level, weight])) as Record<LogLevel, number>
 
 /** 控制台 CSS 样式 — 用颜色区分级别 */
 const LEVEL_STYLES: Record<LogLevel, string> = {
@@ -201,10 +203,10 @@ export function subscribeCrossWindow(cb: LogCallback): () => void {
 
   /** 收到其它窗口广播的日志 → 立即展示 + 写入文件（避免源窗口崩溃丢失） */
   const handler = (event: MessageEvent) => {
-    const entry = event.data as LogEntry
-    if (entry?.schemaVersion === LOG_SCHEMA_VERSION && entry.timestamp && entry.level && entry.namespace && entry.event) {
+    const entry = event.data
+    if (isValidLogEntry(entry)) {
       // 通知 UI 订阅者
-      try { cb(entry) } catch { /* 忽略 */ }
+      try { cb(entry as LogEntry) } catch { /* 忽略 */ }
 
       // 注意：不在此处写文件——源窗口已经在 log() 中写过了。
       // 若接收方也写，会导致 JSONL 中每条跨窗口日志重复。
@@ -342,11 +344,12 @@ export function normalizeError(
 }
 
 function serializeEntry(entry: LogEntry): LogEntry {
+  const { error, context, ...required } = entry
   return {
-    ...entry,
+    ...required,
     message: redactSensitiveText(entry.message),
-    error: entry.error ? serializeUnknown(entry.error) as SerializedError : undefined,
-    context: entry.context ? serializeUnknown(entry.context) as LogContext : undefined,
+    ...(error !== undefined ? { error: serializeUnknown(error) as SerializedError } : {}),
+    ...(context !== undefined ? { context: serializeUnknown(context) as LogContext } : {}),
   }
 }
 
@@ -363,11 +366,12 @@ function publishInternalDiagnostic(
     namespace: 'Logger',
     event: level === 'error' ? 'logger.persistence_failed' : 'logger.persistence_recovered',
     message,
-    error: error === undefined ? undefined : normalizeError(error),
-    context,
+    ...(error !== undefined ? { error: normalizeError(error) } : {}),
+    ...(context !== undefined ? { context } : {}),
     source: detectWindowSource(),
   }
   const safeEntry = serializeEntry(entry)
+  if (!isValidLogEntry(safeEntry)) return
   pushToBuffer(safeEntry)
   subscribers.forEach(cb => { try { cb(safeEntry) } catch { /* 忽略 */ } })
   ensureBroadcastChannel()
@@ -645,8 +649,6 @@ export function getConfig(): LoggerConfig {
 // ─── Logger 工厂 ──────────────────────────────────────
 
 const nsColorCache = new Map<string, string>()
-const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/
-
 /**
  * 创建一个命名空间 Logger。
  *
@@ -669,7 +671,7 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
   }
 
   function log(lvl: LogLevel, record: LogRecord, forceLevel = false) {
-    if (!EVENT_NAME_PATTERN.test(record.event)) {
+    if (!isValidLogEventName(record.event)) {
       throw new TypeError(`无效的日志事件名: ${record.event}`)
     }
     if (!globalConfig.enabled) return
@@ -680,6 +682,21 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     const label = formatLabel(lvl)
     const styles = formatStyles(lvl)
     const fullMsg = `${record.message}`
+    const entry: LogEntry = {
+      schemaVersion: LOG_SCHEMA_VERSION,
+      timestamp: ts,
+      level: lvl,
+      namespace,
+      message: fullMsg,
+      event: record.event,
+      ...(record.error !== undefined ? { error: normalizeError(record.error) } : {}),
+      ...(record.context !== undefined ? { context: record.context } : {}),
+      source: detectWindowSource(),
+    }
+    const validation = validateLogEntry(entry)
+    if (!validation.valid) {
+      throw new TypeError(`日志条目不符合 v${LOG_SCHEMA_VERSION} schema：${validation.reason ?? '未知原因'}`)
+    }
     const consoleDetails = {
       ...(record.context ? { context: record.context } : {}),
       ...(record.error !== undefined ? { error: record.error } : {}),
@@ -705,18 +722,8 @@ export function createLogger(namespace: string, level?: LogLevel): Logger {
     }
 
     // 内存查看器、跨窗口与文件只接收脱敏副本；原始值最多出现在当前开发者控制台。
-    const entry: LogEntry = {
-      schemaVersion: LOG_SCHEMA_VERSION,
-      timestamp: ts,
-      level: lvl,
-      namespace,
-      message: fullMsg,
-      event: record.event,
-      error: record.error !== undefined ? normalizeError(record.error) : undefined,
-      context: record.context,
-      source: detectWindowSource(),
-    }
     const safeEntry = serializeEntry(entry)
+    if (!isValidLogEntry(safeEntry)) return
     pushToBuffer(safeEntry)
 
     // 通知 UI 订阅者
