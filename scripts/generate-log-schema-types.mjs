@@ -25,7 +25,7 @@ if (process.argv.includes('--check')) {
   } catch {
     current = ''
   }
-  if (current !== output) {
+  if (current.replace(/\r\n?/g, '\n') !== output) {
     console.error('日志级别类型已过期，请运行 node scripts/generate-log-schema-types.mjs')
     process.exitCode = 1
   }
