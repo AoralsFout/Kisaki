@@ -14,7 +14,11 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 
 describe('ChatHistory 历史列表', () => {
   beforeEach(() => setActivePinia(createPinia()))
-  afterEach(() => { document.body.innerHTML = '' })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.innerHTML = ''
+  })
 
   it('助手消息优先显示身份快照名称，旧数据回退当前角色', async () => {
     const { useChatStore } = await import('../stores/chat')
@@ -230,6 +234,7 @@ describe('ChatHistory 历史列表', () => {
     Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollTo })
     Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 500 })
     await flushPromises()
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: 'auto' })
     scrollTo.mockClear()
 
     // 两个会话消息数相同也必须由 session id 变化触发瞬时定位。
@@ -246,6 +251,157 @@ describe('ChatHistory 历史列表', () => {
     await flushPromises()
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: 'smooth' })
     rectSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('折叠时短消息对齐底部，长消息从消息顶部开始预览', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const { useSessionStore } = await import('../stores/session')
+    const chat = useChatStore()
+    const sessions = useSessionStore()
+    sessions.currentSessionId = 'short-session'
+    chat.messages.push({ id: 'short', role: 'assistant', text: '短', timestamp: 0 })
+
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 220 } })
+    const list = wrapper.get<HTMLElement>('.message-list').element
+    const scrollTo = vi.fn(({ top }: { top: number }) => { list.scrollTop = top })
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 900 })
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const isMessage = this.classList.contains('history-item')
+      const isList = this.classList.contains('message-list')
+      const isLong = this.querySelector('.msg-text')?.textContent === '长'
+      const top = isList ? 100 : isMessage && isLong ? 250 : 0
+      const height = isMessage && isLong ? 444 : 120
+      return { x: 0, y: top, width: 300, height, top, right: 300, bottom: top + height, left: 0, toJSON: () => ({}) }
+    })
+    await flushPromises()
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 900, behavior: 'auto' })
+
+    list.scrollTop = 300
+    sessions.currentSessionId = 'long-session'
+    chat.messages.splice(0, 1, { id: 'long', role: 'assistant', text: '长', timestamp: 1 })
+    await flushPromises()
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 450, behavior: 'auto' })
+
+    rectSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('展开态最新消息内容增高后重新滚动到底部', async () => {
+    const observers: Array<{ callback: ResizeObserverCallback; observed: Element | null }> = []
+    class TestResizeObserver {
+      private record: { callback: ResizeObserverCallback; observed: Element | null }
+
+      constructor(callback: ResizeObserverCallback) {
+        this.record = { callback, observed: null }
+        observers.push(this.record)
+      }
+
+      observe(target: Element) { this.record.observed = target }
+      unobserve() {}
+      disconnect() { this.record.observed = null }
+    }
+    vi.stubGlobal('ResizeObserver', TestResizeObserver)
+
+    const { useChatStore } = await import('../stores/chat')
+    const chat = useChatStore()
+    chat.showInput = true
+    chat.messages.push({ id: 'growing', role: 'assistant', text: '内容', timestamp: 0 })
+    let latestHeight = 40
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 120 } })
+    const list = wrapper.get<HTMLElement>('.message-list').element
+    const scrollTo = vi.fn(({ top }: { top: number }) => { list.scrollTop = top })
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 1000 + latestHeight })
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const height = this.classList.contains('history-item') ? latestHeight : 0
+      return { x: 0, y: 0, width: 300, height, top: 0, right: 300, bottom: height, left: 0, toJSON: () => ({}) }
+    })
+    await flushPromises()
+    const latestItem = wrapper.get('.history-item').element
+    expect(observers.some(observer => observer.observed === latestItem)).toBe(true)
+    scrollTo.mockClear()
+
+    latestHeight = 180
+    const observer = observers.find(candidate => candidate.observed === latestItem)!
+    observer.callback([{
+      target: latestItem,
+      contentRect: latestItem.getBoundingClientRect(),
+      borderBoxSize: [],
+      contentBoxSize: [],
+      devicePixelContentBoxSize: [],
+    }], {} as ResizeObserver)
+
+    expect(wrapper.emitted('latestHeightChange')?.slice(-1)[0]).toEqual([180])
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1180, behavior: 'auto' })
+    expect(list.scrollTop).toBe(1180)
+
+    const { useSessionStore } = await import('../stores/session')
+    const sessions = useSessionStore()
+    sessions.currentSessionId = 'next-session'
+    chat.messages.splice(0, 1, { id: 'next', role: 'assistant', text: '新消息', timestamp: 1 })
+    await flushPromises()
+    scrollTo.mockClear()
+    observers[0].callback([{
+      target: latestItem,
+      contentRect: latestItem.getBoundingClientRect(),
+      borderBoxSize: [],
+      contentBoxSize: [],
+      devicePixelContentBoxSize: [],
+    }], {} as ResizeObserver)
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    rectSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('快速连续切换后，最终位置属于最后选中的会话', async () => {
+    const { useChatStore } = await import('../stores/chat')
+    const { useSessionStore } = await import('../stores/session')
+    const chat = useChatStore()
+    const sessions = useSessionStore()
+    sessions.currentSessionId = 'session-a'
+    chat.messages.push({ id: 'a', role: 'assistant', text: '100', timestamp: 0 })
+    const wrapper = mount(ChatHistory, { props: { visible: true, collapsedHeight: 300 } })
+    const list = wrapper.get<HTMLElement>('.message-list').element
+    const scrollTo = vi.fn((options: ScrollToOptions) => { list.scrollTop = options.top ?? 0 })
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(list, 'scrollHeight', {
+      configurable: true,
+      get: () => Number(chat.messages[chat.messages.length - 1]?.text ?? 0),
+    })
+    await flushPromises()
+    scrollTo.mockClear()
+
+    // 同一会话的平滑定位还没执行时切走，旧微任务不能把新会话改成平滑滚动。
+    chat.messages.push({ id: 'a2', role: 'assistant', text: '150', timestamp: 1 })
+    void Promise.resolve().then(() => {
+      sessions.currentSessionId = 'session-b'
+      chat.messages.splice(0, chat.messages.length, {
+        id: 'b', role: 'assistant', text: '200', timestamp: 2,
+      })
+    })
+    await flushPromises()
+    expect(scrollTo.mock.calls.every(([options]) => options.behavior === 'auto')).toBe(true)
+
+    for (const [sessionId, messageId, height] of [
+      ['session-c', 'c', '300'],
+      ['session-d', 'd', '400'],
+    ]) {
+      sessions.currentSessionId = sessionId
+      chat.messages.splice(0, chat.messages.length, {
+        id: messageId, role: 'assistant', text: height, timestamp: 1,
+      })
+      await flushPromises()
+    }
+
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 400, behavior: 'auto' })
+    expect(list.scrollTop).toBe(400)
+    expect(scrollTo.mock.calls.every(([options]) => options.behavior === 'auto')).toBe(true)
+    expect(wrapper.get('.chat-history').classes()).not.toContain('session-switching')
+
     wrapper.unmount()
   })
 })

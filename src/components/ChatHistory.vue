@@ -49,6 +49,8 @@ const expanded = computed(() => chat.showInput)
 
 let latestResizeObserver: ResizeObserver | null = null
 let observedLatestItem: HTMLElement | null = null
+let positionVersion = 0
+let sessionSettleRaf = 0
 
 /** 助手消息展示名：优先消息内的角色身份快照，旧数据回退当前角色名/品牌名 */
 function assistantLabel(charName?: string): string {
@@ -101,9 +103,11 @@ function observeLatestItem() {
 
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') {
-    latestResizeObserver = new ResizeObserver(() => {
+    latestResizeObserver = new ResizeObserver((entries) => {
+      const latest = lastHistoryItem()
+      if (!props.visible || observedLatestItem !== latest || !entries.some(entry => entry.target === latest)) return
       publishLatestHeight()
-      if (!expanded.value) jumpToLatestNow()
+      jumpToLatestNow()
     })
   }
   void nextTick(observeLatestItem)
@@ -125,24 +129,12 @@ function collapsedTarget(list: HTMLElement): number {
   })
 }
 
-function scrollToLatest(behavior: ScrollBehavior = 'smooth') {
-  const resolvedBehavior = behavior === 'smooth' && shouldReduceMotion() ? 'auto' : behavior
-  nextTick(() => {
-    const list = listRef.value
-    if (!list) return
-    list.scrollTo({
-      top: expanded.value ? list.scrollHeight : collapsedTarget(list),
-      behavior: resolvedBehavior,
-    })
-  })
-}
-
-function jumpToLatestNow() {
+function applyLatestPosition(behavior: ScrollBehavior = 'auto') {
   const list = listRef.value
   if (!list) return
   list.scrollTo({
     top: expanded.value ? list.scrollHeight : collapsedTarget(list),
-    behavior: 'auto',
+    behavior: behavior === 'smooth' && shouldReduceMotion() ? 'auto' : behavior,
   })
 }
 
@@ -155,12 +147,48 @@ function cancelCollapseScroll() {
   collapseRaf = 0
 }
 
+function cancelSessionSettle(resetSwitching = true) {
+  sessionSettleVersion++
+  if (sessionSettleRaf) cancelAnimationFrame(sessionSettleRaf)
+  sessionSettleRaf = 0
+  if (resetSwitching) sessionSwitching.value = false
+}
+
+function cancelCollapsedLayoutRefresh() {
+  if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
+  collapsedLayoutRaf = 0
+}
+
+function cancelScheduledPositioning() {
+  positionVersion++
+  cancelCollapseScroll()
+  cancelCollapsedLayoutRefresh()
+  cancelSessionSettle()
+}
+
+function scrollToLatest(behavior: ScrollBehavior = 'smooth') {
+  cancelScheduledPositioning()
+  const version = positionVersion
+  const sessionId = sessionStore.currentSessionId
+  void nextTick(() => {
+    if (version !== positionVersion || sessionId !== sessionStore.currentSessionId) return
+    applyLatestPosition(behavior)
+  })
+}
+
+function jumpToLatestNow() {
+  cancelScheduledPositioning()
+  applyLatestPosition()
+}
+
 /** 折叠态内容尺寸变化后，在浏览器完成本帧布局时重测并重新对齐最新消息。 */
 function scheduleCollapsedLayoutRefresh() {
   if (expanded.value || sessionSwitching.value) return
-  if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
+  cancelCollapsedLayoutRefresh()
+  const sessionId = sessionStore.currentSessionId
   collapsedLayoutRaf = requestAnimationFrame(() => {
     collapsedLayoutRaf = 0
+    if (sessionId !== sessionStore.currentSessionId || sessionSwitching.value || !props.visible) return
     observeLatestItem()
     jumpToLatestNow()
   })
@@ -175,36 +203,39 @@ function onThinkingToggle() {
  * 各校准一次，避免异步布局把位置留在最新消息上方。
  */
 async function settleSessionAtLatest() {
+  cancelScheduledPositioning()
   const version = ++sessionSettleVersion
-  cancelCollapseScroll()
+  const sessionId = sessionStore.currentSessionId
   sessionSwitching.value = true
   await nextTick()
-  if (version !== sessionSettleVersion) return
+  if (version !== sessionSettleVersion || sessionId !== sessionStore.currentSessionId) return
   observeLatestItem()
   await nextTick()
-  if (version !== sessionSettleVersion) return
-  jumpToLatestNow()
-  requestAnimationFrame(() => {
-    if (version !== sessionSettleVersion) return
-    jumpToLatestNow()
+  if (version !== sessionSettleVersion || sessionId !== sessionStore.currentSessionId) return
+  applyLatestPosition()
+  sessionSettleRaf = requestAnimationFrame(() => {
+    sessionSettleRaf = 0
+    if (version !== sessionSettleVersion || sessionId !== sessionStore.currentSessionId) return
+    applyLatestPosition()
     sessionSwitching.value = false
   })
 }
 
-function onHistoryImageLoad() {
-  if (expanded.value && !sessionSwitching.value) return
-  void nextTick(async () => {
+function onHistoryImageLoad(event: Event) {
+  if ((event.currentTarget as HTMLElement).closest('.history-item') !== lastHistoryItem()) return
+  const sessionId = sessionStore.currentSessionId
+  void nextTick(() => {
+    if (sessionId !== sessionStore.currentSessionId || !props.visible) return
     observeLatestItem()
-    await nextTick()
-    jumpToLatestNow()
+    scrollToLatest('auto')
   })
 }
 
 onUnmounted(() => {
-  sessionSettleVersion++
+  cancelSessionSettle(false)
+  positionVersion++
   cancelCollapseScroll()
-  if (collapsedLayoutRaf) cancelAnimationFrame(collapsedLayoutRaf)
-  collapsedLayoutRaf = 0
+  cancelCollapsedLayoutRefresh()
   latestResizeObserver?.disconnect()
   latestResizeObserver = null
   observedLatestItem = null
@@ -221,7 +252,7 @@ watch(
     if (!props.visible) return
     void nextTick(observeLatestItem)
     if (sessionChanged) void settleSessionAtLatest()
-    else scrollToLatest(!initialMessagesSettled ? 'auto' : 'smooth')
+    else scrollToLatest(!initialMessagesSettled || sessionSwitching.value ? 'auto' : 'smooth')
     initialMessagesSettled = true
   },
   { immediate: true },
@@ -236,13 +267,18 @@ watch(
 )
 watch(
   () => props.visible,
-  (v) => { if (v) scrollToLatest('auto') },
+  (v) => {
+    if (v) {
+      initialMessagesSettled = true
+      scrollToLatest('auto')
+    } else cancelScheduledPositioning()
+  },
   { immediate: true },
 )
 watch(
   () => props.collapsedHeight,
   () => {
-    if (!expanded.value && props.visible) void nextTick(jumpToLatestNow)
+    if (!expanded.value && props.visible) scrollToLatest('auto')
   },
 )
 /** 收起：滚动位置与视口高度同步移向最新消息，保留从历史中部收起时的连续感。 */
@@ -269,7 +305,7 @@ watch(expanded, async (v) => {
   const list = listRef.value
   if (!list) return
   if (sessionSwitching.value || shouldReduceMotion()) {
-    jumpToLatestNow()
+    applyLatestPosition()
     return
   }
   if (v) jumpToLatestNow()

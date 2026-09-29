@@ -11,13 +11,17 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      // 明确匹配源码，Vitest 会把未被测试导入的文件也放进报告。
+      include: ['src/**/*.ts', 'src/**/*.vue'],
       exclude: [
+        // 测试本身不属于产品源码。
         'src/**/*.test.ts',
-        'src/vite-env.d.ts',
+        // 声明文件不产生运行时代码。
+        'src/**/*.d.ts',
+        // Tauri WebView 启动入口依赖真实窗口环境，不属于 happy-dom 单元覆盖面。
         'src/main.ts',
-        'src/**/*.vue',
       ],
+      reporter: ['text', 'html', 'json-summary'],
     },
   },
 })
